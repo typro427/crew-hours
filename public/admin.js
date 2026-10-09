@@ -90,6 +90,10 @@
       .then(function () { status('b-status', 'Switched to ' + p.name + '. Stripe adjusts your next bill for the rest of this month.', 'ok'); })
       .catch(function (e) { status('b-status', e.message, 'err'); });
   }
+  // When the Billing tab opens, quietly re-check with Stripe in case a webhook was missed.
+  document.querySelector('[data-tab="billing"]').addEventListener('click', function () {
+    if (me && me.billing.hasCustomer) api('POST', '/api/billing/sync').then(function (r) { if (r.synced) return loadMe(); }).catch(function () {});
+  });
   $('b-portal').onclick = function () {
     status('b-status', 'Opening billing…');
     api('POST', '/api/billing/portal').then(function (r) { location.href = r.url; }).catch(function (e) { status('b-status', e.message, 'err'); });
@@ -275,7 +279,15 @@
     var h = location.hash;
     var m = /^#week=(\d{4}-\d{2}-\d{2})$/.exec(h);
     if (m) weekStart = m[1];
-    if (/^#billing/.test(h)) { showTab('billing'); if (h === '#billing-done') status('b-status', 'Thanks! Your subscription is being set up. This page will show it within a minute.', 'ok'); }
+    if (/^#billing/.test(h)) {
+      showTab('billing');
+      if (h === '#billing-done') {
+        status('b-status', 'Thanks! Checking your subscription with Stripe…', 'ok');
+        api('POST', '/api/billing/sync').then(function () { return loadMe(); })
+          .then(function () { status('b-status', me.billing.status === 'trialing' ? 'Payment received. Stripe is still finishing up; refresh in a minute.' : 'You’re subscribed. Thank you!', 'ok'); })
+          .catch(function (e) { status('b-status', e.message, 'err'); });
+      }
+    }
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});

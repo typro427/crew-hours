@@ -78,6 +78,20 @@ r.post('/change-plan', A.requireOwner, async (req, res) => {
   res.json({ ok: true, tier: plan.key });
 });
 
+/** Ask Stripe directly for this company's newest subscription (backup for a missed or failed webhook). */
+async function syncFromStripe(c) {
+  const s = getStripe();
+  if (!s || !c.stripe_customer_id) return false;
+  const subs = await s.subscriptions.list({ customer: c.stripe_customer_id, status: 'all', limit: 5 });
+  const newest = subs.data.sort((a, b) => b.created - a.created)[0];
+  if (!newest) return false;
+  if (!newest.metadata || !newest.metadata.company_id) newest.metadata = { ...(newest.metadata || {}), company_id: String(c.id) };
+  await applySubscription(newest);
+  return true;
+}
+
+r.post('/sync', A.requireOwner, async (req, res) => res.json({ synced: await syncFromStripe(req.company) }));
+
 r.post('/portal', A.requireOwner, async (req, res) => {
   const s = getStripe();
   if (!s || !req.company.stripe_customer_id) return res.status(400).json({ error: 'There is no subscription to manage yet.' });
@@ -113,4 +127,4 @@ webhook.post('/', express.raw({ type: 'application/json' }), async (req, res) =>
   } catch (e) { console.error('[stripe webhook]', e); res.status(500).send('error'); }
 });
 
-module.exports = { router: r, webhook, mapStatus, applySubscription };
+module.exports = { router: r, webhook, mapStatus, applySubscription, syncFromStripe };
