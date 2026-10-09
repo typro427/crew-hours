@@ -102,7 +102,11 @@ app.get('/c/:slug/manifest.webmanifest', async (req, res, next) => {
 });
 app.get('/c/:slug/sw.js', (req, res) => res.type('application/javascript').set('Service-Worker-Allowed', `/c/${req.params.slug}/`).sendFile(path.join(PUB, 'sw.js')));
 
-app.use(express.static(PUB, { index: false, maxAge: config.isProd ? '1h' : 0 }));
+// Scripts and styles are re-checked on every visit (cheap, thanks to ETags) so updates show up straight away.
+// Images and icons can be kept for a day.
+app.use(express.static(PUB, { index: false, setHeaders: (res, file) => {
+  res.setHeader('Cache-Control', /\.(png|ico|svg|webp|jpg)$/.test(file) && config.isProd ? 'public, max-age=86400' : 'no-cache');
+} }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 app.use((req, res) => res.status(404).sendFile(path.join(PUB, '404.html')));
