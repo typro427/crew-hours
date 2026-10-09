@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS email_log (
 // Changes added after launch (each is safe to run again).
 const UPGRADES = `
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan_tier TEXT NOT NULL DEFAULT 'starter';
+-- Old crew links keep working after a company changes its link.
+CREATE TABLE IF NOT EXISTS slug_redirects (old_slug TEXT PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE);
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

@@ -78,7 +78,11 @@ const crewHtml = fs.readFileSync(path.join(PUB, 'crew.html'), 'utf8');
 app.get('/c/:slug', async (req, res, next) => {
   try {
     const c = await db.one('SELECT name, slug FROM companies WHERE slug=$1', [String(req.params.slug).toLowerCase()]);
-    if (!c) return res.status(404).send('This crew link does not exist. Check the link your boss sent you.');
+    if (!c) {
+      const moved = await db.one('SELECT c.slug FROM slug_redirects r JOIN companies c ON c.id=r.company_id WHERE r.old_slug=$1', [String(req.params.slug).toLowerCase()]);
+      if (moved) return res.redirect(301, `/c/${moved.slug}/`);
+      return res.status(404).send('This crew link does not exist. Check the link your boss sent you.');
+    }
     if (!req.path.endsWith('/')) return res.redirect(301, `/c/${c.slug}/`);
     const esc = s => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
     res.type('html').send(crewHtml.replace(/__COMPANY__/g, esc(c.name)).replace(/__SLUG__/g, c.slug));

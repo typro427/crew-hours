@@ -47,3 +47,15 @@ test('importing again adds nothing', async () => {
   assert.strictEqual(r.body.crewAdded, 0); assert.strictEqual(r.body.daysAdded, 0);
   assert.strictEqual(r.body.daysSkipped, file.entries.length);
 });
+
+test('change the crew link; the old one forwards', async () => {
+  const old = (await db.one('SELECT slug FROM companies')).slug;
+  let r = await call('PUT', '/api/admin/settings', { slug: 'Bad Link!' });
+  assert.strictEqual(r.status, 400);
+  r = await call('PUT', '/api/admin/settings', { slug: 'deerfield-crew' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.crewLink, /\/c\/deerfield-crew$/);
+  const res = await fetch(`${base}/c/${old}/`, { redirect: 'manual' });
+  assert.strictEqual(res.status, 301); assert.strictEqual(res.headers.get('location'), '/c/deerfield-crew/');
+  assert.strictEqual((await fetch(`${base}/c/deerfield-crew/`)).status, 200);
+});

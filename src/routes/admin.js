@@ -64,11 +64,25 @@ r.put('/settings', async (req, res) => {
     missing_hour: b.missingHour !== undefined ? V.int(b.missingHour, 'Reminder hour', 0, 23) : c.missing_hour,
     report_emails: b.reportEmails !== undefined ? V.emailList(b.reportEmails) : c.report_emails
   };
+  let slug = c.slug;
+  if (b.slug !== undefined && String(b.slug).trim().toLowerCase() !== c.slug) {
+    slug = String(b.slug).trim().toLowerCase();
+    if (!/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/.test(slug) || slug.includes('--'))
+      V.bad('The crew link can use lowercase letters, numbers and dashes (3 to 40 characters), and must start and end with a letter or number.');
+    const taken = await db.one('SELECT 1 FROM companies WHERE slug=$1 UNION ALL SELECT 1 FROM slug_redirects WHERE old_slug=$1 AND company_id<>$2', [slug, c.id]);
+    if (taken) V.bad('That crew link is already taken. Try another.');
+  }
   const row = await db.one(`UPDATE companies SET name=$1, timezone=$2, week_start=$3, main_label=$4, other_enabled=$5, other_label=$6,
     other_options=$7, overtime_after=$8, max_days_back=$9, workdays=$10, summary_hour=$11, missing_hour=$12, report_emails=$13
     WHERE id=$14 RETURNING *`, [v.name, tz, v.week_start, v.main_label, v.other_enabled, v.other_label, JSON.stringify(opts),
     v.overtime_after, v.max_days_back, JSON.stringify(workdays), v.summary_hour, v.missing_hour, v.report_emails, c.id]);
-  res.json({ settings: settingsOut(row) });
+  if (slug !== c.slug) await db.tx(async t => {
+    await t.q('DELETE FROM slug_redirects WHERE old_slug=$1', [slug]);
+    await t.q('INSERT INTO slug_redirects (old_slug, company_id) VALUES ($1,$2) ON CONFLICT (old_slug) DO UPDATE SET company_id=EXCLUDED.company_id', [c.slug, c.id]);
+    await t.q('UPDATE companies SET slug=$1 WHERE id=$2', [slug, c.id]);
+    row.slug = slug;
+  });
+  res.json({ settings: settingsOut(row), crewLink: `${config.appUrl}/c/${row.slug}` });
 });
 
 /* ------------------------------- crew members ------------------------------- */

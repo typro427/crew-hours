@@ -253,6 +253,7 @@
       for (var h = 0; h < 24; h++) { [$('s-sum'), $('s-miss')].forEach(function (sel) { var o = el('option', '', hourLabel(h)); o.value = h; sel.appendChild(o); }); }
       DAYS.forEach(function (d, i) { var l = el('label'); var c = el('input'); c.type = 'checkbox'; c.value = i; c.id = 's-day-' + i; l.appendChild(c); l.appendChild(document.createTextNode(d)); $('s-days').appendChild(l); });
     }
+    $('s-slug').value = s.slug; $('s-slug-pre').textContent = me.crewLink.replace(/[^/]*$/, '');
     $('s-name').value = s.name; $('s-tz').value = s.timezone; $('s-week').value = s.weekStart; $('s-ot').value = s.overtimeAfter;
     $('s-back').value = s.maxDaysBack; $('s-main').value = s.mainLabel; $('s-other-on').checked = s.otherEnabled; $('s-other').value = s.otherLabel;
     $('s-opts').value = (s.otherOptions || []).join('\n'); $('s-emails').value = s.reportEmails; $('s-sum').value = s.summaryHour; $('s-miss').value = s.missingHour;
@@ -262,11 +263,12 @@
     e.preventDefault(); status('s-status', 'Saving…');
     var workdays = []; DAYS.forEach(function (d, i) { if ($('s-day-' + i).checked) workdays.push(i); });
     api('PUT', '/api/admin/settings', {
-      name: $('s-name').value, timezone: $('s-tz').value, weekStart: Number($('s-week').value), overtimeAfter: Number($('s-ot').value),
+      name: $('s-name').value, slug: $('s-slug').value.trim().toLowerCase(), timezone: $('s-tz').value, weekStart: Number($('s-week').value), overtimeAfter: Number($('s-ot').value),
       maxDaysBack: Number($('s-back').value), mainLabel: $('s-main').value, otherEnabled: $('s-other-on').checked, otherLabel: $('s-other').value,
       otherOptions: $('s-opts').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean),
       workdays: workdays, reportEmails: $('s-emails').value, summaryHour: Number($('s-sum').value), missingHour: Number($('s-miss').value)
-    }).then(function (r) { me.settings = r.settings; weekStart = null; pick = null; $('co-name').textContent = r.settings.name; fillSettings(); status('s-status', 'Saved.', 'ok'); })
+    }).then(function (r) { me.settings = r.settings; weekStart = null; pick = null; $('co-name').textContent = r.settings.name;
+      if (r.crewLink) { me.crewLink = r.crewLink; $('crew-link').textContent = r.crewLink; $('open-link').href = r.crewLink; } fillSettings(); status('s-status', 'Saved.', 'ok'); })
       .catch(function (err) { status('s-status', err.message, 'err'); });
   };
 
