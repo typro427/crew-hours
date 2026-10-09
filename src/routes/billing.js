@@ -23,6 +23,15 @@ function mapStatus(s) {
   return 'canceled';
 }
 
+/** How good a subscription is: 3 = paying and staying, 2 = set to cancel, 1 = payment problem, 0 = ended. */
+function rank(sub) {
+  const st = mapStatus(sub.status);
+  if (st === 'canceled') return 0;
+  if (st === 'past_due') return 1;
+  return sub.cancel_at_period_end || sub.cancel_at ? 2 : 3;
+}
+const best = subs => subs.slice().sort((a, b) => rank(b) - rank(a) || b.created - a.created)[0];
+
 const activeCount = async id => (await db.one('SELECT count(*)::int AS n FROM crew WHERE company_id=$1 AND active', [id])).n;
 
 /** Picks the plan from the request and checks the crew fit on it. */
@@ -41,6 +50,11 @@ r.post('/checkout', A.requireOwner, async (req, res) => {
   const plan = await chosenPlan(req);
   const c = req.company;
   if (c.stripe_subscription_id && c.plan_status !== 'canceled') V.bad('You already have a subscription. Use Change plan instead.');
+  // Ask Stripe too, in case a webhook was missed: never start a second subscription.
+  if (c.stripe_customer_id) {
+    const live = (await s.subscriptions.list({ customer: c.stripe_customer_id, status: 'all', limit: 10 })).data.filter(x => rank(x) > 0);
+    if (live.length) { await applySubscription(withCompany(best(live), c)); V.bad('You already have a subscription. Refresh this page to see it.'); }
+  }
   let customer = c.stripe_customer_id;
   if (!customer) {
     const cu = await s.customers.create({ email: req.owner.email, name: c.name, metadata: { company_id: String(c.id) } });
@@ -82,13 +96,13 @@ r.post('/change-plan', A.requireOwner, async (req, res) => {
 async function syncFromStripe(c) {
   const s = getStripe();
   if (!s || !c.stripe_customer_id) return false;
-  const subs = await s.subscriptions.list({ customer: c.stripe_customer_id, status: 'all', limit: 5 });
-  const newest = subs.data.sort((a, b) => b.created - a.created)[0];
-  if (!newest) return false;
-  if (!newest.metadata || !newest.metadata.company_id) newest.metadata = { ...(newest.metadata || {}), company_id: String(c.id) };
-  await applySubscription(newest);
+  const subs = await s.subscriptions.list({ customer: c.stripe_customer_id, status: 'all', limit: 10 });
+  const pick = best(subs.data);
+  if (!pick) return false;
+  await applySubscription(withCompany(pick, c), { force: true });
   return true;
 }
+const withCompany = (sub, c) => ({ ...sub, metadata: { ...(sub.metadata || {}), company_id: (sub.metadata && sub.metadata.company_id) || String(c.id) } });
 
 r.post('/sync', A.requireOwner, async (req, res) => res.json({ synced: await syncFromStripe(req.company) }));
 
@@ -99,8 +113,14 @@ r.post('/portal', A.requireOwner, async (req, res) => {
   res.json({ url: session.url });
 });
 
-async function applySubscription(sub) {
+async function applySubscription(sub, { force = false } = {}) {
   const companyId = Number(sub.metadata && sub.metadata.company_id) || null;
+  // A second (duplicate) subscription ending must not switch off a company whose main one is still good.
+  if (!force && rank(sub) < 3) {
+    const cur = companyId ? await db.one('SELECT stripe_subscription_id, plan_status FROM companies WHERE id=$1', [companyId])
+                          : await db.one('SELECT stripe_subscription_id, plan_status FROM companies WHERE stripe_customer_id=$1', [sub.customer]);
+    if (cur && cur.stripe_subscription_id && cur.stripe_subscription_id !== sub.id && cur.plan_status === 'active') return;
+  }
   const status = mapStatus(sub.status);
   // Which plan: from the price on the subscription (works even if changed in Stripe), else the metadata.
   const priceId = sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].price && sub.items.data[0].price.id;

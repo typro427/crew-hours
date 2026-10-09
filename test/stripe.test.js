@@ -46,3 +46,14 @@ test('forged webhook is refused', async () => {
 test('backup needs the token', async () => {
   assert.strictEqual((await fetch(base + '/api/backup')).status, 401);
 });
+
+test('a duplicate subscription ending does not switch off the good one', async () => {
+  const body = JSON.stringify({ id: 'evt_2', object: 'event', type: 'customer.subscription.deleted',
+    data: { object: { id: 'sub_dup', object: 'subscription', customer: 'cus_9', status: 'canceled', metadata: { company_id: String(companyId) },
+                      items: { data: [{ id: 'si_2', price: { id: 'price_starter' } }] } } } });
+  const sig = Stripe.webhooks.generateTestHeaderString({ payload: body, secret: 'whsec_testsecret' });
+  const r = await fetch(base + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': sig }, body });
+  assert.strictEqual(r.status, 200);
+  const c = await db.one('SELECT plan_status, stripe_subscription_id FROM companies WHERE id=$1', [companyId]);
+  assert.deepStrictEqual(c, { plan_status: 'active', stripe_subscription_id: 'sub_9' });
+});
