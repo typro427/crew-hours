@@ -107,6 +107,14 @@ app.use((err, req, res, next) => {
   if (err instanceof T.InputError) return res.status(400).json({ error: err.message });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Bad request.' });
   if (err.expose) return res.status(502).json({ error: err.message });
+  // Stripe problems (bad key, wrong price ID, one-time price...): show the owner Stripe's own explanation.
+  if (err.type && String(err.type).startsWith('Stripe')) {
+    console.error('[stripe]', err.type, err.code || '', err.message);
+    const hint = /No such price/i.test(err.message) ? ' Check STRIPE_PRICE_STARTER / STRIPE_PRICE_PRO in Render, and that they come from the same Stripe sandbox (or live account) as STRIPE_SECRET_KEY.'
+      : /recurring/i.test(err.message) ? ' The price must be set to Recurring (monthly) in Stripe, not One-off.'
+      : err.type === 'StripeAuthenticationError' ? ' Check STRIPE_SECRET_KEY in Render.' : '';
+    return res.status(502).json({ error: 'Stripe said: ' + err.message + hint });
+  }
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on our end. Try again in a minute.' });
 });
