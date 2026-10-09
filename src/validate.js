@@ -26,7 +26,16 @@ const emailList = v => {
   return list.join(', ');
 };
 const pin = v => { const s = String(v == null ? '' : v).trim(); if (!/^\d{4}$/.test(s)) bad('PIN must be exactly 4 digits.'); return s; };
-const password = v => { const s = String(v || ''); if (s.length < 8) bad('Password must be at least 8 characters.'); if (s.length > 200) bad('Password is too long.'); return s; };
+const password = v => {
+  const s = String(v || '');
+  if (s.length > 200) bad('Password is too long.');
+  const missing = [];
+  if (s.length < 8) missing.push('at least 8 characters');
+  if (!/[A-Z]/.test(s)) missing.push('1 capital letter');
+  if (!/[^A-Za-z0-9]/.test(s)) missing.push('1 special character (like ! @ # $)');
+  if (missing.length) bad('Password needs ' + missing.join(', ').replace(/, ([^,]*)$/, ' and $1') + '.');
+  return s;
+};
 
 function slugify(name) {
   return String(name).toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-').slice(0, 40) || 'crew';

@@ -39,14 +39,18 @@ let A, B, slugA, slugB, todayA;
 
 test('sign up two companies; duplicate email refused; weak password refused', async () => {
   A = client(); B = client();
-  let r = await A('POST', '/api/signup', { company: 'Deerfield Water & Venue', name: 'Tyler', email: 'tyler@example.com', password: 'longpassword1', timezone: 'America/New_York' });
+  let r = await A('POST', '/api/signup', { company: 'Deerfield Water & Venue', name: 'Tyler', email: 'tyler@example.com', password: 'LongPass1!', timezone: 'America/New_York' });
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
-  r = await B('POST', '/api/signup', { company: 'Other Co', name: 'Sam', email: 'sam@example.com', password: 'anotherpass2' });
+  r = await B('POST', '/api/signup', { company: 'Other Co', name: 'Sam', email: 'sam@example.com', password: 'Another#Pass2' });
   assert.strictEqual(r.status, 200);
-  r = await client()('POST', '/api/signup', { company: 'X', name: 'X', email: 'TYLER@example.com', password: 'whatever123' });
+  r = await client()('POST', '/api/signup', { company: 'X', name: 'X', email: 'TYLER@example.com', password: 'Whatever#123' });
   assert.match(r.body.error, /already has an account/);
   r = await client()('POST', '/api/signup', { company: 'X', name: 'X', email: 'new@example.com', password: 'short' });
-  assert.match(r.body.error, /at least 8/);
+  assert.match(r.body.error, /at least 8 characters/);
+  r = await client()('POST', '/api/signup', { company: 'X', name: 'X', email: 'new@example.com', password: 'alllowercase1' });
+  assert.match(r.body.error, /1 capital letter and 1 special character/);
+  r = await client()('POST', '/api/signup', { company: 'X', name: 'X', email: 'new@example.com', password: 'NoSpecial123' });
+  assert.match(r.body.error, /^Password needs 1 special character/);
   const meA = (await A('GET', '/api/admin/me')).body, meB = (await B('GET', '/api/admin/me')).body;
   slugA = meA.settings.slug; slugB = meB.settings.slug; todayA = meA.today;
   assert.strictEqual(slugA, 'deerfield-water-venue');
@@ -213,11 +217,11 @@ test('password reset flow', async () => {
   const mail = send.outbox.find(m => /Reset/.test(m.subject));
   const token = /reset#([\w-]+)/.exec(mail.html)[1];
   const c = client();
-  let r = await c('POST', '/api/reset', { token, password: 'brandnewpass9' });
+  let r = await c('POST', '/api/reset', { token, password: 'BrandNew#9' });
   assert.strictEqual(r.status, 200);
-  r = await c('POST', '/api/reset', { token, password: 'again12345' });
+  r = await c('POST', '/api/reset', { token, password: 'Again#12345' });
   assert.match(r.body.error, /expired/);
-  r = await client()('POST', '/api/login', { email: 'tyler@example.com', password: 'brandnewpass9' });
+  r = await client()('POST', '/api/login', { email: 'tyler@example.com', password: 'BrandNew#9' });
   assert.strictEqual(r.status, 200);
 });
 
