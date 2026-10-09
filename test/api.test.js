@@ -178,6 +178,36 @@ test('CSV export has the hours and blocks spreadsheet formulas', async () => {
   assert.ok(String(r.body).includes(`"'=HYPERLINK(""x"")"`), r.body);
 });
 
+test('plans: Starter allows 20 active crew, Pro allows 50; trial allows 50', async () => {
+  const billing = require('../src/routes/billing');
+  const co = await db.one('SELECT id FROM companies WHERE slug=$1', [slugB]);
+  // trial: 21st person is fine
+  for (let i = 0; i < 20; i++) { const r = await B('POST', '/api/admin/crew', { name: 'Worker ' + i, pin: String(3000 + i) }); assert.strictEqual(r.status, 200, JSON.stringify(r.body)); }
+  let me = (await B('GET', '/api/admin/me')).body.billing;
+  assert.strictEqual(me.activeCrew, 21); assert.strictEqual(me.crewLimit, 50); assert.strictEqual(me.suggested, 'pro');
+  // subscribed on Starter with 21 active: can't add, can't turn someone back on
+  await billing.applySubscription({ id: 'sub_s', customer: 'cus_s', status: 'active', metadata: { company_id: String(co.id), plan: 'starter' } });
+  let r = await B('POST', '/api/admin/crew', { name: 'One more', pin: '4999' });
+  assert.match(r.body.error, /Starter plan covers up to 20/);
+  const w0 = (await B('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Worker 0');
+  await B('PUT', '/api/admin/crew/' + w0.id, { active: false });
+  await B('PUT', '/api/admin/crew/' + (await B('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Worker 1').id, { active: false });
+  r = await B('PUT', '/api/admin/crew/' + w0.id, { active: true });
+  assert.strictEqual(r.status, 200, 'back to 20 of 20 is fine');
+  r = await B('PUT', '/api/admin/crew/' + (await B('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Worker 1').id, { active: true });
+  assert.match(r.body.error, /Switch to Pro/);
+  // Pro: room again
+  await billing.applySubscription({ id: 'sub_s', customer: 'cus_s', status: 'active', metadata: { company_id: String(co.id), plan: 'pro' } });
+  r = await B('POST', '/api/admin/crew', { name: 'One more', pin: '4999' });
+  assert.strictEqual(r.status, 200);
+  me = r.body.billing; assert.strictEqual(me.tier, 'pro'); assert.strictEqual(me.crewLimit, 50);
+  // checkout refuses Starter when the crew doesn't fit
+  r = await B('POST', '/api/billing/checkout', { plan: 'starter' });
+  assert.ok(r.status >= 400);
+  // reset B to trial for the next test
+  await db.q("UPDATE companies SET plan_status='trialing', stripe_subscription_id=NULL WHERE id=$1", [co.id]);
+});
+
 test('trial over and no subscription: crew app pauses, dashboard still opens', async () => {
   await db.q("UPDATE companies SET trial_ends_at = now() - interval '1 day' WHERE slug=$1", [slugB]);
   let r = await crewCall(slugB, beaTok)('GET', '/week');
@@ -229,6 +259,8 @@ test('pages load', async () => {
   for (const p of ['/', '/signup', '/login', '/admin', '/c/' + slugA + '/', '/c/' + slugA + '/manifest.webmanifest']) {
     const r = await fetch(base + p); assert.strictEqual(r.status, 200, p);
   }
+  const home = await (await fetch(base + '/')).text();
+  assert.ok(home.includes('$14.99') && home.includes('$29.99') && !home.includes('__PRICE'));
   const html = await (await fetch(base + '/c/' + slugA + '/')).text();
   assert.ok(html.includes('Deerfield Water &amp; Venue'));
   assert.strictEqual((await fetch(base + '/c/nope/')).status, 404);

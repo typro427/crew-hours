@@ -21,8 +21,10 @@ services:
         generateValue: true
       - key: APP_URL
         sync: false
-      - key: PRICE_AMOUNT
-        value: "$29"
+      - key: PRICE_STARTER
+        value: "$14.99"
+      - key: PRICE_PRO
+        value: "$29.99"
       - key: TRIAL_DAYS
         value: "14"
       - key: MAIL_FROM
@@ -31,7 +33,9 @@ services:
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
-      - key: STRIPE_PRICE_ID
+      - key: STRIPE_PRICE_STARTER
+        sync: false
+      - key: STRIPE_PRICE_PRO
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false

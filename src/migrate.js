@@ -99,7 +99,12 @@ CREATE TABLE IF NOT EXISTS email_log (
 );
 `;
 
-async function migrate() { await pool.query(SCHEMA); }
+// Changes added after launch (each is safe to run again).
+const UPGRADES = `
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan_tier TEXT NOT NULL DEFAULT 'starter';
+`;
+
+async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }
 
 module.exports = { migrate };
 

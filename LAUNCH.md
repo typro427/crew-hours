@@ -35,17 +35,19 @@ Without this, the weekly summary, missing-hours and password-reset emails don't 
 Any email service with SMTP works (Postmark, SendGrid, Mailgun). Only the `SMTP_URL` changes.
 
 ## 4. Turn on payments (20 min, test mode first)
+Two plans: **Starter** ($14.99/month, up to 20 active crew) and **Pro** ($29.99/month, 21–50 active crew).
 1. Sign up at stripe.com and stay in **Test mode** (the toggle at top right).
-2. **Product catalog → Add product**: name it "Crew Hours", **Recurring**, **Monthly**, at your price (e.g. $29). Save, then copy the **Price ID** (starts with `price_`).
-3. **Developers → API keys**: copy the **Secret key** (starts with `sk_test_`).
-4. **Developers → Webhooks → Add endpoint**:
+2. **Product catalog → Add product**: name it "Crew Hours Starter", **Recurring**, **Monthly**, $14.99. Save, then copy its **Price ID** (`price_…`).
+3. Add a second product, "Crew Hours Pro", **Recurring**, **Monthly**, $29.99. Save, then copy its **Price ID**.
+4. **Developers → API keys**: copy the **Secret key** (`sk_test_…`).
+5. **Developers → Webhooks → Add endpoint**:
    - URL: `https://YOUR-APP-ADDRESS/api/stripe/webhook`
    - Events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`
-   - Save, then copy the **Signing secret** (starts with `whsec_`).
-5. **Settings → Billing → Customer portal**: turn it on, and allow cancelling and updating the card.
-6. In Render → **Environment**, set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` and `STRIPE_WEBHOOK_SECRET`. If you changed the price, set `PRICE_AMOUNT` (e.g. `$29`) so the home page matches.
-7. Test it: in your dashboard, go to **Billing → Subscribe** and pay with card **4242 4242 4242 4242** (any future date, any CVC). The status should change to **Active** within a minute.
-8. **Going live:** switch Stripe out of test mode, repeat steps 2–4 with live values, and update the three Render variables.
+   - Save, then copy the **Signing secret** (`whsec_…`).
+6. **Settings → Billing → Customer portal**: turn it on, and allow updating the payment method, viewing invoices and cancelling. Leave "switch plans" off: plan changes happen in the app, which checks the crew count first.
+7. In Render → **Environment**, set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO` and `STRIPE_WEBHOOK_SECRET`. To change the prices shown on the site, set `PRICE_STARTER` / `PRICE_PRO` (e.g. `$14.99`).
+8. Test it: in your dashboard, go to **Billing → Choose Starter** and pay with card **4242 4242 4242 4242** (any future date, any CVC). Then try **Switch to Pro**.
+9. **Going live:** switch Stripe out of test mode, repeat steps 2–5 with live values, and update the Render variables.
 
 ## 5. Your own web address (optional, 15 min)
 1. Buy a domain (Namecheap, Cloudflare, Google Domains).

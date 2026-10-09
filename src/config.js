@@ -12,11 +12,13 @@ const config = {
   isProd: env.NODE_ENV === 'production',
   trialDays: Number(env.TRIAL_DAYS || 14),
   productName: env.PRODUCT_NAME || 'Crew Hours',
-  priceAmount: env.PRICE_AMOUNT || '$29',
-  priceLabel: env.PRICE_LABEL || ((env.PRICE_AMOUNT || '$29') + '/month per company'),
+  // Two plans: Starter (up to 20 crew) and Pro (21-50 crew). Price IDs come from Stripe.
+  plans: {
+    starter: { price: env.PRICE_STARTER || '$14.99', priceId: env.STRIPE_PRICE_STARTER || env.STRIPE_PRICE_ID || '' },
+    pro:     { price: env.PRICE_PRO || '$29.99',     priceId: env.STRIPE_PRICE_PRO || '' }
+  },
   stripe: {
     secretKey: env.STRIPE_SECRET_KEY || '',
-    priceId: env.STRIPE_PRICE_ID || '',
     webhookSecret: env.STRIPE_WEBHOOK_SECRET || ''
   },
   mail: {

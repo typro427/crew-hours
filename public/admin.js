@@ -56,17 +56,40 @@
     if (!b.ok) { ban.hidden = false; ban.className = 'notice bad'; ban.appendChild(el('span', '', b.status === 'trialing' ? 'Your free trial has ended. Your crew can’t log time until you subscribe. Your data is safe.' : 'Your subscription isn’t active. Your crew can’t log time until it is. Your data is safe.')); }
     if (b.status === 'past_due') { ban.hidden = false; ban.className = 'notice bad'; ban.appendChild(el('span', '', 'Your last payment didn’t go through. Update your card to keep things running.')); }
     if (!ban.hidden) { var go = el('button', 'btn small', b.hasCustomer ? 'Billing' : 'Subscribe'); go.onclick = function () { showTab('billing'); }; ban.appendChild(go); }
-    var line = $('b-line');
-    var stat = { trialing: 'Free trial' + (b.ok ? ' · ' + b.trialDaysLeft + ' days left' : ' · ended'), active: 'Active', past_due: 'Payment problem', canceled: 'Canceled' }[b.status] || b.status;
-    line.textContent = 'Plan: ' + b.priceLabel + '. Status: ' + stat + '.';
-    $('b-sub').hidden = b.status === 'active' || b.status === 'past_due';
+    var line = $('b-line'), cur = b.plans.filter(function (p) { return p.key === b.tier; })[0];
+    var stat = { trialing: 'Free trial' + (b.ok ? ' · ' + b.trialDaysLeft + ' days left' : ' · ended'), active: (cur ? cur.name + ' plan' : 'Active'), past_due: 'Payment problem', canceled: 'Canceled' }[b.status] || b.status;
+    line.textContent = stat + '. ' + b.activeCrew + ' active crew' + (b.status === 'trialing' ? ' (up to 50 during the trial).' : ' of ' + b.crewLimit + ' allowed.');
+    var box = $('b-plans'); box.innerHTML = '';
+    var subscribed = b.hasSubscription && (b.status === 'active' || b.status === 'past_due');
+    b.plans.forEach(function (p) {
+      var isCur = subscribed && p.key === b.tier, card = el('div', 'plan' + (isCur ? ' current' : ''));
+      card.appendChild(el('h3', '', p.name));
+      var pp = el('div', 'pp', p.price); pp.appendChild(el('small', '', ' /month')); card.appendChild(pp);
+      card.appendChild(el('p', 'muted', p.key === 'starter' ? 'Up to ' + p.maxCrew + ' active crew' : '21 to ' + p.maxCrew + ' active crew'));
+      var fits = b.activeCrew <= p.maxCrew;
+      var btn = el('button', isCur ? 'btn ghost' : 'btn', isCur ? 'Your plan' : subscribed ? 'Switch to ' + p.name : 'Choose ' + p.name);
+      btn.disabled = isCur || !fits || !b.stripeReady || !p.ready;
+      if (!fits) card.appendChild(el('p', 'hint', 'You have ' + b.activeCrew + ' active crew, more than this plan covers.'));
+      else if (b.suggested === p.key && !isCur) card.appendChild(el('p', 'hint', 'Fits your crew right now.'));
+      btn.onclick = function () { choosePlan(p, subscribed, btn); };
+      card.appendChild(btn); box.appendChild(card);
+    });
     $('b-portal').hidden = !b.hasCustomer;
-    if (!b.stripeReady) { $('b-sub').disabled = true; status('b-status', 'Payments are not switched on yet (Stripe keys missing).'); }
+    if (!b.stripeReady) status('b-status', 'Payments are not switched on yet (Stripe keys missing).');
   }
-  $('b-sub').onclick = function () {
-    status('b-status', 'Opening secure checkout…');
-    api('POST', '/api/billing/checkout').then(function (r) { location.href = r.url; }).catch(function (e) { status('b-status', e.message, 'err'); });
-  };
+  var planArmed = null;
+  function choosePlan(p, subscribed, btn) {
+    if (!subscribed) {
+      status('b-status', 'Opening secure checkout…');
+      api('POST', '/api/billing/checkout', { plan: p.key }).then(function (r) { location.href = r.url; }).catch(function (e) { status('b-status', e.message, 'err'); });
+      return;
+    }
+    if (planArmed !== p.key) { planArmed = p.key; btn.textContent = 'Tap again to switch to ' + p.name + ' (' + p.price + '/mo)'; setTimeout(function () { planArmed = null; drawPlan(); }, 4000); return; }
+    planArmed = null; status('b-status', 'Switching plan…');
+    api('POST', '/api/billing/change-plan', { plan: p.key }).then(function () { return loadMe(); })
+      .then(function () { status('b-status', 'Switched to ' + p.name + '. Stripe adjusts your next bill for the rest of this month.', 'ok'); })
+      .catch(function (e) { status('b-status', e.message, 'err'); });
+  }
   $('b-portal').onclick = function () {
     status('b-status', 'Opening billing…');
     api('POST', '/api/billing/portal').then(function (r) { location.href = r.url; }).catch(function (e) { status('b-status', e.message, 'err'); });
@@ -166,7 +189,11 @@
   $('email-missing').onclick = function () { emailMe('missing'); };
 
   /* ------------------------------- crew ------------------------------- */
-  function loadCrew() { return api('GET', '/api/admin/crew').then(function (r) { crew = r.crew; drawCrew(); }); }
+  function loadCrew() { return api('GET', '/api/admin/crew').then(function (r) { crew = r.crew; showCount(r.billing); drawCrew(); }); }
+  function showCount(b) {
+    if (!b) return; me.billing = b; drawPlan();
+    $('crew-count').textContent = b.activeCrew + ' of ' + b.crewLimit + ' active' + (b.status === 'trialing' ? ' (trial)' : '');
+  }
   function drawCrew() {
     var list = $('crew-list'); list.innerHTML = '';
     if (!crew.length) { list.appendChild(el('p', 'muted', 'No one yet. Add your first crew member above.')); return; }
@@ -198,14 +225,14 @@
   }
   function updateCrew(id, body, close) {
     status('add-status', 'Saving…');
-    api('PUT', '/api/admin/crew/' + id, body).then(function (r) { crew = r.crew; if (close) editing = null; drawCrew(); status('add-status', 'Saved.', 'ok'); })
+    api('PUT', '/api/admin/crew/' + id, body).then(function (r) { crew = r.crew; showCount(r.billing); if (close) editing = null; drawCrew(); status('add-status', 'Saved.', 'ok'); })
       .catch(function (e) { status('add-status', e.message, 'err'); });
   }
   $('add-crew').onsubmit = function (e) {
     e.preventDefault();
     status('add-status', 'Adding…');
     api('POST', '/api/admin/crew', { name: $('new-name').value, pin: $('new-pin').value, manager: $('new-mgr').checked }).then(function (r) {
-      crew = r.crew; drawCrew();
+      crew = r.crew; showCount(r.billing); drawCrew();
       status('add-status', 'Added ' + $('new-name').value.trim() + ' with PIN ' + $('new-pin').value + '. Text them your crew link and their PIN.', 'ok');
       $('new-name').value = ''; $('new-pin').value = ''; $('new-mgr').checked = false; $('new-name').focus();
     }).catch(function (err) { status('add-status', err.message, 'err'); });

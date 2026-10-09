@@ -6,14 +6,29 @@ const T = require('../time');
 const V = require('../validate');
 const R = require('../reports');
 const config = require('../config');
+const P = require('../plans');
 
 const r = require('../router')();
 r.use(A.requireOwner);
 
-function billing(c) {
+const activeCount = async companyId => (await db.one('SELECT count(*)::int AS n FROM crew WHERE company_id=$1 AND active', [companyId])).n;
+
+async function billing(c) {
   const daysLeft = c.trial_ends_at ? Math.max(0, Math.ceil((new Date(c.trial_ends_at) - Date.now()) / 864e5)) : null;
+  const active = await activeCount(c.id);
+  const fits = P.planFor(active);
   return { status: c.plan_status, ok: H.planOk(c), trialEndsAt: c.trial_ends_at, trialDaysLeft: c.plan_status === 'trialing' ? daysLeft : null,
-           hasCustomer: !!c.stripe_customer_id, stripeReady: !!(config.stripe.secretKey && config.stripe.priceId), priceLabel: config.priceLabel };
+           hasCustomer: !!c.stripe_customer_id, hasSubscription: !!c.stripe_subscription_id && c.plan_status !== 'canceled',
+           stripeReady: !!config.stripe.secretKey, tier: c.plan_tier, plans: P.publicPlans(),
+           activeCrew: active, crewLimit: P.crewLimit(c), suggested: fits ? fits.key : null };
+}
+
+/** Refuses when one more active crew member would go over the plan. */
+async function checkRoom(c) {
+  const limit = P.crewLimit(c), active = await activeCount(c.id);
+  if (active < limit) return;
+  if (limit >= P.TRIAL_MAX) V.bad(`You have ${active} active crew, the most any plan allows. Turn someone off first.`);
+  V.bad(`Your ${P.PLANS[c.plan_tier].name} plan covers up to ${limit} active crew. Switch to Pro on the Billing tab to add more.`);
 }
 
 function settingsOut(c) {
@@ -25,7 +40,7 @@ function settingsOut(c) {
 
 r.get('/me', async (req, res) => res.json({
   owner: { name: req.owner.name, email: req.owner.email },
-  settings: settingsOut(req.company), billing: billing(req.company),
+  settings: settingsOut(req.company), billing: await billing(req.company),
   crewLink: `${config.appUrl}/c/${req.company.slug}`, today: H.today(req.company), productName: config.productName
 }));
 
@@ -59,7 +74,7 @@ r.put('/settings', async (req, res) => {
 /* ------------------------------- crew members ------------------------------- */
 const crewList = companyId => db.q('SELECT id, name, active, is_manager, created_at FROM crew WHERE company_id=$1 ORDER BY active DESC, lower(name)', [companyId]);
 
-r.get('/crew', async (req, res) => res.json({ crew: await crewList(req.company.id) }));
+r.get('/crew', async (req, res) => res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) }));
 
 async function pinFree(companyId, pin, exceptId) {
   const row = await db.one('SELECT id FROM crew WHERE company_id=$1 AND pin_hmac=$2', [companyId, A.pinHmac(companyId, pin)]);
@@ -70,10 +85,11 @@ r.post('/crew', async (req, res) => {
   const name = V.str(req.body.name, 'a name', 1, 60), pin = V.pin(req.body.pin);
   const count = await db.one('SELECT count(*)::int AS n FROM crew WHERE company_id=$1', [req.company.id]);
   if (count.n >= 300) V.bad('That is the most crew members one account can have.');
+  await checkRoom(req.company);
   if (!(await pinFree(req.company.id, pin))) V.bad('Someone else already uses that PIN. Pick a different one.');
   await db.q('INSERT INTO crew (company_id, name, pin_hmac, is_manager) VALUES ($1,$2,$3,$4)',
     [req.company.id, name, A.pinHmac(req.company.id, pin), !!req.body.manager]);
-  res.json({ crew: await crewList(req.company.id) });
+  res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) });
 });
 
 r.put('/crew/:id', async (req, res) => {
@@ -89,10 +105,11 @@ r.put('/crew/:id', async (req, res) => {
     pinH = A.pinHmac(req.company.id, pin);
   }
   const active = b.active !== undefined ? !!b.active : person.active;
+  if (active && !person.active) await checkRoom(req.company);
   const manager = b.manager !== undefined ? !!b.manager : person.is_manager;
   await db.q('UPDATE crew SET name=$1, pin_hmac=$2, active=$3, is_manager=$4 WHERE id=$5', [name, pinH, active, manager, id]);
   if (!active || pinH !== person.pin_hmac) await db.q('DELETE FROM crew_sessions WHERE crew_id=$1', [id]);   // sign them out
-  res.json({ crew: await crewList(req.company.id) });
+  res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) });
 });
 
 /* --------------------------------- weeks ---------------------------------- */
@@ -134,3 +151,4 @@ r.get('/export.csv', async (req, res) => {
 });
 
 module.exports = r;
+module.exports.billing = billing;

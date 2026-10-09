@@ -84,7 +84,7 @@
       <p class="hint">PINs are stored scrambled, so you can't look one up later. Write it down when you give it out, or set a new one any time.</p>
       <div class="status" id="add-status" role="status"></div>
     </form>
-    <div class="card"><h3>Crew</h3><div id="crew-list" class="crew-list"></div></div>
+    <div class="card"><div class="row" style="justify-content:space-between"><h3>Crew</h3><span class="hint" id="crew-count"></span></div><div id="crew-list" class="crew-list"></div></div>
   </section>
 
   <!-- SETTINGS -->
@@ -125,8 +125,10 @@
     <div class="card" id="billing-card">
       <h3>Subscription</h3>
       <p id="b-line"></p>
-      <div class="row"><button class="btn" id="b-sub">Subscribe</button><button class="btn ghost" id="b-portal">Manage billing &amp; invoices</button></div>
+      <div class="plans" id="b-plans"></div>
+      <div class="row"><button class="btn ghost" id="b-portal">Card, invoices &amp; cancel</button></div>
       <div class="status" id="b-status" role="status"></div>
+      <p class="hint">Plans count crew who can log in. Crew you turn off don't count, and their hours are kept.</p>
     </div>
   </section>
 </main>

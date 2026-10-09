@@ -67,7 +67,8 @@ app.get('/api/backup', async (req, res, next) => {
 
 /* ---------------------------------- pages ---------------------------------- */
 const page = f => (req, res) => res.sendFile(path.join(PUB, f));
-const landing = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace(/__PRICE__/g, config.priceAmount);
+const landing = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
+  .replace(/__PRICE_STARTER__/g, config.plans.starter.price).replace(/__PRICE_PRO__/g, config.plans.pro.price);
 app.get('/', (req, res) => res.type('html').send(landing));
 ['signup', 'login', 'forgot', 'reset', 'admin', 'terms', 'privacy'].forEach(p => app.get('/' + p, page(p + '.html')));
 

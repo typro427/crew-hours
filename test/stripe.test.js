@@ -1,6 +1,7 @@
 // Stripe webhook: a correctly signed event activates the company; a forged one is refused.
 process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
-process.env.STRIPE_PRICE_ID = 'price_dummy';
+process.env.STRIPE_PRICE_STARTER = 'price_starter';
+process.env.STRIPE_PRICE_PRO = 'price_pro';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_testsecret';
 process.env.DISABLE_SCHEDULER = '1';
 const { test, before, after } = require('node:test');
@@ -21,15 +22,16 @@ before(async () => {
 after(async () => { server.close(); await db.pool.end(); });
 
 const payload = (status) => JSON.stringify({ id: 'evt_1', object: 'event', type: 'customer.subscription.updated',
-  data: { object: { id: 'sub_9', object: 'subscription', customer: 'cus_9', status, metadata: { company_id: String(companyId) } } } });
+  data: { object: { id: 'sub_9', object: 'subscription', customer: 'cus_9', status, metadata: { company_id: String(companyId) },
+                    items: { data: [{ id: 'si_1', price: { id: 'price_pro' } }] } } } });
 
 test('signed webhook updates the plan', async () => {
   const body = payload('active');
   const sig = Stripe.webhooks.generateTestHeaderString({ payload: body, secret: 'whsec_testsecret' });
   const r = await fetch(base + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': sig }, body });
   assert.strictEqual(r.status, 200);
-  const c = await db.one('SELECT plan_status, stripe_subscription_id FROM companies WHERE id=$1', [companyId]);
-  assert.deepStrictEqual(c, { plan_status: 'active', stripe_subscription_id: 'sub_9' });
+  const c = await db.one('SELECT plan_status, stripe_subscription_id, plan_tier FROM companies WHERE id=$1', [companyId]);
+  assert.deepStrictEqual(c, { plan_status: 'active', stripe_subscription_id: 'sub_9', plan_tier: 'pro' }, 'tier comes from the Stripe price');
 });
 
 test('forged webhook is refused', async () => {
