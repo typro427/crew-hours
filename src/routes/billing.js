@@ -140,9 +140,22 @@ webhook.post('/', express.raw({ type: 'application/json' }), async (req, res) =>
   try { event = s.webhooks.constructEvent(req.body, req.get('stripe-signature'), config.stripe.webhookSecret); }
   catch (e) { return res.status(400).send('bad signature'); }
   try {
-    const o = event.data.object;
-    if (event.type === 'checkout.session.completed' && o.subscription) await applySubscription(await s.subscriptions.retrieve(o.subscription));
-    if (/^customer\.subscription\.(created|updated|deleted|resumed|paused)$/.test(event.type)) await applySubscription(o);
+    const type = String(event.type || '').replace(/^v1\./, '');
+    const isSub = /^customer\.subscription\.(created|updated|deleted|resumed|paused|trial_will_end)$/.test(type);
+    if (event.data && event.data.object) {
+      // Snapshot event: the full object is included.
+      const o = event.data.object;
+      if (type === 'checkout.session.completed' && o.subscription) await applySubscription(await s.subscriptions.retrieve(o.subscription));
+      if (isSub) await applySubscription(o);
+    } else {
+      // Thin event: only the ID of what changed, so fetch it from Stripe.
+      const id = event.related_object && event.related_object.id;
+      if (id && id.startsWith('sub_') && isSub) await applySubscription(await s.subscriptions.retrieve(id));
+      else if (id && id.startsWith('cs_') && type === 'checkout.session.completed') {
+        const cs = await s.checkout.sessions.retrieve(id);
+        if (cs.subscription) await applySubscription(await s.subscriptions.retrieve(typeof cs.subscription === 'string' ? cs.subscription : cs.subscription.id));
+      }
+    }
     res.json({ received: true });
   } catch (e) { console.error('[stripe webhook]', event && event.type, e); res.status(500).send('error: ' + (e && e.message ? e.message : String(e)).slice(0, 500)); }
 });

@@ -57,3 +57,10 @@ test('a duplicate subscription ending does not switch off the good one', async (
   const c = await db.one('SELECT plan_status, stripe_subscription_id FROM companies WHERE id=$1', [companyId]);
   assert.deepStrictEqual(c, { plan_status: 'active', stripe_subscription_id: 'sub_9' });
 });
+
+test('thin events are accepted (no data block)', async () => {
+  const body = JSON.stringify({ id: 'evt_3', object: 'v2.core.event', type: 'v1.invoice.paid', related_object: { id: 'in_1', type: 'invoice' } });
+  const sig = Stripe.webhooks.generateTestHeaderString({ payload: body, secret: 'whsec_testsecret' });
+  const r = await fetch(base + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': sig }, body });
+  assert.strictEqual(r.status, 200);
+});
