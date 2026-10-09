@@ -112,6 +112,62 @@ r.put('/crew/:id', async (req, res) => {
   res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) });
 });
 
+/* --------------------------------- import ---------------------------------- */
+// Bring in crew, settings and past hours from another system (e.g. the old Google Sheet).
+// Safe to run twice: existing crew (same name) and days already logged are left alone.
+r.post('/import', async (req, res) => {
+  const b = req.body || {}, c = req.company;
+  if (b.format !== 'crewhours-import-1') V.bad("That file isn't a Crew Hours import file.");
+  const crewIn = Array.isArray(b.crew) ? b.crew : [], entriesIn = Array.isArray(b.entries) ? b.entries : [];
+  if (crewIn.length > 300 || entriesIn.length > 20000) V.bad('That file is too big to import at once.');
+  const s = b.settings || {};
+  const result = { crewAdded: 0, crewSkipped: [], daysAdded: 0, daysSkipped: 0, problems: [] };
+  await db.tx(async t => {
+    if (s.weekStart !== undefined || s.mainLabel || s.otherOptions) {
+      const opts = Array.isArray(s.otherOptions) ? s.otherOptions.map(x => V.str(x, 'an option', 1, 60)).slice(0, 25) : c.other_options;
+      await t.q('UPDATE companies SET week_start=$1, main_label=$2, other_label=$3, other_options=$4, other_enabled=TRUE, overtime_after=$5 WHERE id=$6',
+        [s.weekStart !== undefined ? V.int(s.weekStart, 'Week start', 0, 6) : c.week_start,
+         s.mainLabel ? V.str(s.mainLabel, 'a tab name', 1, 30) : c.main_label,
+         s.otherLabel ? V.str(s.otherLabel, 'a tab name', 1, 30) : c.other_label,
+         JSON.stringify(opts), s.overtimeAfter !== undefined ? V.num(s.overtimeAfter, 'Overtime after', 0, 168) : c.overtime_after, c.id]);
+    }
+    const existing = await t.q('SELECT id, name, active FROM crew WHERE company_id=$1', [c.id]);
+    const byName = new Map(existing.map(x => [x.name.trim().toLowerCase(), x]));
+    let active = existing.filter(x => x.active).length;
+    const limit = P.crewLimit(c);
+    for (const p of crewIn) {
+      const name = V.str(p.name, 'a name', 1, 60), key = name.toLowerCase();
+      if (byName.has(key)) { result.crewSkipped.push(name + ' (already here)'); continue; }
+      const pin = V.pin(p.pin), on = p.active !== false;
+      if (await t.one('SELECT 1 FROM crew WHERE company_id=$1 AND pin_hmac=$2', [c.id, A.pinHmac(c.id, pin)])) { result.crewSkipped.push(name + ' (PIN already used)'); continue; }
+      if (on && active >= limit) V.bad(`That would be more than the ${limit} active crew your plan covers. Switch to Pro first.`);
+      const row = await t.one('INSERT INTO crew (company_id, name, pin_hmac, active, is_manager) VALUES ($1,$2,$3,$4,$5) RETURNING id, name, active',
+        [c.id, name, A.pinHmac(c.id, pin), on, !!p.manager]);
+      byName.set(key, row); if (on) active++; result.crewAdded++;
+    }
+    const mainLabel = s.mainLabel || c.main_label, otherLabel = s.otherLabel || c.other_label;
+    for (const e of entriesIn) {
+      const who = byName.get(String(e.name || '').trim().toLowerCase());
+      if (!who) { result.problems.push(`${e.name} on ${e.date}: no crew member with that name`); continue; }
+      if (!T.isDate(e.date)) { result.problems.push(`${e.name}: bad date ${e.date}`); continue; }
+      try {
+        const w = T.timeBlock({ start: e.start, end: e.end, out: e.out, back: e.back }, mainLabel) || {};
+        const o = T.timeBlock({ start: e.oStart, end: e.oEnd, out: e.oOut, back: e.oBack }, otherLabel) || {};
+        const clean = (v, n) => String(v || '').slice(0, n || 2000);
+        const ins = await t.q(`INSERT INTO entries (company_id, crew_id, day, start_t, end_t, out_t, back_t, summary, o_job, o_start, o_end, o_out, o_back, o_summary, hours, o_hours, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, COALESCE($17::timestamptz, now())) ON CONFLICT (crew_id, day) DO NOTHING RETURNING id`,
+          [c.id, who.id, e.date, w.start || '', w.end || '', w.out || '', w.back || '', clean(e.summary), clean(o.start ? e.oJob : '', 100),
+           o.start || '', o.end || '', o.out || '', o.back || '', clean(e.oSummary), w.hours || 0, o.hours || 0, e.updated || null]);
+        if (ins.length) result.daysAdded++; else result.daysSkipped++;
+      } catch (err) {
+        if (!(err instanceof T.InputError)) throw err;
+        result.problems.push(`${e.name} on ${e.date}: ${err.message}`);
+      }
+    }
+  });
+  res.json(result);
+});
+
 /* --------------------------------- weeks ---------------------------------- */
 r.get('/week', async (req, res) => res.json(await H.crewWeek(req.company, req.query.start)));
 r.post('/approve', async (req, res) => res.json(await H.setApproved(req.company, req.body.weekStart, req.body.approved, req.owner.name || req.owner.email)));

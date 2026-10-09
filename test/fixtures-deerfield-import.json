@@ -1,0 +1,135 @@
+{
+ "format": "crewhours-import-1",
+ "source": "Test copy (fake PINs)",
+ "settings": {
+  "weekStart": 4,
+  "mainLabel": "Deerfield Time",
+  "otherLabel": "Other time",
+  "otherOptions": [
+   "Water System",
+   "McCloud Venue",
+   "MtCloud Maintenance"
+  ],
+  "overtimeAfter": 40
+ },
+ "crew": [
+  {
+   "name": "James Partin",
+   "pin": "1000",
+   "active": true,
+   "manager": false
+  },
+  {
+   "name": "JT Fontana",
+   "pin": "1111",
+   "active": true,
+   "manager": false
+  },
+  {
+   "name": "Matthew Partin",
+   "pin": "1222",
+   "active": true,
+   "manager": false
+  },
+  {
+   "name": "Alan Baird",
+   "pin": "1333",
+   "active": true,
+   "manager": false
+  },
+  {
+   "name": "Tyler",
+   "pin": "1444",
+   "active": true,
+   "manager": true
+  },
+  {
+   "name": "David Evans",
+   "pin": "1555",
+   "active": true,
+   "manager": false
+  },
+  {
+   "name": "Seaierra Evans",
+   "pin": "1666",
+   "active": true,
+   "manager": false
+  },
+  {
+   "name": "Scott Fields",
+   "pin": "1777",
+   "active": true,
+   "manager": true
+  }
+ ],
+ "entries": [
+  {
+   "name": "Alan Baird",
+   "date": "2026-10-08",
+   "start": "09:00",
+   "end": "16:15",
+   "out": "",
+   "back": "",
+   "summary": "Weedeated along Deerfield way and along Skyline knoll. Weedeated around pool area. Help find water leak at pool well house and fixed.",
+   "oJob": "",
+   "oStart": "",
+   "oEnd": "",
+   "oOut": "",
+   "oBack": "",
+   "oSummary": "",
+   "updated": "2026-10-08T16:16:00-04:00",
+   "sheetHours": 7.25
+  },
+  {
+   "name": "James Partin",
+   "date": "2026-10-08",
+   "start": "08:00",
+   "end": "20:00",
+   "out": "13:00",
+   "back": "14:30",
+   "summary": "Closed the pool and mowed the pool area and the play ground and roadway up Deerfield way",
+   "oJob": "",
+   "oStart": "",
+   "oEnd": "",
+   "oOut": "",
+   "oBack": "",
+   "oSummary": "",
+   "updated": "2026-10-08T19:53:00-04:00",
+   "sheetHours": 10.5
+  },
+  {
+   "name": "Matthew Partin",
+   "date": "2026-10-08",
+   "start": "14:30",
+   "end": "20:00",
+   "out": "",
+   "back": "",
+   "summary": "Weedeated around pool and then i mowed the park and deerfield way, and then i mowed and weedeated up by the entrance, then we put the tarp on the pool and winterized the pool.",
+   "oJob": "",
+   "oStart": "",
+   "oEnd": "",
+   "oOut": "",
+   "oBack": "",
+   "oSummary": "",
+   "updated": "2026-10-08T19:54:00-04:00",
+   "sheetHours": 5.5
+  },
+  {
+   "name": "JT Fontana",
+   "date": "2026-10-08",
+   "start": "08:00",
+   "end": "20:00",
+   "out": "13:00",
+   "back": "14:30",
+   "summary": "Closed the pool and mowed the pool area and the play ground and roadway up Deerfield way mowed the front and helped Scott fines the pool",
+   "oJob": "",
+   "oStart": "",
+   "oEnd": "",
+   "oOut": "",
+   "oBack": "",
+   "oSummary": "",
+   "updated": "2026-10-08T19:52:00-04:00",
+   "sheetHours": 10.5
+  }
+ ]
+}

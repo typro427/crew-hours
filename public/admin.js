@@ -291,4 +291,22 @@
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
+
+  /* ------------------------------ import ------------------------------ */
+  if ($('imp-go')) $('imp-go').onclick = function () {
+    var f = $('imp-file').files[0];
+    if (!f) return status('imp-status', 'Pick the import file first.', 'err');
+    status('imp-status', 'Importing…');
+    f.text().then(function (txt) {
+      var data; try { data = JSON.parse(txt); } catch (e) { throw new Error("That file isn't a Crew Hours import file."); }
+      return api('POST', '/api/admin/import', data);
+    }).then(function (r) {
+      var msg = 'Done. Added ' + r.crewAdded + ' crew and ' + r.daysAdded + ' days of hours.';
+      if (r.crewSkipped.length) msg += ' Skipped: ' + r.crewSkipped.join(', ') + '.';
+      if (r.daysSkipped) msg += ' ' + r.daysSkipped + ' days were already here.';
+      if (r.problems.length) msg += ' Problems: ' + r.problems.join('; ') + '.';
+      status('imp-status', msg, r.problems.length ? 'err' : 'ok');
+      return loadMe();
+    }).catch(function (e) { status('imp-status', e.message, 'err'); });
+  };
 })();

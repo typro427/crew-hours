@@ -118,6 +118,12 @@
       </div>
       <div class="row"><button class="btn" type="submit">Save settings</button><span class="status" id="s-status" role="status"></span></div>
     </form>
+    <div class="card" id="import-card">
+      <h2>Import from another system</h2>
+      <p class="muted">Bring in crew, PINs and past hours from a Crew Hours import file. Safe to run twice: people and days already here are left alone.</p>
+      <div class="row"><input type="file" id="imp-file" accept=".json,application/json"><button class="btn" id="imp-go" type="button">Import</button></div>
+      <span class="status" id="imp-status" role="status"></span>
+    </div>
   </section>
 
   <!-- BILLING -->
