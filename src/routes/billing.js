@@ -9,7 +9,8 @@ const V = require('../validate');
 let stripe = null;
 const getStripe = () => {
   if (!config.stripe.secretKey) return null;
-  if (!stripe) stripe = require('stripe')(config.stripe.secretKey);
+  // Managed Payments (Stripe handles sales tax) needs API version 2025-03-31.basil or newer.
+  if (!stripe) stripe = require('stripe')(config.stripe.secretKey, { apiVersion: process.env.STRIPE_API_VERSION || '2025-03-31.basil' });
   return stripe;
 };
 
