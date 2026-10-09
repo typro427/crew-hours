@@ -3,7 +3,8 @@ const env = process.env;
 
 const config = {
   port: Number(env.PORT || 3000),
-  appUrl: (env.APP_URL || 'http://localhost:3000').replace(/\/$/, ''),
+  // Your public address. On Render, RENDER_EXTERNAL_URL is filled in automatically if APP_URL is left blank.
+  appUrl: (env.APP_URL || env.RENDER_EXTERNAL_URL || 'http://localhost:3000').replace(/\/$/, ''),
   databaseUrl: env.DATABASE_URL || 'postgres://postgres@localhost:5432/crewhours',
   databaseSsl: env.DATABASE_SSL === 'false' ? false : /render\.com|amazonaws|supabase|neon/.test(env.DATABASE_URL || ''),
   // Long random string. Used to sign PINs and session tokens. Never change it once you have customers.
