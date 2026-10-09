@@ -4,7 +4,7 @@ services:
   - type: web
     name: crew-hours
     runtime: node
-    plan: starter
+    plan: free          # testing. Switch to starter (and the database to a paid plan) before real customers.
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
@@ -39,3 +39,4 @@ services:
 databases:
   - name: crew-hours-db
     databaseName: crewhours
+    plan: free            # free databases expire after a while on Render. Upgrade before real customers.
