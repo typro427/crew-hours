@@ -124,7 +124,7 @@ webhook.post('/', express.raw({ type: 'application/json' }), async (req, res) =>
     if (event.type === 'checkout.session.completed' && o.subscription) await applySubscription(await s.subscriptions.retrieve(o.subscription));
     if (/^customer\.subscription\.(created|updated|deleted|resumed|paused)$/.test(event.type)) await applySubscription(o);
     res.json({ received: true });
-  } catch (e) { console.error('[stripe webhook]', e); res.status(500).send('error'); }
+  } catch (e) { console.error('[stripe webhook]', event && event.type, e); res.status(500).send('error: ' + (e && e.message ? e.message : String(e)).slice(0, 500)); }
 });
 
 module.exports = { router: r, webhook, mapStatus, applySubscription, syncFromStripe };
