@@ -1,0 +1,77 @@
+// Stripe: start a subscription (Checkout), manage it (Customer Portal), and listen for changes (webhook).
+const express = require('express');
+const db = require('../db');
+const A = require('../auth');
+const config = require('../config');
+
+let stripe = null;
+const getStripe = () => {
+  if (!config.stripe.secretKey) return null;
+  if (!stripe) stripe = require('stripe')(config.stripe.secretKey);
+  return stripe;
+};
+
+const r = require('../router')();
+
+/** Stripe's subscription status -> ours. */
+function mapStatus(s) {
+  if (s === 'active' || s === 'trialing') return 'active';
+  if (s === 'past_due' || s === 'unpaid' || s === 'incomplete') return 'past_due';
+  return 'canceled';
+}
+
+r.post('/checkout', A.requireOwner, async (req, res) => {
+  const s = getStripe();
+  if (!s || !config.stripe.priceId) return res.status(503).json({ error: 'Payments are not set up yet.' });
+  const c = req.company;
+  let customer = c.stripe_customer_id;
+  if (!customer) {
+    const cu = await s.customers.create({ email: req.owner.email, name: c.name, metadata: { company_id: String(c.id) } });
+    customer = cu.id;
+    await db.q('UPDATE companies SET stripe_customer_id=$1 WHERE id=$2', [customer, c.id]);
+  }
+  // Keep whatever is left of the free trial: billing starts when the trial would have ended.
+  const trialEnd = c.plan_status === 'trialing' && c.trial_ends_at ? Math.floor(new Date(c.trial_ends_at) / 1000) : null;
+  const session = await s.checkout.sessions.create({
+    mode: 'subscription', customer,
+    line_items: [{ price: config.stripe.priceId, quantity: 1 }],
+    subscription_data: { metadata: { company_id: String(c.id) }, ...(trialEnd && trialEnd > Date.now() / 1000 + 172800 ? { trial_end: trialEnd } : {}) },
+    metadata: { company_id: String(c.id) },
+    allow_promotion_codes: true,
+    success_url: `${config.appUrl}/admin#billing-done`,
+    cancel_url: `${config.appUrl}/admin#billing`
+  });
+  res.json({ url: session.url });
+});
+
+r.post('/portal', A.requireOwner, async (req, res) => {
+  const s = getStripe();
+  if (!s || !req.company.stripe_customer_id) return res.status(400).json({ error: 'There is no subscription to manage yet.' });
+  const session = await s.billingPortal.sessions.create({ customer: req.company.stripe_customer_id, return_url: `${config.appUrl}/admin#billing` });
+  res.json({ url: session.url });
+});
+
+async function applySubscription(sub) {
+  const companyId = Number(sub.metadata && sub.metadata.company_id) || null;
+  const status = mapStatus(sub.status);
+  if (companyId) await db.q('UPDATE companies SET plan_status=$1, stripe_subscription_id=$2, stripe_customer_id=COALESCE(stripe_customer_id,$3) WHERE id=$4', [status, sub.id, sub.customer, companyId]);
+  else await db.q('UPDATE companies SET plan_status=$1, stripe_subscription_id=$2 WHERE stripe_customer_id=$3', [status, sub.id, sub.customer]);
+}
+
+/** Mounted separately with a raw body, because Stripe signs the exact bytes. */
+const webhook = express.Router();
+webhook.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
+  const s = getStripe();
+  if (!s || !config.stripe.webhookSecret) return res.status(503).send('not configured');
+  let event;
+  try { event = s.webhooks.constructEvent(req.body, req.get('stripe-signature'), config.stripe.webhookSecret); }
+  catch (e) { return res.status(400).send('bad signature'); }
+  try {
+    const o = event.data.object;
+    if (event.type === 'checkout.session.completed' && o.subscription) await applySubscription(await s.subscriptions.retrieve(o.subscription));
+    if (/^customer\.subscription\.(created|updated|deleted|resumed|paused)$/.test(event.type)) await applySubscription(o);
+    res.json({ received: true });
+  } catch (e) { console.error('[stripe webhook]', e); res.status(500).send('error'); }
+});
+
+module.exports = { router: r, webhook, mapStatus, applySubscription };

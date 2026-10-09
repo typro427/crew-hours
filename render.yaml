@@ -1,0 +1,41 @@
+# Render Blueprint: Render > New > Blueprint > pick this repo. It creates the app and the database together.
+# If Render rejects a field here, use the manual steps in LAUNCH.md instead; everything below can be set by hand.
+services:
+  - type: web
+    name: crew-hours
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crew-hours-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: BACKUP_TOKEN
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: PRICE_AMOUNT
+        value: "$29"
+      - key: TRIAL_DAYS
+        value: "14"
+      - key: MAIL_FROM
+        sync: false
+      - key: SMTP_URL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+databases:
+  - name: crew-hours-db
+    databaseName: crewhours

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard · Crew Hours</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="logo" href="/admin"><span>Crew</span>Hours</a>
+    <div class="who"><b id="co-name"></b><span class="muted" id="owner-email"></span><button class="linkish" id="logout">Log out</button></div>
+  </div>
+  <nav class="wrap tabs" role="tablist">
+    <button role="tab" data-tab="week" aria-selected="true">Crew week</button>
+    <button role="tab" data-tab="crew" aria-selected="false">Crew &amp; PINs</button>
+    <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+    <button role="tab" data-tab="billing" aria-selected="false">Billing</button>
+  </nav>
+</header>
+
+<main class="wrap main">
+  <div class="notice" id="plan-banner" hidden></div>
+
+  <section class="card" id="welcome" hidden>
+    <h2>Welcome! Three steps and your crew is logging time</h2>
+    <ol class="steps">
+      <li><b>Add your crew</b> and give each person a 4-digit PIN. <button class="linkish" data-goto="crew">Add crew</button></li>
+      <li><b>Text them your crew link</b> (below). They open it, type their PIN, and add it to their home screen.</li>
+      <li><b>Check your settings:</b> week start day, the names of the two time tabs, the job list. <button class="linkish" data-goto="settings">Open settings</button></li>
+    </ol>
+    <div><button class="btn ghost small" id="welcome-done">Got it</button></div>
+  </section>
+
+  <section class="linkbox">
+    <div class="lb-text"><span class="hint">Your crew link: text this to your crew</span><code id="crew-link"></code></div>
+    <div class="row"><button class="btn small" id="copy-link">Copy link</button><a class="btn ghost small" id="open-link" target="_blank" rel="noopener">Open</a></div>
+  </section>
+
+  <!-- WEEK -->
+  <section data-panel="week" class="panel">
+    <div class="weekbar">
+      <button class="navbtn" id="wk-prev" aria-label="Previous week">‹</button>
+      <div class="wk-mid"><h2 id="wk-label"></h2><div class="hint" id="wk-sub"></div></div>
+      <button class="navbtn" id="wk-next" aria-label="Next week">›</button>
+    </div>
+    <div class="approve">
+      <div><span class="pill open" id="appr-pill">Not approved</span> <span class="hint" id="appr-note">Crew can still change these days.</span></div>
+      <button class="btn" id="appr-btn">Approve week</button>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="k">Crew hours</div><div class="v" id="t-hours">0.00</div></div>
+      <div class="tile"><div class="k">Logged time</div><div class="v" id="t-people">0</div></div>
+      <div class="tile"><div class="k">Overtime</div><div class="v" id="t-ot">0</div></div>
+      <div class="tile"><div class="k">Still on the clock</div><div class="v" id="t-open">0</div></div>
+    </div>
+    <div class="tablebox"><table>
+      <thead><tr id="w-head"></tr></thead><tbody id="w-body"></tbody><tfoot><tr id="w-foot"></tr></tfoot>
+    </table></div>
+    <p class="hint" id="w-empty" hidden>No crew yet. Add people on the Crew &amp; PINs tab.</p>
+    <div class="card" id="w-detail" hidden></div>
+    <div class="row">
+      <a class="btn ghost small" id="csv">Download this week (CSV)</a>
+      <button class="btn ghost small" id="email-week">Email me this week</button>
+      <button class="btn ghost small" id="email-missing">Email me who's missing hours</button>
+    </div>
+    <div class="status" id="w-status" role="status"></div>
+  </section>
+
+  <!-- CREW -->
+  <section data-panel="crew" class="panel" hidden>
+    <form class="card" id="add-crew" novalidate>
+      <h3>Add a crew member</h3>
+      <div class="add-grid">
+        <div><label for="new-name">Name</label><input id="new-name" maxlength="60" autocomplete="off"></div>
+        <div><label for="new-pin">4-digit PIN</label><input id="new-pin" inputmode="numeric" maxlength="4" pattern="\d{4}" autocomplete="off"></div>
+        <div class="add-mgr"><label class="check"><input type="checkbox" id="new-mgr"> Manager <span class="hint">(sees everyone in the app)</span></label></div>
+        <div><button class="btn" type="submit">Add</button></div>
+      </div>
+      <p class="hint">PINs are stored scrambled, so you can't look one up later. Write it down when you give it out, or set a new one any time.</p>
+      <div class="status" id="add-status" role="status"></div>
+    </form>
+    <div class="card"><h3>Crew</h3><div id="crew-list" class="crew-list"></div></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section data-panel="settings" class="panel" hidden>
+    <form class="card" id="settings" novalidate>
+      <h3>Company</h3>
+      <div class="grid2">
+        <div><label for="s-name">Company name</label><input id="s-name" maxlength="80"></div>
+        <div><label for="s-tz">Time zone</label><select id="s-tz"></select></div>
+      </div>
+      <h3>Work week</h3>
+      <div class="grid2">
+        <div><label for="s-week">Week starts on</label><select id="s-week"></select></div>
+        <div><label for="s-ot">Overtime after (hours per week)</label><input id="s-ot" type="number" min="0" max="168" step="0.5"></div>
+        <div><label for="s-back">Crew can fix days up to this many days back</label><input id="s-back" type="number" min="0" max="60"></div>
+        <div><label>Workdays <span class="hint">(for the missing-hours email)</span></label><div class="days" id="s-days"></div></div>
+      </div>
+      <h3>Time tabs in the crew app</h3>
+      <div class="grid2">
+        <div><label for="s-main">Main tab name</label><input id="s-main" maxlength="30" placeholder="e.g. Site time"></div>
+        <div><label class="check" style="margin-top:30px"><input type="checkbox" id="s-other-on"> Show a second tab</label></div>
+        <div><label for="s-other">Second tab name</label><input id="s-other" maxlength="30" placeholder="e.g. Other time"></div>
+        <div><label for="s-opts">Second tab choices <span class="hint">one per line</span></label><textarea id="s-opts" rows="4" placeholder="Shop time&#10;Drive time"></textarea></div>
+      </div>
+      <h3>Emails</h3>
+      <div class="grid2">
+        <div><label for="s-emails">Send reports to <span class="hint">blank = your login email</span></label><input id="s-emails" placeholder="you@company.com, office@company.com"></div>
+        <div></div>
+        <div><label for="s-sum">Weekly summary: first day of the week, at</label><select id="s-sum"></select></div>
+        <div><label for="s-miss">Missing-hours reminder: last day of the week, at</label><select id="s-miss"></select></div>
+      </div>
+      <div class="row"><button class="btn" type="submit">Save settings</button><span class="status" id="s-status" role="status"></span></div>
+    </form>
+  </section>
+
+  <!-- BILLING -->
+  <section data-panel="billing" class="panel" hidden>
+    <div class="card" id="billing-card">
+      <h3>Subscription</h3>
+      <p id="b-line"></p>
+      <div class="row"><button class="btn" id="b-sub">Subscribe</button><button class="btn ghost" id="b-portal">Manage billing &amp; invoices</button></div>
+      <div class="status" id="b-status" role="status"></div>
+    </div>
+  </section>
+</main>
+<script src="/admin.js"></script>
+</body>
+</html>

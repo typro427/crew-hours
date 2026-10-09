@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/app.css">
+<title>Reset password · Crew Hours</title></head>
+<body><main class="narrow">
+  <a class="logo" href="/"><span>Crew</span>Hours</a>
+  <form class="card" style="margin-top:24px" data-endpoint="/api/forgot" data-done="If that email has an account, a reset link is on its way. Check your inbox." novalidate>
+    <div><h2>Forgot your password?</h2><p class="muted" style="margin-top:6px">We'll email you a link to choose a new one.</p></div>
+    <div><label for="email">Email</label><input id="email" name="email" type="email" required autocomplete="email"></div>
+    <button class="btn" type="submit">Email me a reset link</button>
+    <div class="status" role="status"></div>
+    <p class="muted"><a href="/login">Back to log in</a></p>
+  </form>
+</main><script src="/site.js"></script></body></html>

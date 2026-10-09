@@ -1,0 +1,46 @@
+.top{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.top-in{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-block:12px;flex-wrap:wrap}
+.who{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;font-size:.95rem}
+.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:0}
+.tabs button{font:600 .95rem var(--f-body);background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);padding:10px 12px;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.main{display:flex;flex-direction:column;gap:18px;padding-block:22px 48px}
+.panel{display:flex;flex-direction:column;gap:16px}
+.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+.linkbox{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:12px 16px}
+.lb-text{display:flex;flex-direction:column;min-width:0}
+.lb-text code{font:500 .95rem var(--f-num);overflow-wrap:anywhere}
+.weekbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.wk-mid{text-align:center}
+.navbtn{font:600 1.1rem var(--f-body);width:42px;height:42px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;flex:none}
+.navbtn:disabled{opacity:.35;cursor:default}
+.approve{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:640px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .k{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.tile .v{font:500 1.45rem var(--f-num)}
+.tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-variant-numeric:tabular-nums}
+th,td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font:600 .74rem var(--f-body);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+th:first-child,td:first-child{text-align:left;padding-left:14px}
+td.n{font:500 .9rem var(--f-num)} td.z{color:var(--line)} td.t{font-weight:700}
+td.on{color:var(--ok);font:700 .72rem var(--f-body);text-transform:uppercase;letter-spacing:.04em}
+tr.person{cursor:pointer} tr.person:hover td{background:var(--bg)} tr.person.sel td{background:var(--sunk);font-weight:700}
+tfoot td{font-weight:700;border-bottom:0}
+#w-detail .d{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:10px}
+#w-detail .d .k{font-weight:700} #w-detail .l .m{color:var(--muted)}
+.add-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto auto;gap:12px;align-items:end}
+@media (max-width:720px){.add-grid{grid-template-columns:1fr 1fr}.add-mgr{grid-column:1/-1}}
+.add-mgr{padding-bottom:10px}
+.crew-list{display:flex;flex-direction:column}
+.crow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.crow:first-child{border-top:0}
+.crow .nm{font-weight:600}
+.crow.inactive .nm{color:var(--muted);text-decoration:line-through}
+.crow .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.crow .edit{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto auto;gap:10px;align-items:end;background:var(--bg);border-radius:10px;padding:12px}
+@media (max-width:720px){.crow .edit{grid-template-columns:1fr 1fr}}
+.days{display:flex;gap:6px;flex-wrap:wrap}
+.days label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:0;font-weight:500;cursor:pointer}

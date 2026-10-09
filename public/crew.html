@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__COMPANY__ · Crew Hours</title>
+<meta name="theme-color" content="#e3a008">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Crew Hours">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/crew.css">
+</head>
+<body data-slug="__SLUG__">
+<div class="wrap">
+  <header>
+    <div><h1><span>Crew</span>Hours</h1><div class="co">__COMPANY__</div></div>
+    <div class="who" id="who" hidden><span id="who-name"></span> · <button id="logout">Not you?</button></div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" hidden>
+    <button role="tab" id="tab-mine" aria-selected="true">My hours</button>
+    <button role="tab" id="tab-crew" aria-selected="false">Crew week</button>
+  </nav>
+
+  <!-- PIN screen -->
+  <section class="card" id="pin-screen">
+    <h2>Enter your PIN</h2>
+    <p class="muted" style="margin:0">Your 4-digit number from the boss.</p>
+    <noscript><p class="status err">Turn on JavaScript to use this app.</p></noscript>
+    <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+    <div class="status" id="pin-status" role="status" style="text-align:center"></div>
+    <div class="pad" id="pad">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button class="fn" data-k="clear">Clear</button><button data-k="0">0</button><button class="fn" data-k="back">⌫</button>
+    </div>
+  </section>
+
+  <!-- Log screen -->
+  <section id="log-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="weekbar">
+      <button class="navbtn" id="wk-prev" aria-label="Previous week">‹</button>
+      <div><div class="label" id="wk-label"></div><div class="sub" id="wk-sub"></div></div>
+      <button class="navbtn" id="wk-next" aria-label="Next week">›</button>
+    </div>
+    <div class="strip" id="strip"></div>
+    <div class="card">
+      <h2 id="day-title"></h2>
+      <div class="lock" id="lock-note" hidden><b>This week is approved.</b> These days are locked. Ask the boss if something needs fixing.</div>
+      <div class="seg" role="tablist" id="seg">
+        <button role="tab" id="seg-work" aria-selected="true" aria-controls="panel-work"><span id="lbl-main">Work time</span> <span class="h" id="seg-work-h"></span></button>
+        <button role="tab" id="seg-other" aria-selected="false" aria-controls="panel-other"><span id="lbl-other">Other time</span> <span class="h" id="seg-other-h"></span></button>
+      </div>
+      <div class="panel" id="panel-work" role="tabpanel">
+        <div class="times">
+          <div><label for="start-in">Start time</label><input id="start-in" type="time" step="300"></div>
+          <div><label for="end-in">End time</label><input id="end-in" type="time" step="300"></div>
+        </div>
+        <p class="hint tnote">Still working? Leave End time blank and save. Add it when you finish.</p>
+        <button type="button" class="linkbtn" id="break-add">+ Left during the day? Add clocked out / back in</button>
+        <div class="break" id="break-box" hidden>
+          <div class="head"><span>Time away is taken out of your hours</span><button type="button" id="break-remove">Remove</button></div>
+          <div class="times">
+            <div><label for="out-in">Clocked out</label><input id="out-in" type="time" step="300"></div>
+            <div><label for="back-in">Clocked back in</label><input id="back-in" type="time" step="300"></div>
+          </div>
+        </div>
+        <div>
+          <label for="summary-in">What you did <span class="hint">job, tasks, anything the boss should know</span></label>
+          <textarea id="summary-in" maxlength="2000" placeholder="e.g. Oak St. remodel: framed 2nd floor walls, hung 3 doors"></textarea>
+        </div>
+      </div>
+      <div class="panel" id="panel-other" role="tabpanel" hidden>
+        <div>
+          <label for="ojob-in">What it was for</label>
+          <select id="ojob-in"><option value="">Choose one…</option></select>
+        </div>
+        <div class="times">
+          <div><label for="ostart-in">Start time</label><input id="ostart-in" type="time" step="300"></div>
+          <div><label for="oend-in">End time</label><input id="oend-in" type="time" step="300"></div>
+        </div>
+        <p class="hint tnote">Still working? Leave End time blank and save. Add it when you finish.</p>
+        <button type="button" class="linkbtn" id="obreak-add">+ Left during the day? Add clocked out / back in</button>
+        <div class="break" id="obreak-box" hidden>
+          <div class="head"><span>Time away is taken out of your hours</span><button type="button" id="obreak-remove">Remove</button></div>
+          <div class="times">
+            <div><label for="oout-in">Clocked out</label><input id="oout-in" type="time" step="300"></div>
+            <div><label for="oback-in">Clocked back in</label><input id="oback-in" type="time" step="300"></div>
+          </div>
+        </div>
+        <div>
+          <label for="osummary-in">Notes <span class="hint">optional</span></label>
+          <textarea id="osummary-in" maxlength="2000" placeholder="e.g. Picked up materials, shop cleanup, drive time"></textarea>
+        </div>
+      </div>
+      <div class="calc"><span class="muted">Day total</span><b id="hours-out">–</b></div>
+      <div class="row">
+        <button class="primary" id="save">Save day</button>
+        <button class="ghost" id="clear" hidden>Clear day</button>
+      </div>
+      <div class="status" id="save-status" role="status"></div>
+      <div class="total"><span class="muted">Your total this week</span><b id="my-total">0.00 h</b></div>
+    </div>
+  </section>
+
+  <!-- Boss: crew week -->
+  <section id="crew-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="weekbar">
+      <button class="navbtn" id="cw-prev" aria-label="Previous week">‹</button>
+      <div><div class="label" id="cw-label"></div><div class="sub" id="cw-sub"></div></div>
+      <button class="navbtn" id="cw-next" aria-label="Next week">›</button>
+    </div>
+    <div class="approve">
+      <div><span class="pill open" id="cw-state">Not approved</span> <span class="hint" id="cw-state-note">Crew can still change these days.</span></div>
+      <button class="primary" id="cw-approve">Approve week</button>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="k">Crew hours</div><div class="v" id="cw-hours">0.00</div></div>
+      <div class="tile"><div class="k">Logged</div><div class="v" id="cw-people">0</div></div>
+      <div class="tile"><div class="k">Over 40 h</div><div class="v" id="cw-ot">0</div></div>
+    </div>
+    <div class="tablebox">
+      <table>
+        <thead><tr id="cw-head"></tr></thead>
+        <tbody id="cw-body"></tbody>
+        <tfoot><tr id="cw-foot"></tr></tfoot>
+      </table>
+    </div>
+    <div class="card" id="cw-detail" hidden></div>
+    <div class="status" id="cw-status" role="status"></div>
+    <p class="hint" style="margin:0" id="cw-hint">Tap a name to see what they did each day.</p>
+  </section>
+</div>
+
+<script src="/crew.js"></script>
+</body>
+</html>

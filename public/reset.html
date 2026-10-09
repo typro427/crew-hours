@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/app.css">
+<title>Choose a new password · Crew Hours</title></head>
+<body><main class="narrow">
+  <a class="logo" href="/"><span>Crew</span>Hours</a>
+  <form class="card" style="margin-top:24px" data-endpoint="/api/reset" data-next="/admin" novalidate>
+    <h2>Choose a new password</h2>
+    <div><label for="password">New password <span class="hint">at least 8 characters</span></label><input id="password" name="password" type="password" required minlength="8" autocomplete="new-password"></div>
+    <input type="hidden" name="token" id="token">
+    <button class="btn" type="submit">Save new password</button>
+    <div class="status" role="status"></div>
+  </form>
+</main><script src="/site.js"></script></body></html>
