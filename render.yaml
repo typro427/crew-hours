@@ -43,4 +43,4 @@ services:
 databases:
   - name: crew-hours-db
     databaseName: crewhours
-    plan: free            # free databases expire after a while on Render. Upgrade before real customers.
+    plan: basic-256mb     # paid: free databases expire. Includes daily backups.
