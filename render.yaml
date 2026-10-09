@@ -4,7 +4,7 @@ services:
   - type: web
     name: crew-hours
     runtime: node
-    plan: free          # testing. Switch to starter (and the database to a paid plan) before real customers.
+    plan: starter       # paid: free instances sleep and can't send email
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
