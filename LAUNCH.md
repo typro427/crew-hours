@@ -22,17 +22,20 @@ You'll create 4 accounts: **GitHub** (stores the code), **Render** (runs the app
 
 `SESSION_SECRET` and `BACKUP_TOKEN` are filled in automatically. **Never change SESSION_SECRET after you have customers:** every crew PIN would stop working.
 
-## 3. Turn on email (15 min)
+## 3. Turn on email (10 min)
 Without this, the weekly summary, missing-hours and password-reset emails don't send.
-1. Sign up at resend.com and add your domain under **Domains**. Follow its DNS steps (it walks you through them).
-   - No domain yet? Buy one first (step 5), or use Resend's test sender while you try things out.
-2. Create an **API key**.
-3. In Render → **Environment**, set:
-   - `SMTP_URL` = `smtp://resend:YOUR_API_KEY@smtp.resend.com:587`
-   - `MAIL_FROM` = `Crew Hours <hours@yourdomain.com>`
-4. Test it: in your dashboard, click **Email me this week**.
 
-Any email service with SMTP works (Postmark, SendGrid, Mailgun). Only the `SMTP_URL` changes.
+**Important:** Render's **free** plan blocks apps from sending email. Switch the web service to **Starter** first: Render → crew-hours → **Upgrade your instance**. If you don't, the emails fail with "Couldn't reach the email server".
+
+**Using Gmail (mycrewhours@gmail.com):**
+1. Sign in to the Gmail account, go to **myaccount.google.com → Security**, and turn on **2-Step Verification**.
+2. Go to **myaccount.google.com/apppasswords**, create one called "Crew Hours", and copy the 16 letters without spaces.
+3. In Render → **Environment**, set:
+   - `SMTP_URL` = `smtps://mycrewhours%40gmail.com:THE16LETTERS@smtp.gmail.com:465` (keep `%40`; it stands for the @)
+   - `MAIL_FROM` = `Crew Hours <mycrewhours@gmail.com>`
+4. Test it: in your dashboard, click **Email me this week**. If it fails, the dashboard shows why, and so does Render → **Logs** (look for `[email] FAILED`).
+
+A free Gmail account can send about 500 emails a day. Later, switch to a sending service (Resend, Postmark) on your own domain for better delivery. Only `SMTP_URL` and `MAIL_FROM` change.
 
 ## 4. Turn on payments (20 min, test mode first)
 Two plans: **Starter** ($14.99/month, up to 20 active crew) and **Pro** ($29.99/month, 21–50 active crew).

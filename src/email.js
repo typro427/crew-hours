@@ -2,8 +2,17 @@ const nodemailer = require('nodemailer');
 const config = require('./config');
 
 let transport = null;
+/** SMTP connection from SMTP_URL, with short timeouts so a blocked or wrong server fails fast instead of hanging. */
 function getTransport() {
-  if (!transport && !config.mail.logOnly) transport = nodemailer.createTransport(config.mail.smtpUrl);
+  if (!transport && !config.mail.logOnly) {
+    const u = new URL(config.mail.smtpUrl);
+    const port = Number(u.port) || (u.protocol === 'smtps:' ? 465 : 587);
+    transport = nodemailer.createTransport({
+      host: u.hostname, port, secure: u.protocol === 'smtps:' || port === 465,
+      auth: u.username ? { user: decodeURIComponent(u.username), pass: decodeURIComponent(u.password) } : undefined,
+      connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000
+    });
+  }
   return transport;
 }
 
@@ -16,7 +25,18 @@ async function send({ to, subject, html, text }) {
     send.outbox.push({ to: list, subject, html, text });
     return { logged: true };
   }
-  return getTransport().sendMail({ from: config.mail.from, to: list.join(','), subject, html, text });
+  try {
+    const info = await getTransport().sendMail({ from: config.mail.from, to: list.join(','), subject, html, text });
+    console.log(`[email] sent "${subject}" to ${list.length} recipient(s)`);
+    return info;
+  } catch (e) {
+    console.error(`[email] FAILED "${subject}": ${e.code || ''} ${e.message}`);
+    const err = new Error(e.code === 'ETIMEDOUT' || e.code === 'ECONNECTION' || /timeout/i.test(e.message)
+      ? "Couldn't reach the email server. If you're on Render's free plan, it blocks sending email. See LAUNCH.md step 3."
+      : e.code === 'EAUTH' ? 'The email server rejected the login. Check the app password in SMTP_URL.' : 'Sending the email failed: ' + e.message);
+    err.expose = true;
+    throw err;
+  }
 }
 send.outbox = [];   // used by tests and development
 

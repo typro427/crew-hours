@@ -62,8 +62,8 @@ r.post('/forgot', async (req, res) => {
     const token = A.newToken();
     await db.q("INSERT INTO password_resets (token_hash, owner_id, expires_at) VALUES ($1,$2, now() + interval '1 hour')", [A.sha(token), o.id]);
     const link = `${config.appUrl}/reset#${token}`;
-    await send({ to: email, subject: `Reset your ${config.productName} password`,
-      html: layout('Reset your password', `<p>Hi ${esc(o.name)}, use this link to choose a new password. It works for 1 hour.</p><p><a href="${link}">Choose a new password</a></p><p style="color:#777">If you didn't ask for this, ignore this email.</p>`) });
+    send({ to: email, subject: `Reset your ${config.productName} password`,
+      html: layout('Reset your password', `<p>Hi ${esc(o.name)}, use this link to choose a new password. It works for 1 hour.</p><p><a href="${link}">Choose a new password</a></p><p style="color:#777">If you didn't ask for this, ignore this email.</p>`) }).catch(() => {});   // logged in email.js
   }
   res.json({ ok: true });   // same answer either way, so nobody can test which emails exist
 });

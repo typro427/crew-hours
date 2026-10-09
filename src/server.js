@@ -106,6 +106,7 @@ app.use((req, res) => res.status(404).sendFile(path.join(PUB, '404.html')));
 app.use((err, req, res, next) => {
   if (err instanceof T.InputError) return res.status(400).json({ error: err.message });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Bad request.' });
+  if (err.expose) return res.status(502).json({ error: err.message });
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on our end. Try again in a minute.' });
 });
