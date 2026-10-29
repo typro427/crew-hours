@@ -118,3 +118,24 @@ tfoot td{font-weight:700;border-bottom:0}
 /* narrower boxes inside the clocked out / back in panel: smaller type so 11:30 PM never clips */
 .break .times input{font-size:1rem;padding:10px 8px}
 @media (max-width:380px){.times input{font-size:1rem;padding:10px 8px}}
+
+/* tasks */
+.badge{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:13px;line-height:20px;text-align:center;font-weight:600}
+.tasklist{display:flex;flex-direction:column;gap:12px}
+.task{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.task.done{opacity:.85}
+.task h3{margin:0;font-family:var(--f-display);font-size:21px;letter-spacing:.2px}
+.task .meta{font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px}
+.task .meta .late{color:var(--err);font-weight:600}
+.task .meta .ok{color:var(--ok);font-weight:600}
+.task .details,.task .notes{white-space:pre-wrap;margin:0}
+.task .notes{border-left:3px solid var(--line);padding-left:10px;color:var(--muted)}
+.task textarea{width:100%;min-height:84px;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px}
+.thumbs img{width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--sunk)}
+.thumbs .x{position:relative}
+.thumbs .x button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:12px;border:0;background:var(--ink);color:var(--surface);font-size:14px;line-height:24px;padding:0;cursor:pointer}
+.photo-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border:1px dashed var(--line);border-radius:8px;cursor:pointer;color:var(--ink);background:var(--bg);font-weight:600}
+.photo-btn input{display:none}
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.viewer img{max-width:100%;max-height:100%;border-radius:6px}

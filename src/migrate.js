@@ -103,6 +103,30 @@ CREATE TABLE IF NOT EXISTS email_log (
 const UPGRADES = `
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan_tier TEXT NOT NULL DEFAULT 'starter';
 -- Old crew links keep working after a company changes its link.
+-- Tasks the boss gives the crew; the crew marks them done with notes and photos.
+CREATE TABLE IF NOT EXISTS tasks (
+  id          SERIAL PRIMARY KEY,
+  company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  details     TEXT NOT NULL DEFAULT '',
+  assigned_to INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  due         DATE,
+  status      TEXT NOT NULL DEFAULT 'open',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  done_at     TIMESTAMPTZ,
+  done_by     INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  done_notes  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS tasks_company ON tasks (company_id, status);
+CREATE TABLE IF NOT EXISTS task_photos (
+  id         SERIAL PRIMARY KEY,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  mime       TEXT NOT NULL,
+  data       BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS task_photos_task ON task_photos (task_id);
 CREATE TABLE IF NOT EXISTS slug_redirects (old_slug TEXT PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE);
 `;
 

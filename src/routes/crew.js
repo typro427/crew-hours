@@ -40,6 +40,19 @@ r.get('/:slug/week', A.requireCrew, async (req, res) => res.json(await H.myWeek(
 r.post('/:slug/day', A.requireCrew, async (req, res) => res.json(await H.saveDay(req.company, req.crew, req.body || {})));
 r.delete('/:slug/day/:date', A.requireCrew, async (req, res) => res.json(await H.clearDay(req.company, req.crew, req.params.date)));
 
+// Tasks from the boss: see them, mark them done with notes and photos.
+const K = require('../tasks');
+r.get('/:slug/tasks', A.requireCrew, async (req, res) => res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS }));
+r.post('/:slug/tasks/:id/done', A.requireCrew, async (req, res) => {
+  await K.complete(req.company, req.crew, Number(req.params.id), req.body || {});
+  res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
+});
+r.get('/:slug/tasks/photo/:id', A.requireCrew, async (req, res) => {
+  const p = await K.photo(req.company.id, Number(req.params.id));
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
+});
+
 // Crew members ticked as Manager also get the boss screen in the app.
 const manager = (req, res, next) => req.crew.is_manager ? next() : res.status(403).json({ error: 'Only managers can see the whole crew.' });
 r.get('/:slug/crew-week', A.requireCrew, manager, async (req, res) => res.json(await H.crewWeek(req.company, req.query.start)));

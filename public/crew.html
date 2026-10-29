@@ -24,7 +24,8 @@
 
   <nav class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" id="tab-mine" aria-selected="true">My hours</button>
-    <button role="tab" id="tab-crew" aria-selected="false">Crew week</button>
+    <button role="tab" id="tab-tasks" aria-selected="false">Tasks <span class="badge" id="task-count" hidden></span></button>
+    <button role="tab" id="tab-crew" aria-selected="false" hidden>Crew week</button>
   </nav>
 
   <!-- PIN screen -->
@@ -107,6 +108,13 @@
       <div class="status" id="save-status" role="status"></div>
       <div class="total"><span class="muted">Your total this week</span><b id="my-total">0.00 h</b></div>
     </div>
+  </section>
+
+  <!-- Tasks from the boss -->
+  <section id="task-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div id="task-list" class="tasklist"></div>
+    <div class="status" id="task-status" role="status"></div>
+    <p class="hint" id="task-empty" hidden style="margin:0;text-align:center">No tasks right now. The boss will add them here.</p>
   </section>
 
   <!-- Boss: crew week -->

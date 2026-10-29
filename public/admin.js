@@ -28,6 +28,7 @@
     document.querySelectorAll('.tabs button').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-tab') === name); });
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
     if (name === 'crew') loadCrew();
+    if (name === 'tasks') loadTasks();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -290,6 +291,7 @@
           .catch(function (e) { status('b-status', e.message, 'err'); });
       }
     }
+    else if (h === '#tasks') showTab('tasks');
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
@@ -310,5 +312,72 @@
       status('imp-status', msg, r.problems.length ? 'err' : 'ok');
       return loadMe();
     }).catch(function (e) { status('imp-status', e.message, 'err'); });
+  };
+
+  /* ------------------------------- tasks ------------------------------ */
+  var tasks = [], tEditing = null;
+  function loadTasks() {
+    status('t-status', '');
+    return Promise.all([api('GET', '/api/admin/tasks'), api('GET', '/api/admin/crew')]).then(function (r) {
+      tasks = r[0].tasks; crew = r[1].crew; fillWho(); drawTasks();
+    }).catch(function (e) { status('t-status', e.message, 'err'); });
+  }
+  function fillWho() {
+    var s = $('t-who'), keep = s.value; s.innerHTML = '';
+    var o = el('option', '', 'Anyone on the crew'); o.value = ''; s.appendChild(o);
+    crew.filter(function (c) { return c.active; }).forEach(function (c) { var x = el('option', '', c.name); x.value = c.id; s.appendChild(x); });
+    s.value = keep;
+  }
+  function dueText(t) {
+    if (!t.due) return null;
+    var late = t.status === 'open' && t.due < me.today;
+    return el('span', late ? 'late' : '', (late ? 'Overdue: ' : 'Due ') + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due));
+  }
+  function drawTasks() {
+    var open = $('tk-open'), done = $('tk-done'); open.innerHTML = ''; done.innerHTML = '';
+    var no = 0, nd = 0;
+    tasks.forEach(function (t) {
+      var row = el('div', 'trow'), top = el('div', 't-top'), left = el('div');
+      left.appendChild(el('b', '', t.title));
+      var meta = el('div', 't-meta');
+      meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
+      var d = dueText(t); if (d) meta.appendChild(d);
+      if (t.status === 'done') meta.appendChild(el('span', '', 'Done by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+      left.appendChild(meta); top.appendChild(left);
+      var acts = el('div', 't-acts');
+      function btn(label, fn) { var b = el('button', 'btn ghost small', label); b.type = 'button'; b.onclick = fn; acts.appendChild(b); return b; }
+      if (t.status === 'open') btn('Edit', function () { editTask(t); });
+      else btn('Reopen', function () { api('PUT', '/api/admin/tasks/' + t.id, { reopen: true }).then(function (r) { tasks = r.tasks; drawTasks(); }).catch(function (e) { status('t-status', e.message, 'err'); }); });
+      var del = btn('Delete', function () {
+        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+        api('DELETE', '/api/admin/tasks/' + t.id).then(function (r) { tasks = r.tasks; drawTasks(); }).catch(function (e) { status('t-status', e.message, 'err'); });
+      });
+      top.appendChild(acts); row.appendChild(top);
+      if (t.details) row.appendChild(el('p', 't-text', t.details));
+      if (t.status === 'done' && t.doneNotes) row.appendChild(el('p', 't-notes', t.doneNotes));
+      if (t.photos && t.photos.length) {
+        var th = el('div', 't-thumbs');
+        t.photos.forEach(function (id) { var a = el('a'); a.href = '/api/admin/tasks/photo/' + id; a.target = '_blank'; a.rel = 'noopener';
+          var i = el('img'); i.src = a.href; i.alt = 'Photo from ' + (t.doneByName || 'crew'); i.loading = 'lazy'; a.appendChild(i); th.appendChild(a); });
+        row.appendChild(th);
+      }
+      if (t.status === 'open') { open.appendChild(row); no++; } else { done.appendChild(row); nd++; }
+    });
+    $('tk-open-empty').hidden = no > 0; $('tk-done-empty').hidden = nd > 0;
+  }
+  function editTask(t) {
+    tEditing = t.id; $('t-title').value = t.title; $('t-details').value = t.details || ''; $('t-who').value = t.assignedTo || ''; $('t-due').value = t.due || '';
+    $('t-save').textContent = 'Save task'; $('t-cancel').hidden = false; $('t-title').focus();
+  }
+  function resetTaskForm() { tEditing = null; $('add-task').reset(); $('t-save').textContent = 'Add task'; $('t-cancel').hidden = true; }
+  $('t-cancel').onclick = resetTaskForm;
+  $('add-task').onsubmit = function (e) {
+    e.preventDefault();
+    var body = { title: $('t-title').value.trim(), details: $('t-details').value, assignedTo: $('t-who').value ? Number($('t-who').value) : null, due: $('t-due').value || null };
+    if (!body.title) return status('t-status', 'Give the task a name.', 'err');
+    var editing = tEditing;
+    api(editing ? 'PUT' : 'POST', '/api/admin/tasks' + (editing ? '/' + editing : ''), body).then(function (r) {
+      tasks = r.tasks; resetTaskForm(); drawTasks(); status('t-status', editing ? 'Saved.' : 'Task added. The crew will see it in their app.', 'ok');
+    }).catch(function (err) { status('t-status', err.message, 'err'); });
   };
 })();

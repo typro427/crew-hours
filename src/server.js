@@ -19,7 +19,7 @@ app.use((req, res, next) => {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Frame-Options': 'DENY',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   });
   if (config.isProd) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
@@ -34,6 +34,7 @@ app.use((req, res, next) => {
 
 app.use('/api/stripe/webhook', billing.webhook);           // raw body, before the JSON parser
 app.use('/api/admin/import', express.json({ limit: '5mb' }));
+app.use(/^\/api\/c\/[^/]+\/tasks\/\d+\/done$/, express.json({ limit: '25mb' }));   // photos
 app.use(express.json({ limit: '100kb' }));
 
 // Requests that change things must come from our own pages (blocks cross-site form tricks).
@@ -59,7 +60,8 @@ app.get('/api/backup', async (req, res, next) => {
       owners: await db.q('SELECT id, company_id, email, name, created_at FROM owners ORDER BY id'),
       crew: await db.q('SELECT id, company_id, name, active, is_manager, created_at FROM crew ORDER BY id'),
       entries: await db.q('SELECT * FROM entries ORDER BY company_id, day'),
-      approvals: await db.q('SELECT * FROM approvals ORDER BY company_id, week_start')
+      approvals: await db.q('SELECT * FROM approvals ORDER BY company_id, week_start'),
+      tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id')   // photos stay in Render's own backups
     };
     res.setHeader('Content-Disposition', `attachment; filename="crewhours-backup-${dump.exportedAt.slice(0, 10)}.json"`);
     res.json(dump);

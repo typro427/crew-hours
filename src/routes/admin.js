@@ -126,6 +126,18 @@ r.put('/crew/:id', async (req, res) => {
   res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) });
 });
 
+/* --------------------------------- tasks ----------------------------------- */
+const K = require('../tasks');
+r.get('/tasks', async (req, res) => res.json({ tasks: await K.forOwner(req.company.id) }));
+r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json({ tasks: await K.forOwner(req.company.id) }); });
+r.put('/tasks/:id', async (req, res) => { await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json({ tasks: await K.forOwner(req.company.id) }); });
+r.delete('/tasks/:id', async (req, res) => { await K.remove(req.company.id, Number(req.params.id)); res.json({ tasks: await K.forOwner(req.company.id) }); });
+r.get('/tasks/photo/:id', async (req, res) => {
+  const p = await K.photo(req.company.id, Number(req.params.id));
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
+});
+
 /* --------------------------------- import ---------------------------------- */
 // Bring in crew, settings and past hours from another system (e.g. the old Google Sheet).
 // Safe to run twice: existing crew (same name) and days already logged are left alone.

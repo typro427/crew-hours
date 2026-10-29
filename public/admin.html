@@ -17,6 +17,7 @@
   </div>
   <nav class="wrap tabs" role="tablist">
     <button role="tab" data-tab="week" aria-selected="true">Crew week</button>
+    <button role="tab" data-tab="tasks" aria-selected="false">Tasks</button>
     <button role="tab" data-tab="crew" aria-selected="false">Crew &amp; PINs</button>
     <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
     <button role="tab" data-tab="billing" aria-selected="false">Billing</button>
@@ -69,6 +70,23 @@
       <button class="btn ghost small" id="email-missing">Email me who's missing hours</button>
     </div>
     <div class="status" id="w-status" role="status"></div>
+  </section>
+
+  <!-- TASKS -->
+  <section data-panel="tasks" class="panel" hidden>
+    <form class="card" id="add-task" novalidate>
+      <h3>Give the crew a task</h3>
+      <label for="t-title">Task</label><input id="t-title" maxlength="120" placeholder="e.g. Fix the leak at the pool well house" autocomplete="off">
+      <label for="t-details">Details <span class="hint">(optional)</span></label><textarea id="t-details" maxlength="2000" rows="3" placeholder="Where, what to bring, anything they should know"></textarea>
+      <div class="grid2">
+        <div><label for="t-who">For</label><select id="t-who"></select></div>
+        <div><label for="t-due">Due <span class="hint">(optional)</span></label><input id="t-due" type="date"></div>
+      </div>
+      <div class="row"><button class="btn" type="submit" id="t-save">Add task</button><button class="btn ghost" type="button" id="t-cancel" hidden>Cancel</button><span class="status" id="t-status" role="status"></span></div>
+      <p class="hint">The crew sees it under Tasks in their app. When they finish, they add notes and photos and you get an email.</p>
+    </form>
+    <div class="card"><h3>Open</h3><div id="tk-open" class="tasks"></div><p class="hint" id="tk-open-empty">Nothing open.</p></div>
+    <div class="card"><h3>Done <span class="hint">(last 60 days)</span></h3><div id="tk-done" class="tasks"></div><p class="hint" id="tk-done-empty">Nothing finished yet.</p></div>
   </section>
 
   <!-- CREW -->

@@ -50,3 +50,18 @@ tfoot td{font-weight:700;border-bottom:0}
 .plan{border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px}
 .plan.current{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 .plan .pp{font:700 1.8rem var(--f-display)} .plan .pp small{font:600 .9rem var(--f-body);color:var(--muted)}
+
+/* tasks */
+#add-task textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);resize:vertical}
+.tasks{display:flex;flex-direction:column}
+.trow{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.trow:first-child{border-top:0}
+.trow .t-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.trow b{font-size:17px}
+.trow .t-meta{font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px}
+.trow .late{color:var(--err);font-weight:600}
+.trow .t-text{white-space:pre-wrap;margin:0}
+.trow .t-notes{white-space:pre-wrap;margin:0;border-left:3px solid var(--accent);padding-left:10px}
+.trow .t-acts{display:flex;gap:6px}
+.t-thumbs{display:flex;flex-wrap:wrap;gap:8px}
+.t-thumbs a img{width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}

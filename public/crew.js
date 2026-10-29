@@ -39,7 +39,9 @@
                        other: { start:a[5], end:a[6], summary:a[7], out:a[10], back:a[11], job:a[12] } }]; },
     clearDay:        function(a){ return ["DELETE", "/day/" + encodeURIComponent(a[1])]; },
     getCrewWeek:     function(a){ return ["GET", "/crew-week?start=" + encodeURIComponent(a[1]||"")]; },
-    setWeekApproved: function(a){ return ["POST", "/approve", { weekStart:a[1], approved:a[2] }]; }
+    setWeekApproved: function(a){ return ["POST", "/approve", { weekStart:a[1], approved:a[2] }]; },
+    getTasks:        function(){ return ["GET", "/tasks"]; },
+    doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; }
   };
   function call(fn, args, ok, fail){
     var r = ROUTES[fn](args), opts = { method: r[0], headers: { "x-ch": "1" } };
@@ -96,7 +98,7 @@
 
   function signOut(msg){
     token=null; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -105,7 +107,7 @@
   // ---- log screen ----
   function enterLog(name){
     $("who-name").textContent = name; $("who").hidden=false;
-    $("pin-screen").hidden=true; showScreen(isBoss ? "crew" : "mine");
+    $("pin-screen").hidden=true; showScreen(isBoss ? "crew" : "mine"); loadTasks(true);
     loadWeek(weekStartOf(today || new Date().toISOString().slice(0,10)), today);
   }
   function setOptions(list){
@@ -116,14 +118,18 @@
     s.value=keep;
   }
   function showScreen(which){
-    $("tabs").hidden = !isBoss;
+    $("tabs").hidden = false; $("tab-crew").hidden = !isBoss;
     $("tab-mine").setAttribute("aria-selected", which==="mine");
+    $("tab-tasks").setAttribute("aria-selected", which==="tasks");
     $("tab-crew").setAttribute("aria-selected", which==="crew");
     $("log-screen").hidden = which!=="mine";
+    $("task-screen").hidden = which!=="tasks";
     $("crew-screen").hidden = which!=="crew";
     if(which==="crew") loadCrew(crewWeek || weekStartOf(today || new Date().toISOString().slice(0,10)));
+    if(which==="tasks") loadTasks();
   }
   $("tab-mine").onclick = function(){ showScreen("mine"); if(week) loadWeek(week, sel); };
+  $("tab-tasks").onclick = function(){ showScreen("tasks"); };
   $("tab-crew").onclick = function(){ showScreen("crew"); };
   function loadWeek(ws, select){
     setStatus("save-status","Loading…");
@@ -363,6 +369,108 @@
     }, function(msg){ busy=false; setStatus("cw-status",msg,"err"); });
   };
 
+
+  // ---- tasks from the boss ----
+  var tasks=[], maxPhotos=6, openForm=null, pending={}, photoUrls={};
+  function el(tag, cls, text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  function loadTasks(quiet){
+    if(!token) return;
+    if(!quiet) setStatus("task-status", tasks.length ? "" : "Loading…");
+    call("getTasks",[], function(res){ tasks=res.tasks||[]; maxPhotos=res.maxPhotos||6; setStatus("task-status",""); drawTasks(); },
+      function(msg){ if(!quiet) setStatus("task-status",msg,"err"); });
+  }
+  function photoInto(img, id){
+    if(photoUrls[id]){ img.src=photoUrls[id]; return; }
+    fetch(API+"/tasks/photo/"+id, { headers:{ Authorization:"Bearer "+token } })
+      .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+      .then(function(b){ photoUrls[id]=URL.createObjectURL(b); img.src=photoUrls[id]; }).catch(function(){});
+  }
+  function viewer(src){
+    var v=el("div","viewer"), i=el("img"); i.src=src; i.alt="Photo"; v.appendChild(i);
+    v.onclick=function(){ document.body.removeChild(v); }; document.body.appendChild(v);
+  }
+  // Phone photos are huge: shrink to 1600 px JPEG before sending.
+  function shrink(file){
+    return new Promise(function(ok, fail){
+      var url=URL.createObjectURL(file), img=new Image();
+      img.onload=function(){
+        var s=Math.min(1, 1600/Math.max(img.width, img.height)), c=document.createElement("canvas");
+        c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+        ok(c.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror=function(){ URL.revokeObjectURL(url); fail(new Error("Couldn't read that photo. Try a different one.")); };
+      img.src=url;
+    });
+  }
+  function drawTasks(){
+    var list=$("task-list"); list.innerHTML="";
+    var open=tasks.filter(function(t){ return t.status==="open"; }).length;
+    $("task-count").hidden = !open; $("task-count").textContent = open;
+    $("task-empty").hidden = tasks.length>0;
+    tasks.forEach(function(t){
+      var done=t.status==="done", card=el("div","task"+(done?" done":""));
+      card.appendChild(el("h3","",t.title));
+      var meta=el("div","meta");
+      if(done) meta.appendChild(el("span","ok","Done ✓"+(t.doneAt ? " "+new Date(t.doneAt).toLocaleDateString([], {month:"short", day:"numeric"}) : "")));
+      else if(t.due) meta.appendChild(el("span", t.due<today ? "late" : "", (t.due<today ? "Overdue: " : "Due ")+DAYS[toUTC(t.due).getUTCDay()]+" "+short(t.due)));
+      meta.appendChild(el("span","", t.assignedTo ? "For you" : "For anyone on the crew"));
+      card.appendChild(meta);
+      if(t.details) card.appendChild(el("p","details",t.details));
+      if(done && t.doneNotes) card.appendChild(el("p","notes",t.doneNotes));
+      if(t.photos && t.photos.length){
+        var th=el("div","thumbs");
+        t.photos.forEach(function(id){ var i=el("img"); i.alt="Photo"; photoInto(i,id); i.onclick=function(){ if(i.src) viewer(i.src); }; th.appendChild(i); });
+        card.appendChild(th);
+      }
+      var room = maxPhotos - (t.photos||[]).length;
+      if(openForm===t.id) card.appendChild(doneForm(t, room));
+      else if(!done || room>0){
+        var b=el("button", done ? "ghost" : "primary", done ? "Add more photos" : "Mark done"); b.type="button";
+        b.onclick=function(){ openForm=t.id; drawTasks(); };
+        var row=el("div","row"); row.appendChild(b); card.appendChild(row);
+      }
+      list.appendChild(card);
+    });
+  }
+  function doneForm(t, room){
+    var f=el("div",""); f.style.cssText="display:flex;flex-direction:column;gap:10px";
+    var done=t.status==="done", pics=pending[t.id]=pending[t.id]||[];
+    var notes=el("textarea"); notes.placeholder= done ? "Anything to add? (optional)" : "What did you do? Anything the boss should know?";
+    notes.value = done ? (t.doneNotes||"") : (notes.value||"");
+    var lbl=el("label","", done ? "Notes" : "What you did"); f.appendChild(lbl); f.appendChild(notes);
+    var th=el("div","thumbs");
+    function drawPics(){
+      th.innerHTML="";
+      pics.forEach(function(src, i){ var x=el("div","x"), im=el("img"); im.src=src; im.alt="New photo"; var del=el("button","","×"); del.type="button"; del.setAttribute("aria-label","Remove photo");
+        del.onclick=function(){ pics.splice(i,1); drawPics(); }; x.appendChild(im); x.appendChild(del); th.appendChild(x); });
+      pick.style.display = pics.length>=room ? "none" : "";
+    }
+    var pick=el("label","photo-btn","📷 Add photos"), inp=el("input"); inp.type="file"; inp.accept="image/*"; inp.multiple=true; pick.appendChild(inp);
+    inp.onchange=function(){
+      var files=Array.prototype.slice.call(inp.files||[], 0, Math.max(0, room-pics.length)); inp.value="";
+      setStatus(sid,"Adding photos…");
+      files.reduce(function(p, file){ return p.then(function(){ return shrink(file).then(function(d){ pics.push(d); }); }); }, Promise.resolve())
+        .then(function(){ setStatus(sid,""); drawPics(); }).catch(function(e){ setStatus(sid,e.message,"err"); drawPics(); });
+    };
+    f.appendChild(th); f.appendChild(pick);
+    var sid="tstatus-"+t.id, st=el("div","status"); st.id=sid; st.setAttribute("role","status");
+    var row=el("div","row"), send=el("button","primary", done ? "Save" : "Done, send to boss"), cancel=el("button","ghost","Cancel");
+    send.type=cancel.type="button";
+    cancel.onclick=function(){ openForm=null; delete pending[t.id]; drawTasks(); };
+    send.onclick=function(){
+      if(busy) return;
+      if(!done && !notes.value.trim() && !pics.length){ setStatus(sid,"Add a few words about what you did, or a photo.","err"); return; }
+      busy=true; send.disabled=true; setStatus(sid, pics.length ? "Sending photos…" : "Saving…");
+      call("doneTask",[token, t.id, notes.value.trim(), pics], function(res){
+        busy=false; openForm=null; delete pending[t.id]; tasks=res.tasks||[]; drawTasks(); setStatus("task-status", done ? "Saved." : "Sent to the boss. Nice work.","ok");
+      }, function(msg){ busy=false; send.disabled=false; setStatus(sid,msg,"err"); });
+    };
+    row.appendChild(send); row.appendChild(cancel); f.appendChild(row); f.appendChild(st);
+    setTimeout(drawPics,0);
+    return f;
+  }
+
   // resume a session from this tab if there is one
   try { token = sessionStorage.getItem("crewToken:"+SLUG); } catch(e){}
   fetch(API + "/info").then(function(r){ return r.json(); }).then(function(r){
@@ -371,7 +479,7 @@
   if(token){
     $("pin-screen").hidden=true; $("log-screen").hidden=false;
     call("getMyWeek",[token, ""],
-      function(res){ applyWeek(res, res.today); showScreen(isBoss ? "crew" : "mine"); },
+      function(res){ applyWeek(res, res.today); showScreen(isBoss ? "crew" : "mine"); loadTasks(true); },
       function(msg){ signOut(msg); });
   }
 })();
