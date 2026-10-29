@@ -56,11 +56,24 @@ function checkEditable(company, date) {
 
 const clean = (s, max = 2000) => String(s || '').trim().slice(0, max);
 
+function autoSwitch(w, o) {
+  const str = v => (typeof v === 'string' ? v : '');
+  for (const b of [w, o]) for (const k of ['start', 'end', 'out', 'back']) b[k] = str(b[k]);
+  const later = (a, b) => a && b && T.isTime(a) && T.isTime(b) && T.span(a, b) > 0 && b > a;
+  if (w.start && !w.end && !w.out && later(w.start, o.start)) w.out = o.start;
+  if (o.start && !o.end && !o.out && later(o.start, w.start)) o.end = w.start;
+  if (o.start && !o.end && !o.out && w.out && w.back && later(o.start, w.back)) o.end = w.back;
+  if (w.start && !w.end && w.out && !w.back && o.start && o.end && w.out === o.start) { w.end = w.out; w.out = ''; }
+  if (w.start && w.end && w.back && !w.out && later(w.end, w.back)) { w.out = w.end; w.end = ''; }
+}
+
 async function saveDay(company, crew, body) {
   const date = body.date;
   checkEditable(company, date);
   if (await isApproved(company.id, weekOf(company, date)))
     throw new T.InputError('This week was approved by the boss and is locked. Ask the boss if something needs fixing.');
+  // Switching jobs: clocking in on the second tab clocks them out of the main tab, and coming back does the reverse.
+  if (company.other_enabled) autoSwitch(body.work = { ...(body.work || {}) }, body.other = { ...(body.other || {}) });
   const work = T.timeBlock(body.work || {}, company.main_label);
   const other = company.other_enabled ? T.timeBlock(body.other || {}, company.other_label) : null;
   if (!work && !other) throw new T.InputError('Enter a start time.');
@@ -119,4 +132,4 @@ async function setApproved(company, weekStart, approved, byName) {
   return crewWeek(company, ws);
 }
 
-module.exports = { publicSettings, planOk, myWeek, saveDay, clearDay, crewWeek, setApproved, weekOf, today, shape };
+module.exports = { autoSwitch, publicSettings, planOk, myWeek, saveDay, clearDay, crewWeek, setApproved, weekOf, today, shape };

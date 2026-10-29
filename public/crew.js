@@ -215,6 +215,19 @@
   $("wk-prev").onclick = function(){ loadWeek(shift(week,-7), shift(week,-1)); };
   $("wk-next").onclick = function(){ var n=shift(week,7); loadWeek(n, n); };
 
+
+  // Switching jobs: clocking in on the second tab clocks you out of the main tab, and coming back does the reverse.
+  function autoSwitch(w, o){
+    var m=function(t){ var p=t.split(":").map(Number); return p[0]*60+p[1]; }, later=function(a,b){ return a&&b&&m(b)>m(a); };
+    var notes=[];
+    if(w.s && !w.e && !w.o && later(w.s,o.s)){ w.o=o.s; notes.push("clocked you out of "+settings.mainLabel+" at "+clock(o.s)); }
+    if(o.s && !o.e && !o.o && later(o.s,w.s)){ o.e=w.s; notes.push("clocked you out of "+settings.otherLabel+" at "+clock(w.s)); }
+    if(o.s && !o.e && !o.o && w.o && w.b && later(o.s,w.b)){ o.e=w.b; notes.push("clocked you out of "+settings.otherLabel+" at "+clock(w.b)); }
+    if(w.s && !w.e && w.o && !w.b && o.s && o.e && w.o===o.s){ w.e=w.o; w.o=""; }
+    if(w.s && w.e && w.b && !w.o && later(w.e,w.b)){ w.o=w.e; w.e=""; }
+    return notes;
+  }
+
   $("save").onclick = function(){
     if(busy || locked) return;
     var start=$("start-in").value, end=$("end-in").value, summary=$("summary-in").value.trim();
@@ -223,6 +236,14 @@
     var wOpen = start && !end, oOpen = oStart && !oEnd;
     var outT=$("out-in").value, inT=$("back-in").value;
     var oJob=$("ojob-in").value, oOutT=$("oout-in").value, oInT=$("oback-in").value;
+    var W={s:start,e:end,o:outT,b:inT}, O={s:oStart,e:oEnd,o:oOutT,b:oInT};
+    var switched = settings.otherEnabled === false ? [] : autoSwitch(W,O);
+    start=W.s; end=W.e; outT=W.o; inT=W.b; oStart=O.s; oEnd=O.e; oOutT=O.o; oInT=O.b;
+    $("start-in").value=start; $("end-in").value=end; $("out-in").value=outT; $("back-in").value=inT;
+    $("ostart-in").value=oStart; $("oend-in").value=oEnd; $("oout-in").value=oOutT; $("oback-in").value=oInT;
+    if(outT||inT) showBreak(true);
+    if(oOutT||oInT) showOBreak(true);
+    hasWork = start||end; hasOther = oStart||oEnd; wOpen = start && !end; oOpen = oStart && !oEnd;
     function bad(msg, tab){ showTab(tab); setStatus("save-status",msg,"err"); }
     function breakOk(s0,e0,o0,b0){            // clocked out / back in fits inside the shift
       var m=function(t){ var p=t.split(":").map(Number); return p[0]*60+p[1]; }, rel=function(t){ return (m(t)-m(s0)+1440)%1440; };
@@ -236,7 +257,7 @@
     if(inT && !outT) return bad("Enter the clocked out time first.","work");
     if(outT && !inT && !wOpen) return bad("Enter the clocked back in time too (or clear the end time if you're still out).","work");
     if(outT && !breakOk(start,end,outT,inT)) return bad("Clocked out and back in must be between your start and end time, in that order.","work");
-    if(start && end && !summary) return bad("Add a short summary of what you did.","work");
+    if(start && end && !summary) return bad(switched.length ? "You were clocked out of "+settings.mainLabel+" at "+clock(end)+". Add a short summary of what you did there." : "Add a short summary of what you did.","work");
     if(oEnd && !oStart) return bad(settings.otherLabel+" needs a start time.","other");
     if(oStart && oEnd && !(spanHours(oStart,oEnd)>0)) return bad(settings.otherLabel+": end time must be different from start time.","other");
     if(hasOther && !oJob && settings.otherOptions && settings.otherOptions.length) return bad("Pick what the "+settings.otherLabel+" was for.","other");
@@ -248,7 +269,8 @@
     var d=sel;
     call("saveDay",[token, d, start, end, summary, oStart, oEnd, oSummary, outT, inT, oOutT, oInT, oJob], function(res){
       busy=false; $("save").disabled=false; applyWeek(res, d);
-      setStatus("save-status", (wOpen||oOpen) ? "Saved. Add your end time when you finish." : "Saved","ok");
+      var sn = switched.length ? " We "+switched.join(" and ")+"." : "";
+      setStatus("save-status", ((wOpen||oOpen) ? "Saved. Add your end time when you finish." : "Saved.")+sn,"ok");
     }, function(msg){ busy=false; $("save").disabled=false; setStatus("save-status",msg,"err"); });
   };
 
