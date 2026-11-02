@@ -56,6 +56,21 @@ r.delete('/:slug/tasks/:id', A.requireCrew, async (req, res) => {
   res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
 });
 
+// Roads mowed: everyone sees the list and history; each person logs their own mowings.
+const RD = require('../roads');
+const sendPhoto = (res, p) => p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
+r.get('/:slug/roads', A.requireCrew, async (req, res) => res.json({ roads: await RD.list(req.company.id), maxPhotos: RD.MAX_PHOTOS }));
+r.get('/:slug/roads/:id', A.requireCrew, async (req, res) => res.json({ road: await RD.history(req.company.id, Number(req.params.id), 20) }));
+r.post('/:slug/roads/:id/mows', A.requireCrew, async (req, res) => {
+  await RD.logMow(req.company, req.crew, Number(req.params.id), req.body || {}, K.photoBytes);
+  res.json({ road: await RD.history(req.company.id, Number(req.params.id), 20), roads: await RD.list(req.company.id) });
+});
+r.delete('/:slug/mows/:id', A.requireCrew, async (req, res) => {
+  const roadId = await RD.removeMow(req.company.id, Number(req.params.id), req.crew.id);
+  res.json({ road: await RD.history(req.company.id, roadId, 20), roads: await RD.list(req.company.id) });
+});
+r.get('/:slug/road-photo/:id', A.requireCrew, async (req, res) => sendPhoto(res, await RD.photo(req.company.id, Number(req.params.id))));
+
 // Photos of the day's work, attached to a saved day.
 r.post('/:slug/day/:date/photos', A.requireCrew, async (req, res) =>
   res.json(await H.addDayPhotos(req.company, req.crew, req.params.date, (req.body || {}).photos, K.photoBytes)));

@@ -41,6 +41,10 @@
     getCrewWeek:     function(a){ return ["GET", "/crew-week?start=" + encodeURIComponent(a[1]||"")]; },
     setWeekApproved: function(a){ return ["POST", "/approve", { weekStart:a[1], approved:a[2] }]; },
     getTasks:        function(){ return ["GET", "/tasks"]; },
+    getRoads:        function(){ return ["GET", "/roads"]; },
+    getRoad:         function(a){ return ["GET", "/roads/" + a[1]]; },
+    logMow:          function(a){ return ["POST", "/roads/" + a[1] + "/mows", a[2]]; },
+    delMow:          function(a){ return ["DELETE", "/mows/" + a[1]]; },
     newTask:         function(a){ return ["POST", "/tasks", a[1]]; },
     delTask:         function(a){ return ["DELETE", "/tasks/" + a[1]]; },
     addDayPhotos:    function(a){ return ["POST", "/day/" + a[1] + "/photos", { photos:a[2] }]; },
@@ -102,7 +106,7 @@
 
   function signOut(msg){
     token=null; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -111,7 +115,7 @@
   // ---- log screen ----
   function enterLog(name){
     $("who-name").textContent = name; $("who").hidden=false;
-    $("pin-screen").hidden=true; showScreen(isBoss ? "crew" : "mine"); loadTasks(true);
+    $("pin-screen").hidden=true; showScreen(isBoss ? "crew" : "mine"); loadTasks(true); loadRoads(true);
     loadWeek(weekStartOf(today || new Date().toISOString().slice(0,10)), today);
   }
   function setOptions(list){
@@ -125,13 +129,17 @@
     $("tabs").hidden = false; $("tab-crew").hidden = !isBoss;
     $("tab-mine").setAttribute("aria-selected", which==="mine");
     $("tab-tasks").setAttribute("aria-selected", which==="tasks");
+    $("tab-roads").setAttribute("aria-selected", which==="roads");
+    $("road-screen").hidden = which!=="roads";
     $("tab-crew").setAttribute("aria-selected", which==="crew");
     $("log-screen").hidden = which!=="mine";
     $("task-screen").hidden = which!=="tasks";
     $("crew-screen").hidden = which!=="crew";
     if(which==="crew") loadCrew(crewWeek || weekStartOf(today || new Date().toISOString().slice(0,10)));
     if(which==="tasks") loadTasks();
+    if(which==="roads") loadRoads();
   }
+  $("tab-roads").onclick = function(){ roadOpen=null; showScreen("roads"); };
   $("tab-mine").onclick = function(){ showScreen("mine"); if(week) loadWeek(week, sel); };
   $("tab-tasks").onclick = function(){ showScreen("tasks"); };
   $("tab-crew").onclick = function(){ showScreen("crew"); };
@@ -417,7 +425,7 @@
   function photoInto(img, id, kind){
     var key=(kind||"task")+id;
     if(photoUrls[key]){ img.src=photoUrls[key]; return; }
-    fetch(API+(kind==="day" ? "/day-photo/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
+    fetch(API+(kind==="day" ? "/day-photo/" : kind==="road" ? "/road-photo/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
       .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
       .then(function(b){ photoUrls[key]=URL.createObjectURL(b); img.src=photoUrls[key]; }).catch(function(){});
   }
@@ -479,6 +487,89 @@
       list.appendChild(card);
     });
   }
+
+  // ---- roads mowed ----
+  var roads=[], roadOpen=null, road=null, rmPics=[], roadMax=4;
+  function ago(d){
+    var n=Math.round((toUTC(today)-toUTC(d))/864e5);
+    return n<=0 ? "today" : n===1 ? "yesterday" : n+" days ago";
+  }
+  function loadRoads(quiet){
+    if(!token) return;
+    call("getRoads",[], function(res){
+      roads=res.roads||[]; roadMax=res.maxPhotos||4;
+      $("tab-roads").hidden = !roads.length;
+      if(!quiet){ drawRoads(); if(roadOpen) openRoad(roadOpen); else { $("road-list-view").hidden=false; $("road-view").hidden=true; } }
+    }, function(msg){ if(!quiet) setStatus("road-status",msg,"err"); });
+  }
+  function drawRoads(){
+    var box=$("road-list"); box.innerHTML="";
+    roads.forEach(function(r){
+      var b=el("button","roadrow"); b.type="button";
+      b.appendChild(el("b","",r.name));
+      var n = r.lastDay ? Math.round((toUTC(today)-toUTC(r.lastDay))/864e5) : null;
+      b.appendChild(el("span","when"+(r.lastDay ? (n>14 ? " old" : "") : " never"), r.lastDay ? short(r.lastDay)+" · "+ago(r.lastDay)+(r.lastBy ? "\n"+r.lastBy : "") : "Not mowed yet"));
+      b.onclick=function(){ openRoad(r.id); };
+      box.appendChild(b);
+    });
+  }
+  function openRoad(id){
+    roadOpen=id; $("road-list-view").hidden=true; $("road-view").hidden=false;
+    setStatus("road-status","Loading…");
+    call("getRoad",[token, id], function(res){ setStatus("road-status",""); road=res.road; rmPics=[]; $("rm-notes").value=""; $("rm-day").value=today; $("rm-day").max=today; drawRoad(); window.scrollTo(0,0); },
+      function(msg){ setStatus("road-status",msg,"err"); });
+  }
+  function drawRoad(){
+    $("road-name").textContent=road.name;
+    var last=road.mows[0];
+    $("road-last").textContent = last ? "Last mowed "+DAYS[toUTC(last.day).getUTCDay()]+" "+short(last.day)+" ("+ago(last.day)+")"+(last.byName ? " by "+last.byName : "") : "Not mowed yet";
+    drawRmPics();
+    var h=$("road-history"); h.innerHTML="";
+    if(!road.mows.length) h.appendChild(el("p","muted","Nothing logged yet."));
+    road.mows.forEach(function(m){
+      var row=el("div","hrow"), k=el("div","hk");
+      k.appendChild(el("b","",DAYS[toUTC(m.day).getUTCDay()]+" "+short(m.day))); k.appendChild(el("span","muted",m.byName||""));
+      row.appendChild(k);
+      if(m.notes) row.appendChild(el("p","notes",m.notes));
+      if(m.photos.length){ var th=el("div","thumbs");
+        m.photos.forEach(function(id){ var im=el("img"); im.alt="Photo of "+road.name; photoInto(im,id,"road"); im.onclick=function(){ if(im.src) viewer(im.src); }; th.appendChild(im); });
+        row.appendChild(th); }
+      if(m.byName && m.byName===$("who-name").textContent){
+        var d=el("button","linkdel","Remove"); d.type="button";
+        d.onclick=function(){
+          if(d.textContent!=="Tap again to remove"){ d.textContent="Tap again to remove"; setTimeout(function(){ d.textContent="Remove"; },3000); return; }
+          call("delMow",[token, m.id], function(res){ road=res.road; roads=res.roads||roads; drawRoad(); drawRoads(); }, function(msg){ setStatus("rm-status",msg,"err"); });
+        };
+        row.appendChild(d);
+      }
+      h.appendChild(row);
+    });
+  }
+  function drawRmPics(){
+    var th=$("rm-thumbs"); th.innerHTML="";
+    rmPics.forEach(function(src,i){ var x=el("div","x"), im=el("img"); im.src=src; im.alt="New photo"; var del=el("button","","×"); del.type="button"; del.setAttribute("aria-label","Remove photo");
+      del.onclick=function(){ rmPics.splice(i,1); drawRmPics(); }; x.appendChild(im); x.appendChild(del); th.appendChild(x); });
+    $("rm-add").hidden = rmPics.length>=roadMax;
+  }
+  $("rm-file").onchange=function(){
+    var files=Array.prototype.slice.call(this.files||[], 0, Math.max(0, roadMax-rmPics.length)); this.value="";
+    if(!files.length) return;
+    setStatus("rm-status","Adding photo…");
+    files.reduce(function(p,f){ return p.then(function(){ return shrink(f).then(function(x){ rmPics.push(x); }); }); }, Promise.resolve())
+      .then(function(){ setStatus("rm-status",""); drawRmPics(); }).catch(function(e){ setStatus("rm-status",e.message,"err"); drawRmPics(); });
+  };
+  $("road-back").onclick=function(){ roadOpen=null; $("road-view").hidden=true; $("road-list-view").hidden=false; drawRoads(); };
+  $("rm-save").onclick=function(){
+    if(busy || !road) return;
+    var day=$("rm-day").value;
+    if(!day) return setStatus("rm-status","Pick the date you mowed it.","err");
+    busy=true; $("rm-save").disabled=true; setStatus("rm-status", rmPics.length ? "Sending photos…" : "Saving…");
+    call("logMow",[token, road.id, { day:day, notes:$("rm-notes").value, photos:rmPics }], function(res){
+      busy=false; $("rm-save").disabled=false; road=res.road; roads=res.roads||roads; rmPics=[]; $("rm-notes").value="";
+      drawRoad(); drawRoads(); setStatus("rm-status","Saved. "+road.name+" marked mowed "+short(day)+".","ok");
+    }, function(msg){ busy=false; $("rm-save").disabled=false; setStatus("rm-status",msg,"err"); });
+  };
+
   // ---- crew adds a task ----
   function ntShow(on){ $("nt-form").hidden=!on; $("nt-open-row").hidden=on; if(on) $("nt-title").focus(); setStatus("nt-status",""); }
   $("nt-open").onclick=function(){ ntShow(true); };
@@ -540,7 +631,7 @@
   if(token){
     $("pin-screen").hidden=true; $("log-screen").hidden=false;
     call("getMyWeek",[token, ""],
-      function(res){ applyWeek(res, res.today); showScreen(isBoss ? "crew" : "mine"); loadTasks(true); },
+      function(res){ applyWeek(res, res.today); showScreen(isBoss ? "crew" : "mine"); loadTasks(true); loadRoads(true); },
       function(msg){ signOut(msg); });
   }
 })();

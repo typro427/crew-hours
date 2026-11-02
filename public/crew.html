@@ -25,6 +25,7 @@
   <nav class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" id="tab-mine" aria-selected="true">My hours</button>
     <button role="tab" id="tab-tasks" aria-selected="false">Tasks <span class="badge" id="task-count" hidden></span></button>
+    <button role="tab" id="tab-roads" aria-selected="false" hidden>Roads mowed</button>
     <button role="tab" id="tab-crew" aria-selected="false" hidden>Crew week</button>
   </nav>
 
@@ -131,6 +132,29 @@
     <div id="task-list" class="tasklist"></div>
     <div class="status" id="task-status" role="status"></div>
     <p class="hint" id="task-empty" hidden style="margin:0;text-align:center">No tasks right now. Tasks from the boss show up here, or add your own.</p>
+  </section>
+
+  <!-- Roads mowed -->
+  <section id="road-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div id="road-list-view" style="display:flex;flex-direction:column;gap:10px">
+      <p class="hint" style="margin:0">Tap a road to log that you mowed it.</p>
+      <div id="road-list" class="roadlist"></div>
+    </div>
+    <div id="road-view" hidden style="display:flex;flex-direction:column;gap:14px">
+      <button class="ghost" id="road-back" type="button" style="align-self:flex-start">‹ All roads</button>
+      <div class="task">
+        <h3 id="road-name"></h3>
+        <div class="meta" id="road-last"></div>
+        <label for="rm-day">Date you mowed it</label><input id="rm-day" type="date">
+        <div class="thumbs" id="rm-thumbs"></div>
+        <label class="photo-btn" id="rm-add">📷 Add photo<input type="file" id="rm-file" accept="image/*" multiple></label>
+        <label for="rm-notes">Notes <span class="hint">(optional)</span></label><textarea id="rm-notes" maxlength="1000" placeholder="Anything the boss should know"></textarea>
+        <div class="row"><button class="primary" id="rm-save" type="button">Save: mowed</button></div>
+        <div class="status" id="rm-status" role="status"></div>
+      </div>
+      <div class="task"><h3>History</h3><div id="road-history" class="history"></div></div>
+    </div>
+    <div class="status" id="road-status" role="status"></div>
   </section>
 
   <!-- Boss: crew week -->

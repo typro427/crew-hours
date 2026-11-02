@@ -123,3 +123,33 @@ test('photos on a day: only after saving, up to 6, boss and managers see them, c
   await jake('DELETE', '/day/' + day);
   assert.strictEqual((await db.one('SELECT count(*)::int AS n FROM day_photos')).n, 0);
 });
+
+test('roads mowed: boss sets the list, crew logs mowings with photos, history and last-mowed show up', async () => {
+  let r = await O('PUT', '/api/admin/roads', { names: ['Deerfield Way', ' Skyline Knoll ', 'deerfield way', '', 'Lakeview Dr'] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.deepStrictEqual(r.body.roads.map(x => x.name), ['Deerfield Way', 'Skyline Knoll', 'Lakeview Dr'], 'trimmed, no duplicates, in order');
+  const roads = (await jake('GET', '/roads')).body.roads;
+  const dw = roads.find(x => x.name === 'Deerfield Way');
+  assert.strictEqual(dw.lastDay, null);
+  const today = (await jake('GET', '/week')).body.today;
+  assert.strictEqual((await jake('POST', `/roads/${dw.id}/mows`, { day: '2999-01-01' })).status, 400, 'no future dates');
+  r = await jake('POST', `/roads/${dw.id}/mows`, { day: today, notes: 'Both sides', photos: [JPEG] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.road.mows[0].photos.length, 1);
+  assert.strictEqual((await jake('POST', `/roads/${dw.id}/mows`, { day: today })).status, 400, 'same person, same day, same road');
+  const after = (await sam('GET', '/roads')).body.roads.find(x => x.id === dw.id);
+  assert.strictEqual(after.lastDay, today); assert.strictEqual(after.lastBy, 'Jake'); assert.strictEqual(after.timesThisYear, 1);
+  const photoId = r.body.road.mows[0].photos[0];
+  assert.strictEqual((await O('GET', '/api/admin/road-photo/' + photoId)).status, 200);
+  assert.strictEqual((await O2('GET', '/api/admin/road-photo/' + photoId)).status, 404, 'other company');
+  assert.strictEqual((await O2('GET', '/api/admin/roads')).body.roads.length, 0);
+  const mowId = r.body.road.mows[0].id;
+  assert.strictEqual((await sam('DELETE', '/mows/' + mowId)).status, 400, "Sam can't remove Jake's entry");
+  // Taking a road off the list hides it; putting it back brings its history back.
+  await O('PUT', '/api/admin/roads', { names: ['Skyline Knoll'] });
+  assert.deepStrictEqual((await jake('GET', '/roads')).body.roads.map(x => x.name), ['Skyline Knoll']);
+  r = await O('PUT', '/api/admin/roads', { names: ['Deerfield Way', 'Skyline Knoll'] });
+  assert.strictEqual(r.body.roads[0].lastDay, today);
+  r = await O('DELETE', '/api/admin/mows/' + mowId);
+  assert.strictEqual(r.body.road.mows.length, 0);
+});

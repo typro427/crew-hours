@@ -147,3 +147,19 @@ tfoot td{font-weight:700;border-bottom:0}
 .task .by{font-size:14px;color:var(--muted)}
 .task .linkdel{background:none;border:0;padding:0;color:var(--err);text-decoration:underline;font:inherit;font-size:14px;cursor:pointer;align-self:flex-start}
 .d .thumbs img{width:64px;height:64px}
+
+/* roads mowed */
+.tabs{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr}
+.roadlist{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.roadrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border:0;border-top:1px solid var(--line);background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;min-height:56px}
+.roadrow:first-child{border-top:0}
+.roadrow b{font-weight:600}
+.roadrow .when{font-size:14px;color:var(--muted);text-align:right;white-space:pre-line;flex:none}
+.roadrow .when.old{color:var(--warn)} .roadrow .when.never{color:var(--err)}
+#road-view label{font-weight:600;font-size:15px}
+#road-view input[type=date]{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px}
+.history{display:flex;flex-direction:column}
+.hrow{padding:10px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.hrow:first-child{border-top:0}
+.hrow .hk{display:flex;justify-content:space-between;gap:10px}
+.hrow .notes{margin:0;white-space:pre-wrap;color:var(--muted)}

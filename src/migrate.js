@@ -128,6 +128,33 @@ CREATE TABLE IF NOT EXISTS task_photos (
 );
 CREATE INDEX IF NOT EXISTS task_photos_task ON task_photos (task_id);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES crew(id) ON DELETE SET NULL;
+-- Roads the crew mows, with each time they were mowed (date, who, notes, photos).
+CREATE TABLE IF NOT EXISTS roads (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  position   INTEGER NOT NULL DEFAULT 0,
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE (company_id, name)
+);
+CREATE TABLE IF NOT EXISTS road_mows (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  road_id    INTEGER NOT NULL REFERENCES roads(id) ON DELETE CASCADE,
+  crew_id    INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  day        DATE NOT NULL,
+  notes      TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS road_mows_road ON road_mows (road_id, day);
+CREATE TABLE IF NOT EXISTS road_mow_photos (
+  id         SERIAL PRIMARY KEY,
+  mow_id     INTEGER NOT NULL REFERENCES road_mows(id) ON DELETE CASCADE,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  mime       TEXT NOT NULL,
+  data       BYTEA NOT NULL
+);
+CREATE INDEX IF NOT EXISTS road_mow_photos_mow ON road_mow_photos (mow_id);
 -- Photos the crew adds to a day's hours.
 CREATE TABLE IF NOT EXISTS day_photos (
   id         SERIAL PRIMARY KEY,

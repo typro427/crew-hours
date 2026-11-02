@@ -18,6 +18,7 @@
   <nav class="wrap tabs" role="tablist">
     <button role="tab" data-tab="week" aria-selected="true">Crew week</button>
     <button role="tab" data-tab="tasks" aria-selected="false">Tasks</button>
+    <button role="tab" data-tab="roads" aria-selected="false">Roads mowed</button>
     <button role="tab" data-tab="crew" aria-selected="false">Crew &amp; PINs</button>
     <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
     <button role="tab" data-tab="billing" aria-selected="false">Billing</button>
@@ -87,6 +88,27 @@
     </form>
     <div class="card"><h3>Open</h3><div id="tk-open" class="tasks"></div><p class="hint" id="tk-open-empty">Nothing open.</p></div>
     <div class="card"><h3>Done <span class="hint">(last 60 days)</span></h3><div id="tk-done" class="tasks"></div><p class="hint" id="tk-done-empty">Nothing finished yet.</p></div>
+  </section>
+
+  <!-- ROADS -->
+  <section data-panel="roads" class="panel" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h3>Roads mowed</h3><span class="hint" id="rd-count"></span></div>
+      <div class="tablebox"><table class="roads">
+        <thead><tr><th>Road</th><th>Last mowed</th><th>By</th><th>Times this year</th></tr></thead>
+        <tbody id="rd-body"></tbody>
+      </table></div>
+      <p class="hint" id="rd-empty">No roads yet. Add your list below and the Roads mowed tab shows up in the crew app.</p>
+      <p class="hint">Click a road to see every time it was mowed, with photos.</p>
+    </div>
+    <div class="card" id="rd-detail" hidden></div>
+    <form class="card" id="rd-form" novalidate>
+      <h3>Road list</h3>
+      <label for="rd-names">One road per line, in the order the crew should see them</label>
+      <textarea id="rd-names" rows="10" placeholder="Deerfield Way&#10;Skyline Knoll"></textarea>
+      <p class="hint">Taking a road off the list hides it from the crew. Its mowing history is kept, and comes back if you add the road again.</p>
+      <div class="row"><button class="btn" type="submit">Save road list</button><span class="status" id="rd-status" role="status"></span></div>
+    </form>
   </section>
 
   <!-- CREW -->

@@ -65,3 +65,13 @@ tfoot td{font-weight:700;border-bottom:0}
 .trow .t-acts{display:flex;gap:6px}
 .t-thumbs{display:flex;flex-wrap:wrap;gap:8px}
 .t-thumbs a img{width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+
+/* roads */
+table.roads td,table.roads th{text-align:left}
+table.roads tbody tr{cursor:pointer}
+table.roads tbody tr:hover{background:var(--sunk)}
+table.roads .old{color:var(--warn);font-weight:600}
+table.roads .never{color:var(--err)}
+.mrow{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.mrow:first-of-type{border-top:0}
+.mrow .t-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}

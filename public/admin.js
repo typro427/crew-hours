@@ -29,6 +29,7 @@
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
     if (name === 'crew') loadCrew();
     if (name === 'tasks') loadTasks();
+    if (name === 'roads') loadRoads();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -298,6 +299,7 @@
       }
     }
     else if (h === '#tasks') showTab('tasks');
+    else if (h === '#roads') showTab('roads');
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
@@ -386,5 +388,69 @@
     api(editing ? 'PUT' : 'POST', '/api/admin/tasks' + (editing ? '/' + editing : ''), body).then(function (r) {
       tasks = r.tasks; resetTaskForm(); drawTasks(); status('t-status', editing ? 'Saved.' : 'Task added. The crew will see it in their app.', 'ok');
     }).catch(function (err) { status('t-status', err.message, 'err'); });
+  };
+
+  /* ------------------------------- roads ------------------------------ */
+  var roads = [], roadPick = null;
+  function daysAgo(d) { return Math.round((toUTC(me.today) - toUTC(d)) / 864e5); }
+  function loadRoads() {
+    return api('GET', '/api/admin/roads').then(function (r) {
+      roads = r.roads; $('rd-names').value = roads.map(function (x) { return x.name; }).join('\n'); drawRoads();
+      if (roadPick) showRoad(roadPick);
+    }).catch(function (e) { status('rd-status', e.message, 'err'); });
+  }
+  function drawRoads() {
+    var body = $('rd-body'); body.innerHTML = '';
+    roads.forEach(function (x) {
+      var tr = el('tr');
+      tr.appendChild(el('td', '', x.name));
+      var n = x.lastDay ? daysAgo(x.lastDay) : null;
+      tr.appendChild(el('td', x.lastDay ? (n > 14 ? 'old' : '') : 'never', x.lastDay ? DAYS[toUTC(x.lastDay).getUTCDay()] + ' ' + short(x.lastDay) + ' (' + (n <= 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago') + ')' : 'Not mowed yet'));
+      tr.appendChild(el('td', '', x.lastBy || ''));
+      tr.appendChild(el('td', '', String(x.timesThisYear)));
+      tr.onclick = function () { showRoad(x.id); };
+      body.appendChild(tr);
+    });
+    $('rd-empty').hidden = roads.length > 0;
+    var stale = roads.filter(function (x) { return !x.lastDay || daysAgo(x.lastDay) > 14; }).length;
+    $('rd-count').textContent = roads.length ? roads.length + ' roads' + (stale ? ' · ' + stale + ' not mowed in 2 weeks' : '') : '';
+  }
+  function showRoad(id) {
+    roadPick = id;
+    api('GET', '/api/admin/roads/' + id).then(function (r) { drawRoad(r.road); }).catch(function (e) { status('rd-status', e.message, 'err'); });
+  }
+  function drawRoad(road) {
+    var box = $('rd-detail'); box.hidden = false; box.innerHTML = '';
+    var top = el('div', 'row'); top.style.justifyContent = 'space-between';
+    top.appendChild(el('h3', '', road.name + ' · ' + road.mows.length + ' time' + (road.mows.length === 1 ? '' : 's') + ' logged'));
+    var close = el('button', 'btn ghost small', 'Close'); close.type = 'button'; close.onclick = function () { roadPick = null; box.hidden = true; };
+    top.appendChild(close); box.appendChild(top);
+    if (!road.mows.length) box.appendChild(el('p', 'muted', 'Nothing logged yet.'));
+    road.mows.forEach(function (m) {
+      var row = el('div', 'mrow'), t = el('div', 't-top');
+      t.appendChild(el('b', '', DAYS[toUTC(m.day).getUTCDay()] + ' ' + short(m.day) + (m.byName ? ' · ' + m.byName : '')));
+      var del = el('button', 'btn ghost small', 'Remove'); del.type = 'button';
+      del.onclick = function () {
+        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Remove'; }, 3000); return; }
+        api('DELETE', '/api/admin/mows/' + m.id).then(function (r) { roads = r.roads; drawRoads(); drawRoad(r.road); }).catch(function (e) { status('rd-status', e.message, 'err'); });
+      };
+      t.appendChild(del); row.appendChild(t);
+      if (m.notes) row.appendChild(el('p', 't-text', m.notes));
+      if (m.photos.length) {
+        var th = el('div', 't-thumbs');
+        m.photos.forEach(function (id) { var a = el('a'); a.href = '/api/admin/road-photo/' + id; a.target = '_blank'; a.rel = 'noopener';
+          var i = el('img'); i.src = a.href; i.alt = 'Photo of ' + road.name; i.loading = 'lazy'; a.appendChild(i); th.appendChild(a); });
+        row.appendChild(th);
+      }
+      box.appendChild(row);
+    });
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  $('rd-form').onsubmit = function (e) {
+    e.preventDefault(); status('rd-status', 'Saving…');
+    api('PUT', '/api/admin/roads', { names: $('rd-names').value.split('\n') }).then(function (r) {
+      roads = r.roads; $('rd-names').value = roads.map(function (x) { return x.name; }).join('\n'); drawRoads();
+      status('rd-status', 'Saved. ' + roads.length + ' roads.', 'ok');
+    }).catch(function (err) { status('rd-status', err.message, 'err'); });
   };
 })();

@@ -132,6 +132,21 @@ r.get('/tasks', async (req, res) => res.json({ tasks: await K.forOwner(req.compa
 r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json({ tasks: await K.forOwner(req.company.id) }); });
 r.put('/tasks/:id', async (req, res) => { await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json({ tasks: await K.forOwner(req.company.id) }); });
 r.delete('/tasks/:id', async (req, res) => { await K.remove(req.company.id, Number(req.params.id)); res.json({ tasks: await K.forOwner(req.company.id) }); });
+/* --------------------------------- roads ----------------------------------- */
+const RD = require('../roads');
+r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id) }));
+r.put('/roads', async (req, res) => { await RD.setList(req.company.id, (req.body || {}).names); res.json({ roads: await RD.list(req.company.id) }); });
+r.get('/roads/:id', async (req, res) => res.json({ road: await RD.history(req.company.id, Number(req.params.id), 200) }));
+r.delete('/mows/:id', async (req, res) => {
+  const roadId = await RD.removeMow(req.company.id, Number(req.params.id));
+  res.json({ road: await RD.history(req.company.id, roadId, 200), roads: await RD.list(req.company.id) });
+});
+r.get('/road-photo/:id', async (req, res) => {
+  const p = await RD.photo(req.company.id, Number(req.params.id));
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
+});
+
 r.get('/day-photo/:id', async (req, res) => {
   const p = await H.dayPhoto(req.company.id, Number(req.params.id));
   if (!p) return res.status(404).end();
