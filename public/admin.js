@@ -328,9 +328,12 @@
     if (!f) return status('imp-status', 'Pick the import file first.', 'err');
     status('imp-status', 'Importing…');
     f.text().then(function (txt) {
-      var data; try { data = JSON.parse(txt); } catch (e) { throw new Error("That file isn't a Crew Hours import file."); }
+      var data; try { data = JSON.parse(txt.replace(/^\ufeff/, '')); } catch (e) {
+        throw new Error(/^%PDF/.test(txt) ? "That's a PDF. Pick the .json file Claude made instead." : /^PK/.test(txt) ? "That's an Excel file. Save it as CSV and use the Members tab's import box, or pick the .json file." : "That file isn't a Crew Hours import file. Pick the .json file.");
+      }
       return api('POST', '/api/admin/import', data);
     }).then(function (r) {
+      if (r.members) { status('imp-status', 'Done. Imported ' + r.members + ' members. See them in the Members tab.', 'ok'); return loadMe(); }
       var msg = (r.crewAdded || r.daysAdded || !(r.roadsAdded || r.roadsUpdated)) ? 'Done. Added ' + r.crewAdded + ' crew and ' + r.daysAdded + ' days of hours.' : 'Done.';
       if (r.crewSkipped.length) msg += ' Skipped: ' + r.crewSkipped.join(', ') + '.';
       if (r.daysSkipped) msg += ' ' + r.daysSkipped + ' days were already here.';
@@ -702,6 +705,7 @@
       var body;
       if (/\.json$/i.test(f.name) || /^\s*\{/.test(txt)) {
         try { body = JSON.parse(txt); } catch (e) { throw new Error("That file isn't a Crew Hours members file."); }
+        if (body.format && body.format !== 'crewhours-members-1') throw new Error('That is the hours/roads import file. Upload it under Settings → Import from another system.');
       } else {
         var rows = parseCSV(txt); if (rows.length < 2) throw new Error('The CSV needs a header row and at least one member.');
         var cols = rows[0].map(function (x) { return x.trim(); });

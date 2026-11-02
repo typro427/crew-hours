@@ -210,7 +210,11 @@ r.get('/tasks/photo/:id', async (req, res) => {
 // Safe to run twice: existing crew (same name) and days already logged are left alone.
 r.post('/import', async (req, res) => {
   const b = req.body || {}, c = req.company;
-  if (b.format !== 'crewhours-import-1') V.bad("That file isn't a Crew Hours import file.");
+  if (b.format === 'crewhours-members-1') {   // the members list file, uploaded in Settings instead of the Members tab
+    const m = await require('../members').replaceAll(c.id, b);
+    return res.json({ members: m.rows, crewAdded: 0, crewSkipped: [], daysAdded: 0, daysSkipped: 0, roadsAdded: 0, roadsUpdated: 0, problems: [] });
+  }
+  if (b.format !== 'crewhours-import-1') V.bad("That file isn't a Crew Hours import file. If it's a spreadsheet, save it as CSV and use the Members tab's import box.");
   const crewIn = Array.isArray(b.crew) ? b.crew : [], entriesIn = Array.isArray(b.entries) ? b.entries : [];
   const roadsIn = Array.isArray(b.roads) ? b.roads : [];
   if (roadsIn.length > 500) V.bad('Up to 500 roads.');

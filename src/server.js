@@ -33,7 +33,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/stripe/webhook', billing.webhook);           // raw body, before the JSON parser
-app.use('/api/admin/import', express.json({ limit: '5mb' }));
+app.use('/api/admin/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/members/import', express.json({ limit: '20mb' }));
 app.use(/^\/api\/c\/[^/]+\/(tasks\/\d+\/done|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));   // photos
 app.use(express.json({ limit: '100kb' }));

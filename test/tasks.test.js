@@ -299,3 +299,10 @@ test('members list: off by default, boss imports and searches, only switched-on 
   assert.match(csv, /"Last name"/); assert.match(csv, /Testerson/);
   assert.strictEqual((await O('POST', '/api/admin/members/import', { columns: [], rows: [] })).status, 400);
 });
+
+test('the members file also works from the Settings import box', async () => {
+  const r = await O('POST', '/api/admin/import', { format: 'crewhours-members-1', columns: ['Status', 'Last name'], rows: [{ Status: 'Active', 'Last name': 'Viasettings' }] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body)); assert.strictEqual(r.body.members, 1);
+  assert.strictEqual((await O('GET', '/api/admin/members?q=viasettings')).body.total, 1);
+  assert.strictEqual((await O('POST', '/api/admin/import', { format: 'nope' })).status, 400);
+});
