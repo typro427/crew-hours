@@ -115,6 +115,13 @@ r.get('/:slug/road-photo/:id', A.requireCrew, async (req, res) => {
   sendPhoto(res, await RD.photo(req.company.id, Number(req.params.id)));
 });
 
+// Members list: read-only search, only for people the boss has switched it on for.
+const MB = require('../members');
+r.get('/:slug/members', A.requireCrew, F.need('members'), async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await MB.search(req.company.id, { q: req.query.q, status: req.query.status, limit: 50 }));
+});
+
 // Water system readings.
 const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, 14, 30) });
 r.get('/:slug/readings', A.requireCrew, F.need('w_readings'), async (req, res) => res.json(await readingsOut(req)));

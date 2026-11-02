@@ -159,6 +159,20 @@ r.delete('/mows/:id', async (req, res) => {
   res.json({ road, roads: await RD.list(req.company.id, road.kind) });
 });
 
+/* -------------------------------- members ----------------------------------- */
+const MB = require('../members');
+r.get('/members', async (req, res) => res.json(await MB.search(req.company.id, req.query)));
+r.post('/members/import', async (req, res) => res.json(await MB.replaceAll(req.company.id, req.body || {})));
+r.post('/members', async (req, res) => res.json({ id: await MB.save(req.company.id, null, (req.body || {}).data) }));
+r.put('/members/:id', async (req, res) => res.json({ id: await MB.save(req.company.id, Number(req.params.id), (req.body || {}).data) }));
+r.delete('/members/:id', async (req, res) => { await MB.remove(req.company.id, Number(req.params.id)); res.json({ ok: true }); });
+r.get('/members.csv', async (req, res) => {
+  const cols = await MB.columns(req.company.id), rows = await MB.all(req.company.id);
+  const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const lines = [cols.map(q).join(',')].concat(rows.map(r => cols.map(c => q(r.data[c])).join(',')));
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="members.csv"', 'Cache-Control': 'no-store' }).send('\ufeff' + lines.join('\r\n'));
+});
+
 /* -------------------------------- readings ---------------------------------- */
 const RG = require('../readings');
 const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, Number(req.query.days) || 60, 1000) });

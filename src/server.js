@@ -34,6 +34,7 @@ app.use((req, res, next) => {
 
 app.use('/api/stripe/webhook', billing.webhook);           // raw body, before the JSON parser
 app.use('/api/admin/import', express.json({ limit: '5mb' }));
+app.use('/api/admin/members/import', express.json({ limit: '20mb' }));
 app.use(/^\/api\/c\/[^/]+\/(tasks\/\d+\/done|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));   // photos
 app.use(express.json({ limit: '100kb' }));
 
@@ -61,7 +62,8 @@ app.get('/api/backup', async (req, res, next) => {
       crew: await db.q('SELECT id, company_id, name, active, is_manager, created_at FROM crew ORDER BY id'),
       entries: await db.q('SELECT * FROM entries ORDER BY company_id, day'),
       approvals: await db.q('SELECT * FROM approvals ORDER BY company_id, week_start'),
-      tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id')   // photos stay in Render's own backups
+      tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id'),
+      members: await db.q('SELECT company_id, data FROM members ORDER BY company_id, position, id')   // photos stay in Render's own backups
     };
     res.setHeader('Content-Disposition', `attachment; filename="crewhours-backup-${dump.exportedAt.slice(0, 10)}.json"`);
     res.json(dump);

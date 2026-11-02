@@ -31,6 +31,7 @@
     if (name === 'tasks') loadTasks();
     if (name === 'roads') loadRoads();
     if (name === 'water') showWater(wTab);
+    if (name === 'members') loadMembers();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -316,6 +317,7 @@
     else if (h === '#tasks') showTab('tasks');
     else if (h === '#roads') showTab('roads');
     else if (h === '#water') showTab('water');
+    else if (h === '#members') showTab('members');
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
@@ -606,5 +608,110 @@
     api('PUT', '/api/admin/reading-types?days=' + $('wr-days').value, { lines: $('wr-lines').value.split('\n') }).then(function (r) {
       $('wr-lines').blur(); drawReadings(r); status('wr-status', 'Saved. ' + r.types.length + ' readings.', 'ok');
     }).catch(function (err) { status('wr-status', err.message, 'err'); });
+  };
+
+  /* ------------------------------ members ------------------------------ */
+  var mb = { columns: [], rows: [], total: 0, limit: 100, timer: null, seq: 0, open: null };
+  function mbField(d, names) { for (var i = 0; i < names.length; i++) { if (d[names[i]]) return d[names[i]]; } return ''; }
+  function loadMembers(more) {
+    if (!more) mb.limit = 100;
+    var seq = ++mb.seq;
+    return api('GET', '/api/admin/members?limit=' + mb.limit + '&q=' + encodeURIComponent($('mb-q').value.trim()) + '&status=' + encodeURIComponent($('mb-status').value))
+      .then(function (r) { if (seq !== mb.seq) return; mb.columns = r.columns; mb.rows = r.rows; mb.total = r.total; drawMembers(); })
+      .catch(function (e) { status('mb-status-line', e.message, 'err'); });
+  }
+  $('mb-q').oninput = function () { clearTimeout(mb.timer); mb.timer = setTimeout(loadMembers, 250); };
+  $('mb-status').onchange = function () { loadMembers(); };
+  $('mb-more').onclick = function () { mb.limit += 200; loadMembers(true); };
+  function drawMembers() {
+    var body = $('mb-body'); body.innerHTML = '';
+    mb.rows.forEach(function (r) {
+      var d = r.data, tr = el('tr');
+      var nm = el('td', 'nm', [mbField(d, ['Last name']), mbField(d, ['First name(s)'])].filter(Boolean).join(', ') || mbField(d, ['Trust or LLC']) || '(no name)');
+      if (d['Status'] && d['Status'] !== 'Active') nm.appendChild(el('span', 'off', d['Status']));
+      tr.appendChild(nm);
+      tr.appendChild(el('td', '', d['Deerfield address'] || ''));
+      tr.appendChild(el('td', '', d['Property type'] || ''));
+      tr.appendChild(el('td', '', d['Parcel ID'] || ''));
+      tr.appendChild(el('td', '', mbField(d, ['Cell phone 1', 'Home phone', 'Deerfield phone', 'Cell phone 2', 'Work phone'])));
+      tr.appendChild(el('td', '', mbField(d, ['Email 1', 'Email 2'])));
+      tr.onclick = function () { showMember(r); };
+      body.appendChild(tr);
+    });
+    $('mb-count').textContent = mb.columns.length ? (mb.total + ' ' + (mb.total === 1 ? 'member' : 'members') + ($('mb-q').value.trim() ? ' match' : '') + (mb.rows.length < mb.total ? ' · showing ' + mb.rows.length : '')) : 'No list yet. Import the master list below.';
+    $('mb-more-row').hidden = mb.rows.length >= mb.total;
+  }
+  function showMember(r, editing) {
+    var box = $('mb-detail'); box.hidden = false; box.innerHTML = '';
+    var d = (r && r.data) || {}, top = el('div', 'row'); top.style.justifyContent = 'space-between';
+    top.appendChild(el('h3', '', r ? ([d['Last name'], d['First name(s)']].filter(Boolean).join(', ') || 'Member') : 'New member'));
+    var acts = el('div', 'row'); acts.style.gap = '8px';
+    function btn(label, cls, fn) { var b = el('button', 'btn small ' + (cls || ''), label); b.type = 'button'; b.onclick = fn; acts.appendChild(b); return b; }
+    if (!editing && r) btn('Edit', 'ghost', function () { showMember(r, true); });
+    if (r) {
+      var del = btn('Delete', 'ghost', function () {
+        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+        api('DELETE', '/api/admin/members/' + r.id).then(function () { box.hidden = true; loadMembers(); status('mb-status-line', 'Deleted.', 'ok'); }).catch(function (e) { status('mb-status-line', e.message, 'err'); });
+      });
+    }
+    btn('Close', 'ghost', function () { box.hidden = true; });
+    top.appendChild(acts); box.appendChild(top);
+    if (!editing) {
+      var dl = el('dl', 'mb-dl');
+      mb.columns.forEach(function (k) { if (!d[k]) return; dl.appendChild(el('dt', '', k)); dl.appendChild(el('dd', '', d[k])); });
+      box.appendChild(dl);
+    } else {
+      var g = el('div', 'mb-grid'), inputs = {};
+      mb.columns.forEach(function (k) { var w = el('div'); w.appendChild(el('label', '', k)); var i = el('input'); i.value = d[k] || ''; inputs[k] = i; w.appendChild(i); g.appendChild(w); });
+      box.appendChild(g);
+      var row = el('div', 'row'), sv = el('button', 'btn', r ? 'Save' : 'Add member'), st = el('span', 'status'); sv.type = 'button';
+      sv.onclick = function () {
+        var data = {}; mb.columns.forEach(function (k) { data[k] = inputs[k].value; });
+        api(r ? 'PUT' : 'POST', '/api/admin/members' + (r ? '/' + r.id : ''), { data: data }).then(function (x) {
+          showMember({ id: x.id, data: data }); loadMembers(); status('mb-status-line', 'Saved.', 'ok');
+        }).catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
+      };
+      row.appendChild(sv); row.appendChild(st); box.appendChild(row);
+    }
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  $('mb-add').onclick = function () {
+    if (!mb.columns.length) return status('mb-status-line', 'Import the master list first, so the app knows the columns.', 'err');
+    showMember(null, true);
+  };
+  // A small CSV reader: quoted fields, commas and new lines inside quotes, "" for a quote.
+  function parseCSV(text) {
+    var rows = [], row = [], f = '', q = false, i = 0, c;
+    text = text.replace(/^﻿/, '');
+    for (; i < text.length; i++) {
+      c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(f); f = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += c;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return x.trim() !== ''; }); });
+  }
+  $('mb-import').onclick = function () {
+    var f = $('mb-file').files[0];
+    if (!f) return status('mb-status-line', 'Pick the file first.', 'err');
+    status('mb-status-line', 'Reading the file…');
+    f.text().then(function (txt) {
+      var body;
+      if (/\.json$/i.test(f.name) || /^\s*\{/.test(txt)) {
+        try { body = JSON.parse(txt); } catch (e) { throw new Error("That file isn't a Crew Hours members file."); }
+      } else {
+        var rows = parseCSV(txt); if (rows.length < 2) throw new Error('The CSV needs a header row and at least one member.');
+        var cols = rows[0].map(function (x) { return x.trim(); });
+        body = { columns: cols, rows: rows.slice(1).map(function (r) { var o = {}; cols.forEach(function (k, i) { o[k] = r[i] || ''; }); return o; }) };
+      }
+      if (!confirm('Replace the members list with the ' + (body.rows ? body.rows.length : 0) + ' rows in this file?')) throw new Error('Cancelled.');
+      status('mb-status-line', 'Importing…');
+      return api('POST', '/api/admin/members/import', { columns: body.columns, rows: body.rows });
+    }).then(function (r) {
+      status('mb-status-line', 'Imported ' + r.rows + ' members with ' + r.columns + ' columns.', 'ok'); $('mb-file').value = ''; $('mb-q').value = ''; loadMembers();
+    }).catch(function (e) { status('mb-status-line', e.message, 'err'); });
   };
 })();

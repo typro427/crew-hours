@@ -149,7 +149,7 @@ tfoot td{font-weight:700;border-bottom:0}
 .d .thumbs img{width:64px;height:64px}
 
 /* roads mowed */
-.tabs{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr}
+.tabs{grid-template-columns:repeat(auto-fit,minmax(86px,1fr))}
 .roadlist{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .roadrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border:0;border-top:1px solid var(--line);background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;min-height:56px}
 .roadrow:first-child{border-top:0}
@@ -185,3 +185,17 @@ tfoot td{font-weight:700;border-bottom:0}
 .board input,.board select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px}
 .vals{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:15px}
 .vals span b{font-family:var(--f-num);font-weight:600}
+
+/* members */
+.msearch{display:grid;grid-template-columns:1fr auto;gap:8px;position:sticky;top:0;background:var(--bg);padding:4px 0;z-index:5}
+.msearch input,.msearch select{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-height:44px;width:100%}
+.mlist{display:flex;flex-direction:column;gap:8px}
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;text-align:left;font:inherit;color:var(--ink);cursor:pointer;width:100%}
+.mcard .mn{font-weight:700;font-size:17px}
+.mcard .ms{font-size:14px;color:var(--muted)}
+.mcard .mtag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;background:var(--sunk);margin-left:6px;vertical-align:middle}
+.mcard .mtag.off{background:#f6d3cf;color:#7a1a10}
+.mlinks{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.mlinks a{font-size:14px;padding:6px 10px;border-radius:16px;background:var(--sunk);color:var(--ink);text-decoration:none;font-weight:600}
+.mall{display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%);gap:4px 10px;margin-top:8px;font-size:14px;border-top:1px solid var(--line);padding-top:8px}
+.mall dt{color:var(--muted)} .mall dd{margin:0;overflow-wrap:anywhere}

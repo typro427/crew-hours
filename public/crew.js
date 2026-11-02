@@ -43,6 +43,7 @@
     getTasks:        function(a){ return ["GET", "/tasks?kind=" + (a[1]||"task")]; },
     getRoads:        function(a){ return ["GET", "/roads?kind=" + (a[1]||"road")]; },
     getReadings:     function(){ return ["GET", "/readings"]; },
+    searchMembers:   function(a){ return ["GET", "/members?q=" + encodeURIComponent(a[1]||"") + "&status=" + encodeURIComponent(a[2]||"")]; },
     logReadings:     function(a){ return ["POST", "/readings", a[1]]; },
     delReading:      function(a){ return ["DELETE", "/readings/" + a[1]]; },
     getRoad:         function(a){ return ["GET", "/roads/" + a[1]]; },
@@ -109,7 +110,7 @@
 
   function signOut(msg){
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -136,6 +137,8 @@
     $("road-screen").hidden = which!=="roads";
     $("tab-water").setAttribute("aria-selected", which==="water");
     $("water-screen").hidden = which!=="water";
+    $("tab-members").setAttribute("aria-selected", which==="members");
+    $("member-screen").hidden = which!=="members";
     $("tab-crew").setAttribute("aria-selected", which==="crew");
     $("log-screen").hidden = which!=="mine";
     $("task-screen").hidden = which!=="tasks";
@@ -144,7 +147,9 @@
     if(which==="tasks") taskBoard.load();
     if(which==="roads") roadBoard.load();
     if(which==="water") showWater(waterTab);
+    if(which==="members") searchMembers();
   }
+  $("tab-members").onclick = function(){ showScreen("members"); };
   $("tab-roads").onclick = function(){ roadBoard.reset(); showScreen("roads"); };
   $("tab-water").onclick = function(){ showScreen("water"); };
   $("tab-mine").onclick = function(){ showScreen("mine"); if(week) loadWeek(week, sel); };
@@ -773,6 +778,50 @@
   $("wt-sites").onclick=function(){ showWater("sites"); };
   $("wt-repairs").onclick=function(){ showWater("repairs"); };
 
+  // ---- members list ----
+  var mTimer=null, mSeq=0, mOpen=null;
+  function pickField(d, names){ for(var i=0;i<names.length;i++){ if(d[names[i]]) return d[names[i]]; } return ""; }
+  function telLink(v){ var digits=String(v).replace(/[^\d]/g,""); if(digits.length===7) digits="423"+digits; return digits.length>=10 ? "tel:"+digits.slice(-10) : null; }
+  function searchMembers(){
+    if(!token || !features.members) return;
+    var seq=++mSeq;
+    say($("m-status-line"),"Searching…");
+    call("searchMembers",[token, $("m-q").value.trim(), $("m-status").value], function(res){
+      if(seq!==mSeq) return;
+      say($("m-status-line"),"");
+      drawMembers(res);
+    }, function(msg){ if(seq===mSeq) say($("m-status-line"),msg,"err"); });
+  }
+  $("m-q").oninput=function(){ clearTimeout(mTimer); mTimer=setTimeout(searchMembers, 250); };
+  $("m-status").onchange=searchMembers;
+  function drawMembers(res){
+    var list=$("m-list"); list.innerHTML="";
+    $("m-count").textContent = res.total ? (res.total>res.rows.length ? "Showing "+res.rows.length+" of "+res.total+". Type more to narrow it down." : res.total+" found") : (res.columns.length ? "No matches." : "The boss hasn't loaded the members list yet.");
+    res.rows.forEach(function(r){
+      var d=r.data, c=el("div","mcard"); c.setAttribute("role","button"); c.tabIndex=0;
+      var nm=el("div","mn", [pickField(d,["Last name"]), pickField(d,["First name(s)"])].filter(Boolean).join(", ") || pickField(d,["Trust or LLC"]) || "(no name)");
+      if(d["Status"] && d["Status"]!=="Active") nm.appendChild(el("span","mtag off",d["Status"]));
+      if(d["Property type"]) nm.appendChild(el("span","mtag",d["Property type"]));
+      c.appendChild(nm);
+      var addr=pickField(d,["Deerfield address"]); if(addr) c.appendChild(el("div","ms",addr+(d["Parcel ID"] ? " · "+d["Parcel ID"] : "")));
+      var links=el("div","mlinks");
+      ["Cell phone 1","Cell phone 2","Home phone","Deerfield phone","Work phone"].forEach(function(k){
+        if(!d[k]) return; var h=telLink(d[k]); if(!h) return;
+        var a=el("a","","📞 "+d[k]); a.href=h; a.onclick=function(e){ e.stopPropagation(); }; links.appendChild(a);
+      });
+      ["Email 1","Email 2"].forEach(function(k){ if(!d[k] || !/@/.test(d[k])) return; var a=el("a","","✉️ "+d[k]); a.href="mailto:"+d[k].split(/\s/)[0]; a.onclick=function(e){ e.stopPropagation(); }; links.appendChild(a); });
+      if(links.children.length) c.appendChild(links);
+      if(mOpen===r.id){
+        var dl=el("dl","mall");
+        res.columns.forEach(function(k){ if(!d[k]) return; dl.appendChild(el("dt","",k)); dl.appendChild(el("dd","",d[k])); });
+        c.appendChild(dl);
+      }
+      c.onclick=function(){ mOpen = mOpen===r.id ? null : r.id; drawMembers(res); };
+      c.onkeydown=function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); c.onclick(); } };
+      list.appendChild(c);
+    });
+  }
+
   /** Show only the tabs this person can use, and only for things the boss has set up. */
   function applyAccess(res){
     if(res.features) features=res.features;
@@ -781,6 +830,7 @@
     $("tab-tasks").hidden=!features.tasks;
     $("tab-roads").hidden=!(features.roads && setup.roads>0);
     $("tab-water").hidden=!(p.readings || p.sites || p.repairs);
+    $("tab-members").hidden=!features.members;
     if(features.tasks && !accessLoaded) taskBoard.load(true);
     accessLoaded=true;
   }

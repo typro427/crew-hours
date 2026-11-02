@@ -20,6 +20,7 @@
     <button role="tab" data-tab="tasks" aria-selected="false">Tasks</button>
     <button role="tab" data-tab="roads" aria-selected="false">Roads mowed</button>
     <button role="tab" data-tab="water" aria-selected="false">Water System</button>
+    <button role="tab" data-tab="members" aria-selected="false">Members</button>
     <button role="tab" data-tab="crew" aria-selected="false">Crew &amp; PINs</button>
     <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
     <button role="tab" data-tab="billing" aria-selected="false">Billing</button>
@@ -105,6 +106,31 @@
     </div>
     <div data-wp="sites" hidden id="water-sites"></div>
     <div data-wp="repairs" hidden id="water-repairs"></div>
+  </section>
+
+  <!-- MEMBERS (private) -->
+  <section data-panel="members" class="panel" hidden>
+    <div class="card" id="mb-detail" hidden></div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h3>Members</h3>
+        <div class="row" style="gap:8px"><button class="btn small" type="button" id="mb-add">+ Add member</button><a class="btn ghost small" id="mb-csv" href="/api/admin/members.csv">Download CSV</a></div>
+      </div>
+      <div class="mb-search">
+        <input id="mb-q" type="search" placeholder="Search anything: name, address, lot, parcel, phone, email…" autocomplete="off" aria-label="Search members">
+        <select id="mb-status" aria-label="Which members"><option value="Active">Active</option><option value="">All</option><option value="Inactive / sold">Inactive / sold</option></select>
+      </div>
+      <p class="hint" id="mb-count"></p>
+      <div class="tablebox"><table class="roads mb-table"><thead><tr><th>Name</th><th>Deerfield address</th><th>Type</th><th>Parcel ID</th><th>Phone</th><th>Email</th></tr></thead><tbody id="mb-body"></tbody></table></div>
+      <div class="row" id="mb-more-row" hidden><button class="btn ghost small" type="button" id="mb-more">Show more</button></div>
+      <p class="hint">Private: only you, and crew members you switch on under Crew &amp; PINs (“Members list”), can see this. The crew can search it but not change it.</p>
+    </div>
+    <div class="card">
+      <h3>Import the master list</h3>
+      <p class="hint">Upload a Crew Hours members file (.json) or a spreadsheet saved as CSV (first row = column names). This <b>replaces</b> the whole list.</p>
+      <div class="row"><input type="file" id="mb-file" accept=".json,.csv,application/json,text/csv"><button class="btn" id="mb-import" type="button">Import</button></div>
+      <span class="status" id="mb-status-line" role="status"></span>
+    </div>
   </section>
 
   <!-- CREW -->

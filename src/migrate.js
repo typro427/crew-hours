@@ -151,6 +151,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS roads_kind_name ON roads (company_id, kind, na
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'task';
 -- Which parts of the app each crew member can use (null = everything).
 ALTER TABLE crew ADD COLUMN IF NOT EXISTS features JSONB;
+-- Members list (searchable database): rows are {column: value}; the column list is kept on the company.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS member_columns JSONB;
+CREATE TABLE IF NOT EXISTS members (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  data       JSONB NOT NULL DEFAULT '{}',
+  search     TEXT NOT NULL DEFAULT '',
+  position   INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS members_company ON members (company_id, position);
 -- Water system readings: the boss picks what to record; the crew logs values.
 CREATE TABLE IF NOT EXISTS reading_types (
   id         SERIAL PRIMARY KEY,

@@ -217,7 +217,7 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
   const wk = (await sam('GET', '/week')).body;
-  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false });
+  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false, members: false });
   assert.strictEqual((await sam('GET', '/roads')).status, 403);
   assert.strictEqual((await sam('GET', '/readings')).status, 403);
   assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
@@ -257,4 +257,45 @@ test('readings inside a site: saved with the check, show in the readings list wi
   assert.strictEqual(r.body.road.readingIds, null);
   // roads never get reading boxes
   assert.strictEqual((await jake('GET', '/roads/' + (await O('GET', '/api/admin/roads')).body.roads[0].id)).body.road.readingTypes, undefined);
+});
+
+test('members list: off by default, boss imports and searches, only switched-on crew can search, companies separate', async () => {
+  const cols = ['Status', 'Last name', 'First name(s)', 'Deerfield address', 'Parcel ID', 'Cell phone 1', 'Email 1'];
+  const rows = [
+    { Status: 'Active', 'Last name': 'Testerson', 'First name(s)': 'Pat & Lee', 'Deerfield address': '12 Fake Deer Lane', 'Parcel ID': '999A A 001.00 000', 'Cell phone 1': '(555)010-0001', 'Email 1': 'pat@example.com' },
+    { Status: 'Active', 'Last name': 'Sampleton', 'First name(s)': 'Jo', 'Deerfield address': '40 Pretend Trail', 'Parcel ID': '999A A 002.00 000' },
+    { Status: 'Inactive / sold', 'Last name': 'Oldowner', 'First name(s)': 'Max', 'Deerfield address': '12 Fake Deer Lane' }
+  ];
+  let r = await O('POST', '/api/admin/members/import', { columns: cols, rows });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body)); assert.strictEqual(r.body.rows, 3);
+  r = await O('GET', '/api/admin/members?q=fake deer');
+  assert.deepStrictEqual(r.body.rows.map(x => x.data['Last name']), ['Testerson', 'Oldowner'], 'every word must match, any column');
+  r = await O('GET', '/api/admin/members?q=fake&status=Active');
+  assert.deepStrictEqual(r.body.rows.map(x => x.data['Last name']), ['Testerson']);
+  assert.strictEqual((await O('GET', '/api/admin/members?q=010-0001')).body.total, 1, 'phone search');
+  assert.strictEqual((await O('GET', '/api/admin/members?q=100%')).body.total, 0, 'wildcards are literal');
+  // crew: off by default, even for managers
+  const crew = (await O('GET', '/api/admin/crew')).body.crew;
+  const jakeRow = crew.find(c => c.name === 'Jake');
+  assert.strictEqual(jakeRow.features.members, false);
+  assert.strictEqual((await jake('GET', '/members?q=fake')).status, 403);
+  await O('PUT', '/api/admin/crew/' + jakeRow.id, { features: { ...jakeRow.features, members: true } });
+  r = await jake('GET', '/members?q=testerson');
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.body.rows[0].data['Email 1'], 'pat@example.com');
+  assert.strictEqual((await sam('GET', '/members')).status, 403, 'still off for Sam');
+  assert.strictEqual((await jake('POST', '/members', { data: {} })).status, 404, 'crew cannot change it');
+  // other company sees nothing
+  assert.strictEqual((await O2('GET', '/api/admin/members?q=testerson')).body.total, 0);
+  // edit, add, delete, export
+  const id = (await O('GET', '/api/admin/members?q=sampleton')).body.rows[0].id;
+  assert.strictEqual((await O('PUT', '/api/admin/members/' + id, { data: { 'Last name': 'Sampleton', 'Cell phone 1': '(555)010-0002', Bogus: 'x' } })).status, 200);
+  const upd = (await O('GET', '/api/admin/members?q=010-0002')).body.rows[0];
+  assert.strictEqual(upd.id, id); assert.strictEqual(upd.data.Bogus, undefined, 'unknown columns dropped');
+  const newId = (await O('POST', '/api/admin/members', { data: { 'Last name': 'Newbie', Status: 'Active' } })).body.id;
+  assert.ok(newId);
+  await O('DELETE', '/api/admin/members/' + newId);
+  assert.strictEqual((await O('GET', '/api/admin/members?q=newbie')).body.total, 0);
+  const csv = (await O('GET', '/api/admin/members.csv')).body.toString();
+  assert.match(csv, /"Last name"/); assert.match(csv, /Testerson/);
+  assert.strictEqual((await O('POST', '/api/admin/members/import', { columns: [], rows: [] })).status, 400);
 });

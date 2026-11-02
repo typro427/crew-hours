@@ -92,3 +92,14 @@ table.roads .never{color:var(--err)}
 .feats{display:flex;flex-wrap:wrap;gap:6px 16px;grid-column:1/-1}
 .feats .k{width:100%;font-weight:600;font-size:14px}
 table.roads td.num{font-variant-numeric:tabular-nums}
+
+/* members */
+.mb-search{display:grid;grid-template-columns:1fr 200px;gap:10px;margin-top:10px}
+@media (max-width:640px){.mb-search{grid-template-columns:1fr}}
+.mb-table td{font-size:14px;vertical-align:top}
+.mb-table td.nm{font-weight:600}
+.mb-table .off{font-size:12px;color:var(--err);font-weight:600;display:block}
+.mb-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:760px){.mb-grid{grid-template-columns:1fr 1fr}}
+.mb-dl{display:grid;grid-template-columns:minmax(140px,max-content) 1fr;gap:6px 16px;margin:0}
+.mb-dl dt{color:var(--muted);font-size:14px} .mb-dl dd{margin:0;overflow-wrap:anywhere}

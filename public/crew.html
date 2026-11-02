@@ -27,6 +27,7 @@
     <button role="tab" id="tab-tasks" aria-selected="false" hidden>Tasks <span class="badge" id="task-count" hidden></span></button>
     <button role="tab" id="tab-roads" aria-selected="false" hidden>Roads mowed</button>
     <button role="tab" id="tab-water" aria-selected="false" hidden>Water System</button>
+    <button role="tab" id="tab-members" aria-selected="false" hidden>Members</button>
     <button role="tab" id="tab-crew" aria-selected="false" hidden>Crew week</button>
   </nav>
 
@@ -145,6 +146,17 @@
     </div>
     <div id="wp-sites" hidden style="display:flex;flex-direction:column;gap:14px"></div>
     <div id="wp-repairs" hidden style="display:flex;flex-direction:column;gap:14px"></div>
+  </section>
+
+  <!-- Members list (private: only people the boss switches it on for) -->
+  <section id="member-screen" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="msearch">
+      <input id="m-q" type="search" placeholder="Search name, address, lot, phone, email…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search members">
+      <select id="m-status" aria-label="Which members"><option value="Active">Active</option><option value="">All</option><option value="Inactive / sold">Inactive / sold</option></select>
+    </div>
+    <div class="hint" id="m-count"></div>
+    <div id="m-list" class="mlist"></div>
+    <div class="status" id="m-status-line" role="status"></div>
   </section>
 
   <!-- Boss: crew week -->
