@@ -30,6 +30,7 @@
     if (name === 'crew') loadCrew();
     if (name === 'tasks') loadTasks();
     if (name === 'roads') loadRoads();
+    if (name === 'water') showWater(wTab);
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -201,7 +202,8 @@
   $('email-missing').onclick = function () { emailMe('missing'); };
 
   /* ------------------------------- crew ------------------------------- */
-  function loadCrew() { return api('GET', '/api/admin/crew').then(function (r) { crew = r.crew; showCount(r.billing); drawCrew(); }); }
+  var featLabels = {};
+  function loadCrew() { return api('GET', '/api/admin/crew').then(function (r) { crew = r.crew; featLabels = r.features || featLabels; showCount(r.billing); drawCrew(); }); }
   function showCount(b) {
     if (!b) return; me.billing = b; drawPlan();
     $('crew-count').textContent = b.activeCrew + ' of ' + b.crewLimit + ' active' + (b.status === 'trialing' ? ' (trial)' : '');
@@ -214,6 +216,8 @@
       var left = el('div'); left.appendChild(el('span', 'nm', c.name));
       if (c.is_manager) left.appendChild(el('span', 'pill mgr', 'Manager'));
       if (!c.active) left.appendChild(el('span', 'pill off', 'Can’t log in'));
+      var offs = c.features ? Object.keys(featLabels).filter(function (k) { return c.features[k] === false; }) : [];
+      if (offs.length) left.appendChild(el('span', 'hint', ' ' + offs.length + ' off'));
       row.appendChild(left);
       var acts = el('div', 'acts');
       var edit = el('button', 'btn ghost small', editing === c.id ? 'Close' : 'Edit');
@@ -228,8 +232,19 @@
         var p = el('div'); p.innerHTML = '<label>New PIN <span class="hint">leave blank to keep</span></label>'; var pi = el('input'); pi.inputMode = 'numeric'; pi.maxLength = 4; pi.autocomplete = 'off'; p.appendChild(pi);
         var m = el('label', 'check'); var mi = el('input'); mi.type = 'checkbox'; mi.checked = c.is_manager; m.appendChild(mi); m.appendChild(document.createTextNode(' Manager'));
         var sv = el('button', 'btn small', 'Save'); sv.type = 'submit';
-        f.appendChild(n); f.appendChild(p); f.appendChild(m); f.appendChild(sv);
-        f.onsubmit = function (e) { e.preventDefault(); updateCrew(c.id, { name: ni.value, pin: pi.value, manager: mi.checked }, true); };
+        // What this person can use in the app.
+        var fs = el('div', 'feats'); fs.appendChild(el('span', 'k', 'Can use in the app'));
+        var boxes = {};
+        Object.keys(featLabels).forEach(function (k) {
+          var l = el('label', 'check'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !c.features || c.features[k] !== false;
+          boxes[k] = cb; l.appendChild(cb); l.appendChild(document.createTextNode(' ' + featLabels[k])); fs.appendChild(l);
+        });
+        f.appendChild(n); f.appendChild(p); f.appendChild(m); f.appendChild(fs); f.appendChild(sv);
+        f.onsubmit = function (e) {
+          e.preventDefault();
+          var feats = {}; Object.keys(boxes).forEach(function (k) { feats[k] = boxes[k].checked; });
+          updateCrew(c.id, { name: ni.value, pin: pi.value, manager: mi.checked, features: feats }, true);
+        };
         row.appendChild(f);
       }
       list.appendChild(row);
@@ -300,6 +315,7 @@
     }
     else if (h === '#tasks') showTab('tasks');
     else if (h === '#roads') showTab('roads');
+    else if (h === '#water') showTab('water');
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
@@ -323,162 +339,246 @@
     }).catch(function (e) { status('imp-status', e.message, 'err'); });
   };
 
-  /* ------------------------------- tasks ------------------------------ */
-  var tasks = [], tEditing = null;
-  function loadTasks() {
-    status('t-status', '');
-    return Promise.all([api('GET', '/api/admin/tasks'), api('GET', '/api/admin/crew')]).then(function (r) {
-      tasks = r[0].tasks; crew = r[1].crew; fillWho(); drawTasks();
-    }).catch(function (e) { status('t-status', e.message, 'err'); });
-  }
-  function fillWho() {
-    var s = $('t-who'), keep = s.value; s.innerHTML = '';
-    var o = el('option', '', 'Anyone on the crew'); o.value = ''; s.appendChild(o);
-    crew.filter(function (c) { return c.active; }).forEach(function (c) { var x = el('option', '', c.name); x.value = c.id; s.appendChild(x); });
-    s.value = keep;
-  }
-  function dueText(t) {
-    if (!t.due) return null;
-    var late = t.status === 'open' && t.due < me.today;
-    return el('span', late ? 'late' : '', (late ? 'Overdue: ' : 'Due ') + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due));
-  }
-  function drawTasks() {
-    var open = $('tk-open'), done = $('tk-done'); open.innerHTML = ''; done.innerHTML = '';
-    var no = 0, nd = 0;
-    tasks.forEach(function (t) {
-      var row = el('div', 'trow'), top = el('div', 't-top'), left = el('div');
-      left.appendChild(el('b', '', t.title));
-      var meta = el('div', 't-meta');
-      meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
-      if (t.createdByName) meta.appendChild(el('span', '', 'Added by ' + t.createdByName));
-      var d = dueText(t); if (d) meta.appendChild(d);
-      if (t.status === 'done') meta.appendChild(el('span', '', 'Done by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
-      left.appendChild(meta); top.appendChild(left);
-      var acts = el('div', 't-acts');
-      function btn(label, fn) { var b = el('button', 'btn ghost small', label); b.type = 'button'; b.onclick = fn; acts.appendChild(b); return b; }
-      if (t.status === 'open') btn('Edit', function () { editTask(t); });
-      else btn('Reopen', function () { api('PUT', '/api/admin/tasks/' + t.id, { reopen: true }).then(function (r) { tasks = r.tasks; drawTasks(); }).catch(function (e) { status('t-status', e.message, 'err'); }); });
-      var del = btn('Delete', function () {
-        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
-        api('DELETE', '/api/admin/tasks/' + t.id).then(function (r) { tasks = r.tasks; drawTasks(); }).catch(function (e) { status('t-status', e.message, 'err'); });
-      });
-      top.appendChild(acts); row.appendChild(top);
-      if (t.details) row.appendChild(el('p', 't-text', t.details));
-      if (t.status === 'done' && t.doneNotes) row.appendChild(el('p', 't-notes', t.doneNotes));
-      if (t.photos && t.photos.length) {
-        var th = el('div', 't-thumbs');
-        t.photos.forEach(function (id) { var a = el('a'); a.href = '/api/admin/tasks/photo/' + id; a.target = '_blank'; a.rel = 'noopener';
-          var i = el('img'); i.src = a.href; i.alt = 'Photo from ' + (t.doneByName || 'crew'); i.loading = 'lazy'; a.appendChild(i); th.appendChild(a); });
-        row.appendChild(th);
-      }
-      if (t.status === 'open') { open.appendChild(row); no++; } else { done.appendChild(row); nd++; }
-    });
-    $('tk-open-empty').hidden = no > 0; $('tk-done-empty').hidden = nd > 0;
-  }
-  function editTask(t) {
-    tEditing = t.id; $('t-title').value = t.title; $('t-details').value = t.details || ''; $('t-who').value = t.assignedTo || ''; $('t-due').value = t.due || '';
-    $('t-save').textContent = 'Save task'; $('t-cancel').hidden = false; $('t-title').focus();
-  }
-  function resetTaskForm() { tEditing = null; $('add-task').reset(); $('t-save').textContent = 'Add task'; $('t-cancel').hidden = true; }
-  $('t-cancel').onclick = resetTaskForm;
-  $('add-task').onsubmit = function (e) {
-    e.preventDefault();
-    var body = { title: $('t-title').value.trim(), details: $('t-details').value, assignedTo: $('t-who').value ? Number($('t-who').value) : null, due: $('t-due').value || null };
-    if (!body.title) return status('t-status', 'Give the task a name.', 'err');
-    var editing = tEditing;
-    api(editing ? 'PUT' : 'POST', '/api/admin/tasks' + (editing ? '/' + editing : ''), body).then(function (r) {
-      tasks = r.tasks; resetTaskForm(); drawTasks(); status('t-status', editing ? 'Saved.' : 'Task added. The crew will see it in their app.', 'ok');
-    }).catch(function (err) { status('t-status', err.message, 'err'); });
-  };
-
-  /* ------------------------------- roads ------------------------------ */
-  var roads = [], roadPick = null;
-  function daysAgo(d) { return Math.round((toUTC(me.today) - toUTC(d)) / 864e5); }
-  function loadRoads() {
-    return api('GET', '/api/admin/roads').then(function (r) {
-      roads = r.roads; $('rd-names').value = roads.map(function (x) { return x.name; }).join('\n'); drawRoads();
-      if (roadPick) showRoad(roadPick);
-    }).catch(function (e) { status('rd-status', e.message, 'err'); });
-  }
-  function drawRoads() {
-    var body = $('rd-body'); body.innerHTML = '';
-    roads.forEach(function (x) {
-      var tr = el('tr');
-      tr.appendChild(el('td', '', x.name));
-      tr.appendChild(el('td', '', x.lengthMi != null ? x.lengthMi + ' mi' : ''));
-      var n = x.lastDay ? daysAgo(x.lastDay) : null;
-      tr.appendChild(el('td', x.lastDay ? (n > 14 ? 'old' : '') : 'never', x.lastDay ? DAYS[toUTC(x.lastDay).getUTCDay()] + ' ' + short(x.lastDay) + ' (' + (n <= 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago') + ')' : 'Not mowed yet'));
-      tr.appendChild(el('td', '', x.lastBy || ''));
-      tr.appendChild(el('td', '', String(x.timesThisYear)));
-      tr.onclick = function () { showRoad(x.id); };
-      body.appendChild(tr);
-    });
-    $('rd-empty').hidden = roads.length > 0;
-    var stale = roads.filter(function (x) { return !x.lastDay || daysAgo(x.lastDay) > 14; }).length;
-    $('rd-count').textContent = roads.length ? roads.length + ' roads' + (stale ? ' · ' + stale + ' not mowed in 2 weeks' : '') : '';
-  }
-  function showRoad(id) {
-    roadPick = id;
-    api('GET', '/api/admin/roads/' + id).then(function (r) { drawRoad(r.road); }).catch(function (e) { status('rd-status', e.message, 'err'); });
-  }
-  function drawRoad(road) {
-    var box = $('rd-detail'); box.hidden = false; box.innerHTML = '';
-    var top = el('div', 'row'); top.style.justifyContent = 'space-between';
-    top.appendChild(el('h3', '', road.name + ' · ' + road.mows.length + ' time' + (road.mows.length === 1 ? '' : 's') + ' logged'));
-    var close = el('button', 'btn ghost small', 'Close'); close.type = 'button'; close.onclick = function () { roadPick = null; box.hidden = true; };
-    top.appendChild(close); box.appendChild(top);
-    // Road details: shown to the crew when they open the road.
-    var PL = { 1: 'needs work', 2: 'soon', 3: 'can wait' }, chips = el('div', 'chips');
-    [['Roadway', road.pRoad], ['Ditch line', road.pDitch], ['Trees', road.pTrees]].forEach(function (x) { if (x[1]) chips.appendChild(el('span', 'chip p' + x[1], x[0] + ': ' + PL[x[1]])); });
-    var facts = [road.lengthMi != null ? road.lengthMi + ' miles' : '', road.surface || ''].filter(Boolean).join(' · ');
-    if (facts) box.appendChild(el('p', 'muted', facts));
-    if (chips.children.length) box.appendChild(chips);
-    if (road.notes) box.appendChild(el('p', 't-text', road.notes));
-    var ed = el('details'); ed.appendChild(el('summary', '', 'Edit road details'));
-    var g = el('div', 'rd-edit');
-    function fld(label, node) { var w = el('div'); var l = el('label', '', label); w.appendChild(l); w.appendChild(node); g.appendChild(w); return node; }
-    function inp(v, type) { var i = el('input'); i.type = type || 'text'; i.value = v == null ? '' : v; return i; }
-    function prSel(v) { var s = el('select'); [['', '—'], ['1', '1 · needs work'], ['2', '2 · soon'], ['3', '3 · can wait']].forEach(function (o) { var x = el('option', '', o[1]); x.value = o[0]; s.appendChild(x); }); s.value = v ? String(v) : ''; return s; }
-    var fLen = fld('Length (miles)', inp(road.lengthMi, 'number')); fLen.step = '0.1'; fLen.min = '0';
-    var fSurf = fld('Surface / other', inp(road.surface)); fSurf.placeholder = 'Paved, Gravel…';
-    var fR = fld('Roadway', prSel(road.pRoad)), fD = fld('Ditch line', prSel(road.pDitch)), fT = fld('Trees', prSel(road.pTrees));
-    ed.appendChild(g);
-    var nl = el('label', '', 'Notes for the crew'); var fN = el('textarea'); fN.value = road.notes || ''; fN.rows = 3; ed.appendChild(nl); ed.appendChild(fN);
-    var row2 = el('div', 'row'), sv = el('button', 'btn small', 'Save details'), st = el('span', 'status'); sv.type = 'button';
-    sv.onclick = function () {
-      api('PUT', '/api/admin/roads/' + road.id + '/info', { lengthMi: fLen.value, surface: fSurf.value, pRoad: fR.value, pDitch: fD.value, pTrees: fT.value, notes: fN.value })
-        .then(function (r) { roads = r.roads; drawRoads(); drawRoad(r.road); status('rd-status', 'Saved ' + r.road.name + '.', 'ok'); })
-        .catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
+  /* --------------------- task panels: Tasks, Water leaks & repairs --------------------- */
+  function TaskPanel(kind, root, L) {
+    var me = { tasks: [], editing: null };
+    var form = el('form', 'card'); form.noValidate = true;
+    form.appendChild(el('h3', '', L.formTitle));
+    function field(label, node, hint) { var l = el('label', '', label); if (hint) l.appendChild(el('span', 'hint', ' ' + hint)); form.appendChild(l); form.appendChild(node); return node; }
+    var fT = field(L.titleLabel, el('input')); fT.maxLength = 120; fT.placeholder = L.titlePh; fT.autocomplete = 'off';
+    var fD = field('Details', el('textarea'), '(optional)'); fD.maxLength = 2000; fD.rows = 3; fD.placeholder = L.detailsPh;
+    var g = el('div', 'grid2'), w1 = el('div'), w2 = el('div');
+    var fW = el('select'), fDue = el('input'); fDue.type = 'date';
+    w1.appendChild(el('label', '', 'For')); w1.appendChild(fW); w2.appendChild(el('label', '', 'Due')); w2.lastChild.appendChild(el('span', 'hint', ' (optional)')); w2.appendChild(fDue);
+    g.appendChild(w1); g.appendChild(w2); form.appendChild(g);
+    var row = el('div', 'row'), sv = el('button', 'btn', L.addBtn), cancel = el('button', 'btn ghost', 'Cancel'), st = el('span', 'status');
+    sv.type = 'submit'; cancel.type = 'button'; cancel.hidden = true; row.appendChild(sv); row.appendChild(cancel); row.appendChild(st); form.appendChild(row);
+    form.appendChild(el('p', 'hint', L.formHint));
+    var openC = el('div', 'card'), doneC = el('div', 'card');
+    openC.appendChild(el('h3', '', L.openTitle)); var openL = el('div', 'tasks'), openE = el('p', 'hint', L.openEmpty); openC.appendChild(openL); openC.appendChild(openE);
+    doneC.appendChild(el('h3', '', L.doneTitle)); doneC.lastChild.appendChild(el('span', 'hint', ' (last 60 days)'));
+    var doneL = el('div', 'tasks'), doneE = el('p', 'hint', L.doneEmpty); doneC.appendChild(doneL); doneC.appendChild(doneE);
+    var wrap = el('div', 'stack'); [form, openC, doneC].forEach(function (n) { wrap.appendChild(n); }); root.appendChild(wrap);
+    function say(m, c) { st.textContent = m || ''; st.className = 'status' + (c ? ' ' + c : ''); }
+    me.load = function () {
+      say('');
+      return Promise.all([api('GET', '/api/admin/tasks?kind=' + kind), api('GET', '/api/admin/crew')]).then(function (r) {
+        me.tasks = r[0].tasks; crew = r[1].crew; fillWho(); draw();
+      }).catch(function (e) { say(e.message, 'err'); });
     };
-    row2.appendChild(sv); row2.appendChild(st); ed.appendChild(row2);
-    box.appendChild(ed);
-    box.appendChild(el('h3', '', 'Mowing history'));
-    if (!road.mows.length) box.appendChild(el('p', 'muted', 'Nothing logged yet.'));
-    road.mows.forEach(function (m) {
-      var row = el('div', 'mrow'), t = el('div', 't-top');
-      t.appendChild(el('b', '', DAYS[toUTC(m.day).getUTCDay()] + ' ' + short(m.day) + (m.byName ? ' · ' + m.byName : '')));
-      var del = el('button', 'btn ghost small', 'Remove'); del.type = 'button';
-      del.onclick = function () {
-        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Remove'; }, 3000); return; }
-        api('DELETE', '/api/admin/mows/' + m.id).then(function (r) { roads = r.roads; drawRoads(); drawRoad(r.road); }).catch(function (e) { status('rd-status', e.message, 'err'); });
-      };
-      t.appendChild(del); row.appendChild(t);
-      if (m.notes) row.appendChild(el('p', 't-text', m.notes));
-      if (m.photos.length) {
-        var th = el('div', 't-thumbs');
-        m.photos.forEach(function (id) { var a = el('a'); a.href = '/api/admin/road-photo/' + id; a.target = '_blank'; a.rel = 'noopener';
-          var i = el('img'); i.src = a.href; i.alt = 'Photo of ' + road.name; i.loading = 'lazy'; a.appendChild(i); th.appendChild(a); });
-        row.appendChild(th);
-      }
-      box.appendChild(row);
-    });
-    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    function fillWho() {
+      var keep = fW.value; fW.innerHTML = '';
+      var o = el('option', '', 'Anyone on the crew'); o.value = ''; fW.appendChild(o);
+      crew.filter(function (c) { return c.active; }).forEach(function (c) { var x = el('option', '', c.name); x.value = c.id; fW.appendChild(x); });
+      fW.value = keep;
+    }
+    function draw() {
+      openL.innerHTML = ''; doneL.innerHTML = ''; var no = 0, nd = 0;
+      me.tasks.forEach(function (t) {
+        var r = el('div', 'trow'), top = el('div', 't-top'), left = el('div');
+        left.appendChild(el('b', '', t.title));
+        var meta = el('div', 't-meta');
+        meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
+        if (t.createdByName) meta.appendChild(el('span', '', L.byWord + ' ' + t.createdByName));
+        if (t.due) { var late = t.status === 'open' && t.due < me_today(); meta.appendChild(el('span', late ? 'late' : '', (late ? 'Overdue: ' : 'Due ') + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due))); }
+        if (t.status === 'done') meta.appendChild(el('span', '', L.doneWord + ' by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+        left.appendChild(meta); top.appendChild(left);
+        var acts = el('div', 't-acts');
+        function btn(label, fn) { var b = el('button', 'btn ghost small', label); b.type = 'button'; b.onclick = fn; acts.appendChild(b); return b; }
+        if (t.status === 'open') btn('Edit', function () { edit(t); });
+        else btn('Reopen', function () { api('PUT', '/api/admin/tasks/' + t.id, { reopen: true }).then(function (x) { me.tasks = x.tasks; draw(); }).catch(function (e) { say(e.message, 'err'); }); });
+        var del = btn('Delete', function () {
+          if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+          api('DELETE', '/api/admin/tasks/' + t.id).then(function (x) { me.tasks = x.tasks; draw(); }).catch(function (e) { say(e.message, 'err'); });
+        });
+        top.appendChild(acts); r.appendChild(top);
+        if (t.details) r.appendChild(el('p', 't-text', t.details));
+        if (t.status === 'done' && t.doneNotes) r.appendChild(el('p', 't-notes', t.doneNotes));
+        if (t.photos && t.photos.length) r.appendChild(photoLinks(t.photos, '/api/admin/tasks/photo/', 'Photo from ' + (t.doneByName || 'crew')));
+        if (t.status === 'open') { openL.appendChild(r); no++; } else { doneL.appendChild(r); nd++; }
+      });
+      openE.hidden = no > 0; doneE.hidden = nd > 0;
+    }
+    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
+    function reset() { me.editing = null; form.reset(); sv.textContent = L.addBtn; cancel.hidden = true; }
+    cancel.onclick = reset;
+    form.onsubmit = function (e) {
+      e.preventDefault();
+      var body = { kind: kind, title: fT.value.trim(), details: fD.value, assignedTo: fW.value ? Number(fW.value) : null, due: fDue.value || null };
+      if (!body.title) return say(L.needTitle, 'err');
+      var id = me.editing;
+      api(id ? 'PUT' : 'POST', '/api/admin/tasks' + (id ? '/' + id : ''), body).then(function (r) {
+        me.tasks = r.tasks; reset(); draw(); say(id ? 'Saved.' : L.addedOk, 'ok');
+      }).catch(function (err) { say(err.message, 'err'); });
+    };
+    return me;
   }
-  $('rd-form').onsubmit = function (e) {
-    e.preventDefault(); status('rd-status', 'Saving…');
-    api('PUT', '/api/admin/roads', { names: $('rd-names').value.split('\n') }).then(function (r) {
-      roads = r.roads; $('rd-names').value = roads.map(function (x) { return x.name; }).join('\n'); drawRoads();
-      status('rd-status', 'Saved. ' + roads.length + ' roads.', 'ok');
-    }).catch(function (err) { status('rd-status', err.message, 'err'); });
+  function me_today() { return me.today; }
+  function photoLinks(ids, base, alt) {
+    var th = el('div', 't-thumbs');
+    ids.forEach(function (id) { var a = el('a'); a.href = base + id; a.target = '_blank'; a.rel = 'noopener';
+      var i = el('img'); i.src = a.href; i.alt = alt; i.loading = 'lazy'; a.appendChild(i); th.appendChild(a); });
+    return th;
+  }
+
+  /* --------------------- place panels: Roads mowed, Water sites --------------------- */
+  function PlacePanel(kind, root, L) {
+    var me = { roads: [], pick: null };
+    var tableC = el('div', 'card'), head = el('div', 'row'); head.style.justifyContent = 'space-between';
+    head.appendChild(el('h3', '', L.title)); var count = el('span', 'hint'); head.appendChild(count); tableC.appendChild(head);
+    var tb = el('div', 'tablebox'), table = el('table', 'roads'), thead = el('thead'), htr = el('tr'), body = el('tbody');
+    L.cols.forEach(function (c) { htr.appendChild(el('th', '', c)); }); thead.appendChild(htr); table.appendChild(thead); table.appendChild(body); tb.appendChild(table); tableC.appendChild(tb);
+    var empty = el('p', 'hint', L.empty); tableC.appendChild(empty); tableC.appendChild(el('p', 'hint', L.clickHint));
+    var detail = el('div', 'card'); detail.hidden = true;
+    var form = el('form', 'card'); form.noValidate = true; form.appendChild(el('h3', '', L.listTitle));
+    form.appendChild(el('label', '', 'One per line, in the order the crew should see them'));
+    var ta = el('textarea'); ta.rows = 10; ta.placeholder = L.listPh; form.appendChild(ta);
+    form.appendChild(el('p', 'hint', 'Taking one off the list hides it from the crew. Its history is kept, and comes back if you add it again.'));
+    var frow = el('div', 'row'), fsv = el('button', 'btn', 'Save list'), fst = el('span', 'status'); fsv.type = 'submit'; frow.appendChild(fsv); frow.appendChild(fst); form.appendChild(frow);
+    var wrap = el('div', 'stack'); [tableC, detail, form].forEach(function (n) { wrap.appendChild(n); }); root.appendChild(wrap);
+    function say(m, c) { fst.textContent = m || ''; fst.className = 'status' + (c ? ' ' + c : ''); }
+    function daysAgo(d) { return Math.round((toUTC(me_today()) - toUTC(d)) / 864e5); }
+    me.load = function () {
+      return api('GET', '/api/admin/roads?kind=' + kind).then(function (r) {
+        me.roads = r.roads; ta.value = me.roads.map(function (x) { return x.name; }).join('\n'); draw();
+        if (me.pick) show(me.pick);
+      }).catch(function (e) { say(e.message, 'err'); });
+    };
+    function draw() {
+      body.innerHTML = '';
+      me.roads.forEach(function (x) {
+        var tr = el('tr');
+        tr.appendChild(el('td', '', x.name));
+        if (L.showLength) tr.appendChild(el('td', '', x.lengthMi != null ? x.lengthMi + ' mi' : ''));
+        var n = x.lastDay ? daysAgo(x.lastDay) : null;
+        tr.appendChild(el('td', x.lastDay ? (n > L.oldDays ? 'old' : '') : 'never', x.lastDay ? DAYS[toUTC(x.lastDay).getUTCDay()] + ' ' + short(x.lastDay) + ' (' + (n <= 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago') + ')' : L.never));
+        tr.appendChild(el('td', '', x.lastBy || ''));
+        tr.appendChild(el('td', '', String(x.timesThisYear)));
+        tr.onclick = function () { show(x.id); };
+        body.appendChild(tr);
+      });
+      empty.hidden = me.roads.length > 0;
+      var stale = me.roads.filter(function (x) { return !x.lastDay || daysAgo(x.lastDay) > L.oldDays; }).length;
+      count.textContent = me.roads.length ? me.roads.length + ' ' + L.noun + (stale ? ' · ' + stale + ' ' + L.staleText : '') : '';
+    }
+    function show(id) { me.pick = id; api('GET', '/api/admin/roads/' + id).then(function (r) { drawOne(r.road); }).catch(function (e) { say(e.message, 'err'); }); }
+    function drawOne(road) {
+      detail.hidden = false; detail.innerHTML = '';
+      var top = el('div', 'row'); top.style.justifyContent = 'space-between';
+      top.appendChild(el('h3', '', road.name + ' · ' + road.mows.length + ' time' + (road.mows.length === 1 ? '' : 's') + ' logged'));
+      var close = el('button', 'btn ghost small', 'Close'); close.type = 'button'; close.onclick = function () { me.pick = null; detail.hidden = true; };
+      top.appendChild(close); detail.appendChild(top);
+      var PL = { 1: 'needs work', 2: 'soon', 3: 'can wait' }, chips = el('div', 'chips');
+      [['Roadway', road.pRoad], ['Ditch line', road.pDitch], ['Trees', road.pTrees]].forEach(function (x) { if (x[1]) chips.appendChild(el('span', 'chip p' + x[1], x[0] + ': ' + PL[x[1]])); });
+      var facts = [road.lengthMi != null ? road.lengthMi + ' miles' : '', road.surface || ''].filter(Boolean).join(' · ');
+      if (facts) detail.appendChild(el('p', 'muted', facts));
+      if (chips.children.length) detail.appendChild(chips);
+      if (road.notes) detail.appendChild(el('p', 't-text', road.notes));
+      var ed = el('details'); ed.appendChild(el('summary', '', L.editDetails));
+      var g = el('div', 'rd-edit');
+      function fld(label, node) { var w = el('div'); w.appendChild(el('label', '', label)); w.appendChild(node); g.appendChild(w); return node; }
+      function inp(v, type) { var i = el('input'); i.type = type || 'text'; i.value = v == null ? '' : v; return i; }
+      function prSel(v) { var sl = el('select'); [['', '—'], ['1', '1 · needs work'], ['2', '2 · soon'], ['3', '3 · can wait']].forEach(function (o) { var x = el('option', '', o[1]); x.value = o[0]; sl.appendChild(x); }); sl.value = v ? String(v) : ''; return sl; }
+      var fLen = null, fR = null, fD = null, fT = null;
+      if (L.showLength) { fLen = fld('Length (miles)', inp(road.lengthMi, 'number')); fLen.step = '0.1'; fLen.min = '0'; }
+      var fSurf = fld(L.surfaceLabel, inp(road.surface)); fSurf.placeholder = L.surfacePh;
+      if (L.showPriorities) { fR = fld('Roadway', prSel(road.pRoad)); fD = fld('Ditch line', prSel(road.pDitch)); fT = fld('Trees', prSel(road.pTrees)); }
+      ed.appendChild(g);
+      ed.appendChild(el('label', '', 'Notes for the crew')); var fN = el('textarea'); fN.value = road.notes || ''; fN.rows = 3; ed.appendChild(fN);
+      var r2 = el('div', 'row'), sv = el('button', 'btn small', 'Save details'), st = el('span', 'status'); sv.type = 'button';
+      sv.onclick = function () {
+        api('PUT', '/api/admin/roads/' + road.id + '/info', { lengthMi: fLen ? fLen.value : road.lengthMi, surface: fSurf.value, pRoad: fR ? fR.value : road.pRoad, pDitch: fD ? fD.value : road.pDitch, pTrees: fT ? fT.value : road.pTrees, notes: fN.value })
+          .then(function (r) { me.roads = r.roads; draw(); drawOne(r.road); say('Saved ' + r.road.name + '.', 'ok'); })
+          .catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
+      };
+      r2.appendChild(sv); r2.appendChild(st); ed.appendChild(r2); detail.appendChild(ed);
+      detail.appendChild(el('h3', '', L.historyTitle));
+      if (!road.mows.length) detail.appendChild(el('p', 'muted', 'Nothing logged yet.'));
+      road.mows.forEach(function (m) {
+        var row = el('div', 'mrow'), t = el('div', 't-top');
+        t.appendChild(el('b', '', DAYS[toUTC(m.day).getUTCDay()] + ' ' + short(m.day) + (m.byName ? ' · ' + m.byName : '')));
+        var del = el('button', 'btn ghost small', 'Remove'); del.type = 'button';
+        del.onclick = function () {
+          if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Remove'; }, 3000); return; }
+          api('DELETE', '/api/admin/mows/' + m.id).then(function (r) { me.roads = r.roads; draw(); drawOne(r.road); }).catch(function (e) { say(e.message, 'err'); });
+        };
+        t.appendChild(del); row.appendChild(t);
+        if (m.notes) row.appendChild(el('p', 't-text', m.notes));
+        if (m.photos.length) row.appendChild(photoLinks(m.photos, '/api/admin/road-photo/', 'Photo of ' + road.name));
+        detail.appendChild(row);
+      });
+      detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    form.onsubmit = function (e) {
+      e.preventDefault(); say('Saving…');
+      api('PUT', '/api/admin/roads', { kind: kind, names: ta.value.split('\n') }).then(function (r) {
+        me.roads = r.roads; ta.value = me.roads.map(function (x) { return x.name; }).join('\n'); draw(); say('Saved. ' + me.roads.length + ' ' + L.noun + '.', 'ok');
+      }).catch(function (err) { say(err.message, 'err'); });
+    };
+    return me;
+  }
+
+  var taskPanel = TaskPanel('task', $('tasks-panel'), { formTitle: 'Give the crew a task', titleLabel: 'Task', titlePh: 'e.g. Fix the leak at the pool well house',
+    detailsPh: 'Where, what to bring, anything they should know', addBtn: 'Add task', needTitle: 'Give the task a name.', addedOk: 'Task added. The crew will see it in their app.',
+    formHint: 'The crew sees it under Tasks in their app. When they finish, they add notes and photos and you get an email.',
+    openTitle: 'Open', openEmpty: 'Nothing open.', doneTitle: 'Done', doneEmpty: 'Nothing finished yet.', byWord: 'Added by', doneWord: 'Done' });
+  var repairPanel = TaskPanel('repair', $('water-repairs'), { formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
+    detailsPh: 'What needs doing, parts needed', addBtn: 'Add', needTitle: 'Say what the problem is and where.', addedOk: 'Added. The crew will see it under Water System.',
+    formHint: 'The crew can also report problems from their app. When they fix one, they add notes and photos and you get an email.',
+    openTitle: 'Open leaks & repairs', openEmpty: 'Nothing open.', doneTitle: 'Fixed', doneEmpty: 'Nothing fixed yet.', byWord: 'Reported by', doneWord: 'Fixed' });
+  var roadPanel = PlacePanel('road', $('roads-panel'), { title: 'Roads mowed', cols: ['Road', 'Length', 'Last mowed', 'By', 'Times this year'], showLength: true, showPriorities: true,
+    empty: 'No roads yet. Add your list below and the Roads mowed tab shows up in the crew app.', clickHint: 'Click a road to see every time it was mowed, with photos.',
+    listTitle: 'Road list', listPh: 'Deerfield Way\nSkyline Knoll', noun: 'roads', staleText: 'not mowed in 2 weeks', oldDays: 14, never: 'Not mowed yet',
+    editDetails: 'Edit road details', surfaceLabel: 'Surface / other', surfacePh: 'Paved, Gravel…', historyTitle: 'Mowing history' });
+  var sitePanel = PlacePanel('water', $('water-sites'), { title: 'Water system sites', cols: ['Site', 'Last checked', 'By', 'Times this year'], showLength: false, showPriorities: false,
+    empty: 'No sites yet. Add wells, tanks, pump houses and so on below.', clickHint: 'Click a site to see every check, with photos.',
+    listTitle: 'Site list', listPh: 'Well 1\nWell 2\nStorage tank\nPump house\nChlorinator', noun: 'sites', staleText: 'not checked in a week', oldDays: 7, never: 'Not checked yet',
+    editDetails: 'Edit site details', surfaceLabel: 'Type', surfacePh: 'Well, Tank, Pump house…', historyTitle: 'Check history' });
+  var loadTasks = function () { return taskPanel.load(); }, loadRoads = function () { return roadPanel.load(); };
+
+  /* ------------------------------- water tab ------------------------------ */
+  var wTab = 'readings', wTypes = [];
+  function showWater(which) {
+    wTab = which;
+    document.querySelectorAll('[data-w]').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-w') === which); });
+    document.querySelectorAll('[data-wp]').forEach(function (p) { p.hidden = p.getAttribute('data-wp') !== which; });
+    if (which === 'readings') loadReadings();
+    if (which === 'sites') sitePanel.load();
+    if (which === 'repairs') repairPanel.load();
+  }
+  document.querySelectorAll('[data-w]').forEach(function (b) { b.onclick = function () { showWater(b.getAttribute('data-w')); }; });
+  function loadReadings() {
+    var days = $('wr-days').value; $('wr-csv').href = '/api/admin/readings.csv?days=' + days;
+    return api('GET', '/api/admin/readings?days=' + days).then(drawReadings).catch(function (e) { status('wr-status', e.message, 'err'); });
+  }
+  $('wr-days').onchange = loadReadings;
+  function drawReadings(r) {
+    wTypes = r.types;
+    if (document.activeElement !== $('wr-lines')) $('wr-lines').value = wTypes.map(function (t) { return t.name + (t.unit ? ' | ' + t.unit : ''); }).join('\n');
+    var head = $('wr-head'); head.innerHTML = '';
+    ['When', 'By'].concat(wTypes.map(function (t) { return t.name + (t.unit ? ' (' + t.unit + ')' : ''); })).concat(['Notes', '']).forEach(function (h) { head.appendChild(el('th', '', h)); });
+    var body = $('wr-body'); body.innerHTML = '';
+    r.readings.forEach(function (x) {
+      var tr = el('tr'), d = new Date(x.takenAt);
+      tr.appendChild(el('td', '', d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+      tr.appendChild(el('td', '', x.byName || ''));
+      wTypes.forEach(function (t) { tr.appendChild(el('td', 'num', x.vals[t.id] != null ? String(x.vals[t.id]) : '')); });
+      tr.appendChild(el('td', '', x.notes || ''));
+      var td = el('td'), del = el('button', 'btn ghost small', 'Remove'); del.type = 'button';
+      del.onclick = function (ev) {
+        ev.stopPropagation();
+        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Remove'; }, 3000); return; }
+        api('DELETE', '/api/admin/readings/' + x.id + '?days=' + $('wr-days').value).then(drawReadings).catch(function (e) { status('wr-status', e.message, 'err'); });
+      };
+      td.appendChild(del); tr.appendChild(td); body.appendChild(tr);
+    });
+    $('wr-empty').hidden = r.readings.length > 0;
+    $('wr-empty').textContent = wTypes.length ? 'No readings in this period.' : 'Add what the crew should record below, and a Readings section shows up in their app.';
+  }
+  $('wr-form').onsubmit = function (e) {
+    e.preventDefault(); status('wr-status', 'Saving…');
+    api('PUT', '/api/admin/reading-types?days=' + $('wr-days').value, { lines: $('wr-lines').value.split('\n') }).then(function (r) {
+      $('wr-lines').blur(); drawReadings(r); status('wr-status', 'Saved. ' + r.types.length + ' readings.', 'ok');
+    }).catch(function (err) { status('wr-status', err.message, 'err'); });
   };
 })();

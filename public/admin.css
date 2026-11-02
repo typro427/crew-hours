@@ -81,3 +81,14 @@ table.roads .never{color:var(--err)}
 .chip.p1{background:#f6d3cf;color:#7a1a10} .chip.p2{background:#f7e3c4;color:#6b3a06} .chip.p3{background:#d7ecdf;color:#1d5234}
 .rd-edit{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:end}
 @media (max-width:760px){.rd-edit{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* water system */
+.subtabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.subtabs button{font:600 .95rem var(--f-body,inherit);border:1px solid var(--line);background:var(--surface);color:var(--muted);padding:8px 16px;border-radius:999px;cursor:pointer}
+.subtabs button[aria-selected="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.panel > div[data-wp]{display:flex;flex-direction:column;gap:16px}
+.panel > div[data-wp][hidden]{display:none}
+.panel .stack{display:flex;flex-direction:column;gap:16px}
+.feats{display:flex;flex-wrap:wrap;gap:6px 16px;grid-column:1/-1}
+.feats .k{width:100%;font-weight:600;font-size:14px}
+table.roads td.num{font-variant-numeric:tabular-nums}

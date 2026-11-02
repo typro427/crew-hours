@@ -86,9 +86,11 @@ r.put('/settings', async (req, res) => {
 });
 
 /* ------------------------------- crew members ------------------------------- */
-const crewList = companyId => db.q('SELECT id, name, active, is_manager, created_at FROM crew WHERE company_id=$1 ORDER BY active DESC, lower(name)', [companyId]);
+const F = require('../features');
+const crewList = async companyId => (await db.q('SELECT id, name, active, is_manager, features, created_at FROM crew WHERE company_id=$1 ORDER BY active DESC, lower(name)', [companyId]))
+  .map(c => ({ ...c, features: F.forCrew(c) }));
 
-r.get('/crew', async (req, res) => res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) }));
+r.get('/crew', async (req, res) => res.json({ crew: await crewList(req.company.id), billing: await billing(req.company), features: F.FEATURES }));
 
 async function pinFree(companyId, pin, exceptId) {
   const row = await db.one('SELECT id FROM crew WHERE company_id=$1 AND pin_hmac=$2', [companyId, A.pinHmac(companyId, pin)]);
@@ -103,7 +105,7 @@ r.post('/crew', async (req, res) => {
   if (!(await pinFree(req.company.id, pin))) V.bad('Someone else already uses that PIN. Pick a different one.');
   await db.q('INSERT INTO crew (company_id, name, pin_hmac, is_manager) VALUES ($1,$2,$3,$4)',
     [req.company.id, name, A.pinHmac(req.company.id, pin), !!req.body.manager]);
-  res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) });
+  res.json({ crew: await crewList(req.company.id), billing: await billing(req.company), features: F.FEATURES });
 });
 
 r.put('/crew/:id', async (req, res) => {
@@ -121,29 +123,51 @@ r.put('/crew/:id', async (req, res) => {
   const active = b.active !== undefined ? !!b.active : person.active;
   if (active && !person.active) await checkRoom(req.company);
   const manager = b.manager !== undefined ? !!b.manager : person.is_manager;
-  await db.q('UPDATE crew SET name=$1, pin_hmac=$2, active=$3, is_manager=$4 WHERE id=$5', [name, pinH, active, manager, id]);
+  const features = b.features !== undefined ? F.clean(b.features) : person.features;
+  await db.q('UPDATE crew SET name=$1, pin_hmac=$2, active=$3, is_manager=$4, features=$5 WHERE id=$6', [name, pinH, active, manager, features ? JSON.stringify(features) : null, id]);
   if (!active || pinH !== person.pin_hmac) await db.q('DELETE FROM crew_sessions WHERE crew_id=$1', [id]);   // sign them out
-  res.json({ crew: await crewList(req.company.id), billing: await billing(req.company) });
+  res.json({ crew: await crewList(req.company.id), billing: await billing(req.company), features: F.FEATURES });
 });
 
 /* --------------------------------- tasks ----------------------------------- */
 const K = require('../tasks');
-r.get('/tasks', async (req, res) => res.json({ tasks: await K.forOwner(req.company.id) }));
-r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json({ tasks: await K.forOwner(req.company.id) }); });
-r.put('/tasks/:id', async (req, res) => { await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json({ tasks: await K.forOwner(req.company.id) }); });
-r.delete('/tasks/:id', async (req, res) => { await K.remove(req.company.id, Number(req.params.id)); res.json({ tasks: await K.forOwner(req.company.id) }); });
+// kind=task (Tasks tab) or kind=repair (Water System tab: leaks & repairs).
+const tasksOut = async (req, kind) => ({ tasks: await K.forOwner(req.company.id, kind), kind: K.kindOf(kind) });
+r.get('/tasks', async (req, res) => res.json(await tasksOut(req, req.query.kind)));
+r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json(await tasksOut(req, (req.body || {}).kind)); });
+r.put('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await tasksOut(req, k)); });
+r.delete('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.remove(req.company.id, Number(req.params.id)); res.json(await tasksOut(req, k)); });
 /* --------------------------------- roads ----------------------------------- */
 const RD = require('../roads');
-r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id) }));
-r.put('/roads', async (req, res) => { await RD.setList(req.company.id, (req.body || {}).names); res.json({ roads: await RD.list(req.company.id) }); });
+// kind=road (Roads mowed) or kind=water (water system sites).
+r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id, req.query.kind) }));
+r.put('/roads', async (req, res) => { const b = req.body || {}; await RD.setList(req.company.id, b.names, b.kind); res.json({ roads: await RD.list(req.company.id, b.kind) }); });
 r.put('/roads/:id/info', async (req, res) => {
   await RD.setInfo(req.company.id, Number(req.params.id), req.body || {});
-  res.json({ road: await RD.history(req.company.id, Number(req.params.id), 200), roads: await RD.list(req.company.id) });
+  const road = await RD.history(req.company.id, Number(req.params.id), 200);
+  res.json({ road, roads: await RD.list(req.company.id, road.kind) });
 });
 r.get('/roads/:id', async (req, res) => res.json({ road: await RD.history(req.company.id, Number(req.params.id), 200) }));
 r.delete('/mows/:id', async (req, res) => {
   const roadId = await RD.removeMow(req.company.id, Number(req.params.id));
-  res.json({ road: await RD.history(req.company.id, roadId, 200), roads: await RD.list(req.company.id) });
+  const road = await RD.history(req.company.id, roadId, 200);
+  res.json({ road, roads: await RD.list(req.company.id, road.kind) });
+});
+
+/* -------------------------------- readings ---------------------------------- */
+const RG = require('../readings');
+const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, Number(req.query.days) || 60, 1000) });
+r.get('/readings', async (req, res) => res.json(await readingsOut(req)));
+r.put('/reading-types', async (req, res) => { await RG.setTypes(req.company.id, (req.body || {}).lines); res.json(await readingsOut(req)); });
+r.delete('/readings/:id', async (req, res) => { await RG.remove(req.company.id, Number(req.params.id)); res.json(await readingsOut(req)); });
+r.get('/readings.csv', async (req, res) => {
+  const types = await RG.types(req.company.id), rows = await RG.recent(req.company.id, Number(req.query.days) || 365, 100000);
+  const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const tz = req.company.timezone;
+  const when = d => new Date(d).toLocaleString('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  const lines = [['Date and time', 'By', ...types.map(t => t.name + (t.unit ? ' (' + t.unit + ')' : '')), 'Notes'].map(q).join(',')];
+  rows.slice().reverse().forEach(r => lines.push([when(r.takenAt), r.byName || '', ...types.map(t => r.vals[t.id] != null ? r.vals[t.id] : ''), r.notes].map(q).join(',')));
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="water-readings.csv"' }).send(lines.join('\r\n'));
 });
 r.get('/road-photo/:id', async (req, res) => {
   const p = await RD.photo(req.company.id, Number(req.params.id));

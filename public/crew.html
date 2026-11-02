@@ -24,8 +24,9 @@
 
   <nav class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" id="tab-mine" aria-selected="true">My hours</button>
-    <button role="tab" id="tab-tasks" aria-selected="false">Tasks <span class="badge" id="task-count" hidden></span></button>
+    <button role="tab" id="tab-tasks" aria-selected="false" hidden>Tasks <span class="badge" id="task-count" hidden></span></button>
     <button role="tab" id="tab-roads" aria-selected="false" hidden>Roads mowed</button>
+    <button role="tab" id="tab-water" aria-selected="false" hidden>Water System</button>
     <button role="tab" id="tab-crew" aria-selected="false" hidden>Crew week</button>
   </nav>
 
@@ -117,45 +118,33 @@
     </div>
   </section>
 
-  <!-- Tasks from the boss -->
-  <section id="task-screen" hidden style="display:flex;flex-direction:column;gap:14px">
-    <div class="row" id="nt-open-row"><button class="ghost" id="nt-open" type="button">+ Add a task</button></div>
-    <div class="task" id="nt-form" hidden>
-      <h3>New task</h3>
-      <label for="nt-title">Task</label><input id="nt-title" maxlength="120" placeholder="e.g. Replace broken sprinkler head by the gate" autocomplete="off">
-      <label for="nt-details">Details <span class="hint">(optional)</span></label><textarea id="nt-details" maxlength="2000" placeholder="Where it is, what's needed"></textarea>
-      <label for="nt-for">For</label><select id="nt-for"><option value="me">Me</option><option value="anyone">Anyone on the crew</option></select>
-      <label for="nt-due">Due <span class="hint">(optional)</span></label><input id="nt-due" type="date">
-      <div class="row"><button class="primary" id="nt-save" type="button">Add task</button><button class="ghost" id="nt-cancel" type="button">Cancel</button></div>
-      <div class="status" id="nt-status" role="status"></div>
-    </div>
-    <div id="task-list" class="tasklist"></div>
-    <div class="status" id="task-status" role="status"></div>
-    <p class="hint" id="task-empty" hidden style="margin:0;text-align:center">No tasks right now. Tasks from the boss show up here, or add your own.</p>
-  </section>
+  <!-- Tasks from the boss (drawn by crew.js) -->
+  <section id="task-screen" hidden style="display:flex;flex-direction:column;gap:14px"></section>
 
-  <!-- Roads mowed -->
-  <section id="road-screen" hidden style="display:flex;flex-direction:column;gap:14px">
-    <div id="road-list-view" style="display:flex;flex-direction:column;gap:10px">
-      <p class="hint" style="margin:0">Tap a road to log that you mowed it.</p>
-      <div id="road-list" class="roadlist"></div>
-    </div>
-    <div id="road-view" hidden style="display:flex;flex-direction:column;gap:14px">
-      <button class="ghost" id="road-back" type="button" style="align-self:flex-start">‹ All roads</button>
-      <div class="task">
-        <h3 id="road-name"></h3>
-        <div class="meta" id="road-last"></div>
-        <div class="roadinfo" id="road-info"></div>
-        <label for="rm-day">Date you mowed it</label><input id="rm-day" type="date">
-        <div class="thumbs" id="rm-thumbs"></div>
-        <label class="photo-btn" id="rm-add">📷 Add photo<input type="file" id="rm-file" accept="image/*" multiple></label>
-        <label for="rm-notes">Notes <span class="hint">(optional)</span></label><textarea id="rm-notes" maxlength="1000" placeholder="Anything the boss should know"></textarea>
-        <div class="row"><button class="primary" id="rm-save" type="button">Save: mowed</button></div>
-        <div class="status" id="rm-status" role="status"></div>
+  <!-- Roads mowed (drawn by crew.js) -->
+  <section id="road-screen" hidden style="display:flex;flex-direction:column;gap:14px"></section>
+
+  <!-- Water system: readings, sites, leaks & repairs -->
+  <section id="water-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <nav class="subtabs" id="w-tabs" role="tablist">
+      <button role="tab" id="wt-readings" aria-selected="true">Readings</button>
+      <button role="tab" id="wt-sites" aria-selected="false">Sites</button>
+      <button role="tab" id="wt-repairs" aria-selected="false">Leaks &amp; repairs</button>
+    </nav>
+    <div id="wp-readings" style="display:flex;flex-direction:column;gap:14px">
+      <div class="task" id="rd-form-card">
+        <h3>New readings</h3>
+        <p class="hint" style="margin:0">Fill in what you checked. Leave the rest blank.</p>
+        <div class="readgrid" id="rd-fields"></div>
+        <label for="rd-notes">Notes <span class="hint">(optional)</span></label><textarea id="rd-notes" maxlength="1000" placeholder="Anything unusual?"></textarea>
+        <div class="row"><button class="primary" id="rd-save" type="button">Save readings</button></div>
+        <div class="status" id="rd-status" role="status"></div>
       </div>
-      <div class="task"><h3>History</h3><div id="road-history" class="history"></div></div>
+      <p class="hint" id="rd-none" hidden style="margin:0;text-align:center">The boss hasn't set up any readings yet.</p>
+      <div class="task"><h3>Recent readings</h3><div id="rd-history" class="history"></div></div>
     </div>
-    <div class="status" id="road-status" role="status"></div>
+    <div id="wp-sites" hidden style="display:flex;flex-direction:column;gap:14px"></div>
+    <div id="wp-repairs" hidden style="display:flex;flex-direction:column;gap:14px"></div>
   </section>
 
   <!-- Boss: crew week -->

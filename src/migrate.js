@@ -143,6 +143,33 @@ ALTER TABLE roads ADD COLUMN IF NOT EXISTS p_ditch SMALLINT;
 ALTER TABLE roads ADD COLUMN IF NOT EXISTS p_trees SMALLINT;
 ALTER TABLE roads ADD COLUMN IF NOT EXISTS surface TEXT NOT NULL DEFAULT '';
 ALTER TABLE roads ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+-- Roads and water system sites share one table: kind is 'road' or 'water'.
+ALTER TABLE roads ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'road';
+ALTER TABLE roads DROP CONSTRAINT IF EXISTS roads_company_id_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS roads_kind_name ON roads (company_id, kind, name);
+-- Tasks and water repairs share one table: kind is 'task' or 'repair'.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'task';
+-- Which parts of the app each crew member can use (null = everything).
+ALTER TABLE crew ADD COLUMN IF NOT EXISTS features JSONB;
+-- Water system readings: the boss picks what to record; the crew logs values.
+CREATE TABLE IF NOT EXISTS reading_types (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  unit       TEXT NOT NULL DEFAULT '',
+  position   INTEGER NOT NULL DEFAULT 0,
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE (company_id, name)
+);
+CREATE TABLE IF NOT EXISTS readings (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id    INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  taken_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  vals       JSONB NOT NULL DEFAULT '{}',
+  notes      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS readings_company ON readings (company_id, taken_at);
 CREATE TABLE IF NOT EXISTS road_mows (
   id         SERIAL PRIMARY KEY,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

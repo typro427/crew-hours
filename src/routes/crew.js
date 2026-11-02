@@ -33,43 +33,93 @@ r.post('/:slug/login', async (req, res) => {
   }
   A.clearFails(ipKey);
   const token = await A.startCrewSession(person.id);
-  res.json({ token, name: person.name, manager: person.is_manager, today: H.today(c), settings: H.publicSettings(c) });
+  res.json({ token, name: person.name, manager: person.is_manager, features: require('../features').forCrew(person), today: H.today(c), settings: H.publicSettings(c) });
 });
 
-r.get('/:slug/week', A.requireCrew, async (req, res) => res.json(await H.myWeek(req.company, req.crew, req.query.start)));
+// What the boss has set up, so the app only shows tabs that have something in them.
+const setupOf = async companyId => db.one(`SELECT
+  (SELECT count(*)::int FROM roads WHERE company_id=$1 AND active AND kind='road') AS roads,
+  (SELECT count(*)::int FROM roads WHERE company_id=$1 AND active AND kind='water') AS "waterSites",
+  (SELECT count(*)::int FROM reading_types WHERE company_id=$1 AND active) AS "readingTypes"`, [companyId]);
+r.get('/:slug/week', A.requireCrew, async (req, res) => res.json({ ...(await H.myWeek(req.company, req.crew, req.query.start)),
+  features: require('../features').forCrew(req.crew), setup: await setupOf(req.company.id) }));
 r.post('/:slug/day', A.requireCrew, async (req, res) => res.json(await H.saveDay(req.company, req.crew, req.body || {})));
 r.delete('/:slug/day/:date', A.requireCrew, async (req, res) => res.json(await H.clearDay(req.company, req.crew, req.params.date)));
 
-// Tasks from the boss: see them, mark them done with notes and photos.
+// Tasks (kind=task) and water leaks & repairs (kind=repair): same rules, separate lists, separate switches.
 const K = require('../tasks');
-r.get('/:slug/tasks', A.requireCrew, async (req, res) => res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS }));
-r.post('/:slug/tasks/:id/done', A.requireCrew, async (req, res) => {
-  await K.complete(req.company, req.crew, Number(req.params.id), req.body || {});
-  res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
+const RD = require('../roads');
+const RG = require('../readings');
+const F = require('../features');
+const featTask = k => (k === 'repair' ? 'w_repairs' : 'tasks');
+const featPlace = k => (k === 'water' ? 'w_sites' : 'roads');
+const off = res => res.status(403).json({ error: "The boss hasn't turned this on for you." });
+const sendPhoto = (res, p) => p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
+const taskList = async (req, kind) => ({ tasks: await K.forCrew(req.company.id, req.crew.id, kind), maxPhotos: K.MAX_PHOTOS, kind: K.kindOf(kind) });
+
+r.get('/:slug/tasks', A.requireCrew, async (req, res) => {
+  const kind = K.kindOf(req.query.kind);
+  if (!F.can(req.crew, featTask(kind))) return off(res);
+  res.json(await taskList(req, kind));
 });
 r.post('/:slug/tasks', A.requireCrew, async (req, res) => {
-  await K.createByCrew(req.company, req.crew, req.body || {});
-  res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
+  const kind = K.kindOf((req.body || {}).kind);
+  if (!F.can(req.crew, featTask(kind))) return off(res);
+  await K.createByCrew(req.company, req.crew, { ...(req.body || {}), kind });
+  res.json(await taskList(req, kind));
+});
+r.post('/:slug/tasks/:id/done', A.requireCrew, async (req, res) => {
+  const kind = await K.kindOfTask(req.company.id, Number(req.params.id));
+  if (kind && !F.can(req.crew, featTask(kind))) return off(res);
+  await K.complete(req.company, req.crew, Number(req.params.id), req.body || {});
+  res.json(await taskList(req, kind));
 });
 r.delete('/:slug/tasks/:id', A.requireCrew, async (req, res) => {
+  const kind = await K.kindOfTask(req.company.id, Number(req.params.id));
+  if (kind && !F.can(req.crew, featTask(kind))) return off(res);
   await K.removeByCrew(req.company, req.crew, Number(req.params.id));
-  res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
+  res.json(await taskList(req, kind));
+});
+r.get('/:slug/tasks/photo/:id', A.requireCrew, async (req, res) => {
+  const kind = await K.kindOfTaskPhoto(req.company.id, Number(req.params.id));
+  if (!kind || !F.can(req.crew, featTask(kind))) return res.status(404).end();
+  sendPhoto(res, await K.photo(req.company.id, Number(req.params.id)));
 });
 
-// Roads mowed: everyone sees the list and history; each person logs their own mowings.
-const RD = require('../roads');
-const sendPhoto = (res, p) => p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
-r.get('/:slug/roads', A.requireCrew, async (req, res) => res.json({ roads: await RD.list(req.company.id), maxPhotos: RD.MAX_PHOTOS }));
-r.get('/:slug/roads/:id', A.requireCrew, async (req, res) => res.json({ road: await RD.history(req.company.id, Number(req.params.id), 20) }));
+// Roads mowed (kind=road) and water system sites (kind=water): a list of places; the crew logs each visit.
+r.get('/:slug/roads', A.requireCrew, async (req, res) => {
+  const kind = RD.kindOf(req.query.kind);
+  if (!F.can(req.crew, featPlace(kind))) return off(res);
+  res.json({ roads: await RD.list(req.company.id, kind), maxPhotos: RD.MAX_PHOTOS, kind });
+});
+r.get('/:slug/roads/:id', A.requireCrew, async (req, res) => {
+  const kind = await RD.kindOfPlace(req.company.id, Number(req.params.id));
+  if (kind && !F.can(req.crew, featPlace(kind))) return off(res);
+  res.json({ road: await RD.history(req.company.id, Number(req.params.id), 20) });
+});
 r.post('/:slug/roads/:id/mows', A.requireCrew, async (req, res) => {
+  const kind = await RD.kindOfPlace(req.company.id, Number(req.params.id));
+  if (kind && !F.can(req.crew, featPlace(kind))) return off(res);
   await RD.logMow(req.company, req.crew, Number(req.params.id), req.body || {}, K.photoBytes);
-  res.json({ road: await RD.history(req.company.id, Number(req.params.id), 20), roads: await RD.list(req.company.id) });
+  res.json({ road: await RD.history(req.company.id, Number(req.params.id), 20), roads: await RD.list(req.company.id, kind) });
 });
 r.delete('/:slug/mows/:id', A.requireCrew, async (req, res) => {
+  const kind = await RD.kindOfMow(req.company.id, Number(req.params.id));
+  if (kind && !F.can(req.crew, featPlace(kind))) return off(res);
   const roadId = await RD.removeMow(req.company.id, Number(req.params.id), req.crew.id);
-  res.json({ road: await RD.history(req.company.id, roadId, 20), roads: await RD.list(req.company.id) });
+  res.json({ road: await RD.history(req.company.id, roadId, 20), roads: await RD.list(req.company.id, kind) });
 });
-r.get('/:slug/road-photo/:id', A.requireCrew, async (req, res) => sendPhoto(res, await RD.photo(req.company.id, Number(req.params.id))));
+r.get('/:slug/road-photo/:id', A.requireCrew, async (req, res) => {
+  const kind = await RD.kindOfPhoto(req.company.id, Number(req.params.id));
+  if (!kind || !F.can(req.crew, featPlace(kind))) return res.status(404).end();
+  sendPhoto(res, await RD.photo(req.company.id, Number(req.params.id)));
+});
+
+// Water system readings.
+const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, 14, 30) });
+r.get('/:slug/readings', A.requireCrew, F.need('w_readings'), async (req, res) => res.json(await readingsOut(req)));
+r.post('/:slug/readings', A.requireCrew, F.need('w_readings'), async (req, res) => { await RG.log(req.company, req.crew, req.body || {}); res.json(await readingsOut(req)); });
+r.delete('/:slug/readings/:id', A.requireCrew, F.need('w_readings'), async (req, res) => { await RG.remove(req.company.id, Number(req.params.id), req.crew.id); res.json(await readingsOut(req)); });
 
 // Photos of the day's work, attached to a saved day.
 r.post('/:slug/day/:date/photos', A.requireCrew, async (req, res) =>
@@ -80,12 +130,6 @@ r.get('/:slug/day-photo/:id', A.requireCrew, async (req, res) => {
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
 });
-r.get('/:slug/tasks/photo/:id', A.requireCrew, async (req, res) => {
-  const p = await K.photo(req.company.id, Number(req.params.id));
-  if (!p) return res.status(404).end();
-  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
-});
-
 // Crew members ticked as Manager also get the boss screen in the app.
 const manager = (req, res, next) => req.crew.is_manager ? next() : res.status(403).json({ error: 'Only managers can see the whole crew.' });
 r.get('/:slug/crew-week', A.requireCrew, manager, async (req, res) => res.json(await H.crewWeek(req.company, req.query.start)));

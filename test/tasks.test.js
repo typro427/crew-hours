@@ -172,3 +172,61 @@ test('road details import onto the pasted list without duplicates; boss can edit
   const crewView = (await jake('GET', '/roads/' + dp.id)).body.road;
   assert.deepStrictEqual([crewView.lengthMi, crewView.pDitch, crewView.notes], [0.4, null, 'Paving scheduled']);
 });
+
+test('water system: sites are separate from roads, repairs separate from tasks, readings log and export', async () => {
+  let r = await O('PUT', '/api/admin/roads', { kind: 'water', names: ['Well 1', 'Storage tank'] });
+  assert.deepStrictEqual(r.body.roads.map(x => x.name), ['Well 1', 'Storage tank']);
+  assert.ok(!(await O('GET', '/api/admin/roads')).body.roads.some(x => x.name === 'Well 1'), 'roads list unchanged');
+  const well = (await jake('GET', '/roads?kind=water')).body.roads[0];
+  r = await jake('POST', `/roads/${well.id}/mows`, { day: (await jake('GET', '/week')).body.today, notes: 'Pump running fine', photos: [JPEG] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.roads.find(x => x.id === well.id).lastBy, 'Jake');
+  // a second check the same day is fine for water sites
+  assert.strictEqual((await jake('POST', `/roads/${well.id}/mows`, { day: r.body.road.mows[0].day })).status, 200);
+  // repairs
+  r = await jake('POST', '/tasks', { kind: 'repair', title: 'Leak at meter by 141 Deer Meadow', forMe: true });
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.body.kind, 'repair');
+  assert.ok(!(await jake('GET', '/tasks')).body.tasks.some(t => t.title.startsWith('Leak')), 'not in Tasks');
+  const rep = r.body.tasks[0];
+  r = await jake('POST', `/tasks/${rep.id}/done`, { notes: 'Replaced the gasket', photos: [JPEG] });
+  assert.strictEqual(r.body.tasks.find(t => t.id === rep.id).status, 'done');
+  assert.strictEqual((await O('GET', '/api/admin/tasks?kind=repair')).body.tasks[0].doneNotes, 'Replaced the gasket');
+  // readings
+  r = await O('PUT', '/api/admin/reading-types', { lines: ['Chlorine | ppm', 'Pressure|psi', '', 'chlorine | x'] });
+  assert.deepStrictEqual(r.body.types.map(t => [t.name, t.unit]), [['Chlorine', 'ppm'], ['Pressure', 'psi']]);
+  const [cl, pr] = r.body.types;
+  assert.strictEqual((await jake('POST', '/readings', { vals: {} })).status, 400);
+  assert.strictEqual((await jake('POST', '/readings', { vals: { [cl.id]: 'abc' } })).status, 400);
+  r = await jake('POST', '/readings', { vals: { [cl.id]: '1.2', [pr.id]: 62 }, notes: 'Morning check' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.deepStrictEqual(r.body.readings[0].vals, { [cl.id]: 1.2, [pr.id]: 62 });
+  const csv = await O('GET', '/api/admin/readings.csv');
+  assert.match(csv.body.toString(), /Chlorine \(ppm\)/); assert.match(csv.body.toString(), /1\.2/);
+  assert.strictEqual((await sam('DELETE', '/readings/' + r.body.readings[0].id)).status, 400, "Sam can't remove Jake's reading");
+  assert.strictEqual((await O2('GET', '/api/admin/readings')).body.readings.length, 0, 'other company');
+  const wk = (await jake('GET', '/week')).body;
+  assert.deepStrictEqual(wk.setup, { roads: 31, waterSites: 2, readingTypes: 2 });
+});
+
+test('per-person switches: the boss turns parts of the app off for one person', async () => {
+  const crew = (await O('GET', '/api/admin/crew')).body;
+  assert.ok(crew.features.w_readings);
+  const samRow = crew.crew.find(c => c.name === 'Sam');
+  assert.strictEqual(samRow.features.tasks, true);
+  let r = await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
+  const wk = (await sam('GET', '/week')).body;
+  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false });
+  assert.strictEqual((await sam('GET', '/roads')).status, 403);
+  assert.strictEqual((await sam('GET', '/readings')).status, 403);
+  assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
+  assert.strictEqual((await sam('GET', '/roads?kind=water')).status, 200);
+  assert.strictEqual((await sam('GET', '/tasks')).status, 200);
+  const roadId = (await O('GET', '/api/admin/roads')).body.roads[0].id;
+  assert.strictEqual((await sam('POST', `/roads/${roadId}/mows`, { day: wk.today })).status, 403, 'blocked by id too');
+  assert.strictEqual((await jake('GET', '/roads')).status, 200, 'others unaffected');
+  // turn everything back on
+  await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: true, w_readings: true, w_sites: true, w_repairs: true } });
+  assert.strictEqual((await sam('GET', '/readings')).status, 200);
+});

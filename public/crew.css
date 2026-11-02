@@ -173,3 +173,15 @@ tfoot td{font-weight:700;border-bottom:0}
 .chip.p1{background:#f6d3cf;color:#7a1a10} .chip.p2{background:#f7e3c4;color:#6b3a06} .chip.p3{background:#d7ecdf;color:#1d5234}
 @media (prefers-color-scheme:dark){.chip.p1{background:#5a2420;color:#ffd6d1}.chip.p2{background:#57401f;color:#ffe2b8}.chip.p3{background:#1f4430;color:#c9f0d8}}
 .roadinfo .rnotes{margin:0;white-space:pre-wrap;font-size:15px}
+
+/* water system */
+.subtabs{display:flex;gap:6px;overflow-x:auto}
+.subtabs button{flex:1 0 auto;font:600 .92rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--muted);padding:8px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.subtabs button[aria-selected="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.readgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.readgrid label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:14px}
+.readgrid input{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px}
+.board label{font-weight:600;font-size:15px}
+.board input,.board select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px}
+.vals{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:15px}
+.vals span b{font-family:var(--f-num);font-weight:600}

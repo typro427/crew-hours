@@ -16,13 +16,14 @@ const COLS = `t.id, t.title, t.details, t.assigned_to AS "assignedTo", a.name AS
 const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by LEFT JOIN crew cb ON cb.id=t.created_by';
 
 /** The boss's list: everything open, plus what was finished in the last 60 days. */
-const forOwner = companyId => db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND (t.status='open' OR t.done_at > now() - interval '60 days')
-  ORDER BY t.status='done', CASE WHEN t.status='open' THEN t.due END NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId]);
+const kindOf = k => (k === 'repair' ? 'repair' : 'task');
+const forOwner = (companyId, kind) => db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$2 AND (t.status='open' OR t.done_at > now() - interval '60 days')
+  ORDER BY t.status='done', CASE WHEN t.status='open' THEN t.due END NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, kindOf(kind)]);
 
 /** A crew member sees open tasks for them or for anyone, and what they finished in the last 14 days. */
-const forCrew = (companyId, crewId) => db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND
+const forCrew = (companyId, crewId, kind) => db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$3 AND
   ((t.status='open' AND (t.assigned_to IS NULL OR t.assigned_to=$2)) OR (t.status='done' AND t.done_by=$2 AND t.done_at > now() - interval '14 days'))
-  ORDER BY t.status='done', t.due NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, crewId]);
+  ORDER BY t.status='done', t.due NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, crewId, kindOf(kind)]);
 
 async function fields(companyId, b, cur) {
   const v = {
@@ -40,7 +41,7 @@ async function create(companyId, b) {
   const v = await fields(companyId, b, { details: '', due: null, assigned_to: null });
   const n = await db.one("SELECT count(*)::int AS n FROM tasks WHERE company_id=$1 AND status='open'", [companyId]);
   if (n.n >= 500) V.bad('That is a lot of open tasks. Finish or delete some first.');
-  await db.q('INSERT INTO tasks (company_id, title, details, due, assigned_to) VALUES ($1,$2,$3,$4,$5)', [companyId, v.title, v.details, v.due, v.assigned]);
+  await db.q('INSERT INTO tasks (company_id, title, details, due, assigned_to, kind) VALUES ($1,$2,$3,$4,$5,$6)', [companyId, v.title, v.details, v.due, v.assigned, kindOf(b.kind)]);
 }
 
 async function update(companyId, id, b) {
@@ -61,9 +62,10 @@ async function createByCrew(company, crew, b) {
   if (due && !T.isDate(due)) V.bad('Pick a valid due date.');
   const n = await db.one("SELECT count(*)::int AS n FROM tasks WHERE company_id=$1 AND status='open'", [company.id]);
   if (n.n >= 500) V.bad('There are a lot of open tasks. Ask the boss to clear some first.');
-  await db.q('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by) VALUES ($1,$2,$3,$4,$5,$6)',
-    [company.id, title, details, due, b.forMe ? crew.id : null, crew.id]);
-  notifyNew(company, crew.name, title, details, !!b.forMe).catch(() => {});   // logged in email.js
+  const kind = kindOf(b.kind);
+  await db.q('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind]);
+  notifyNew(company, crew.name, title, details, !!b.forMe, kind).catch(() => {});   // logged in email.js
 }
 
 /** Crew can delete a task they added, while it's still open. */
@@ -73,13 +75,14 @@ async function removeByCrew(company, crew, id) {
   await db.q('DELETE FROM tasks WHERE id=$1', [id]);
 }
 
-async function notifyNew(company, who, title, details, forMe) {
+async function notifyNew(company, who, title, details, forMe, kind) {
   const to = await R.recipients(company);
   if (!to || !to.length) return;
-  await send({ to, subject: `New task from ${who}: ${title}`,
-    html: layout(`New task: ${esc(title)}`, `<p><b>${esc(who)}</b> added a task${forMe ? ' for themselves' : ' for anyone on the crew'}.</p>` +
+  const repair = kind === 'repair';
+  await send({ to, subject: repair ? `Water system problem reported by ${who}: ${title}` : `New task from ${who}: ${title}`,
+    html: layout(repair ? `Water system: ${esc(title)}` : `New task: ${esc(title)}`, `<p><b>${esc(who)}</b> ${repair ? 'reported a leak or repair' : 'added a task'}${forMe ? ' and will handle it' : ''}.</p>` +
       (details ? `<p style="white-space:pre-wrap">${esc(details)}</p>` : '') +
-      `<p><a href="${config.appUrl}/admin#tasks">See it in your dashboard</a></p>`) });
+      `<p><a href="${config.appUrl}/admin#${repair ? 'water' : 'tasks'}">See it in your dashboard</a></p>`) });
 }
 
 /** Turns "data:image/jpeg;base64,...." into checked bytes. */
@@ -114,13 +117,17 @@ async function complete(company, crew, id, b) {
 async function notifyDone(company, t, who, notes, photoCount) {
   const to = await R.recipients(company);
   if (!to || !to.length) return;
-  await send({ to, subject: `Task done: ${t.title} (${who})`,
-    html: layout(`Task done: ${esc(t.title)}`, `<p><b>${esc(who)}</b> marked this task done${photoCount ? ` with ${photoCount} photo${photoCount > 1 ? 's' : ''}` : ''}.</p>` +
+  const repair = t.kind === 'repair';
+  await send({ to, subject: repair ? `Fixed: ${t.title} (${who})` : `Task done: ${t.title} (${who})`,
+    html: layout(repair ? `Fixed: ${esc(t.title)}` : `Task done: ${esc(t.title)}`, `<p><b>${esc(who)}</b> marked this ${repair ? 'repair fixed' : 'task done'}${photoCount ? ` with ${photoCount} photo${photoCount > 1 ? 's' : ''}` : ''}.</p>` +
       (notes ? `<p style="white-space:pre-wrap">${esc(notes)}</p>` : '') +
-      `<p><a href="${config.appUrl}/admin#tasks">See it in your dashboard</a></p>`) });
+      `<p><a href="${config.appUrl}/admin#${repair ? 'water' : 'tasks'}">See it in your dashboard</a></p>`) });
 }
+
+const kindOfTask = async (companyId, id) => { const r = await db.one('SELECT kind FROM tasks WHERE id=$1 AND company_id=$2', [id, companyId]); return r && r.kind; };
+const kindOfTaskPhoto = async (companyId, id) => { const r = await db.one('SELECT t.kind FROM task_photos p JOIN tasks t ON t.id=p.task_id WHERE p.id=$1 AND p.company_id=$2', [id, companyId]); return r && r.kind; };
 
 /** One photo, only for someone in the same company. */
 const photo = (companyId, photoId) => db.one('SELECT mime, data FROM task_photos WHERE id=$1 AND company_id=$2', [photoId, companyId]);
 
-module.exports = { forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };
+module.exports = { kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };
