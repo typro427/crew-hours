@@ -744,7 +744,7 @@
     var q = $('mr-month').value;
     return api('GET', '/api/admin/meters?all=1' + (q ? '&quarter=' + q : '')).then(function (r) {
       mr.data = r; fillQuarters(r.thisQuarter); $('mr-month').value = r.quarter;
-      $('mr-csv').href = '/api/admin/meters.csv?quarter=' + r.quarter; drawMeterAdmin();
+      $('mr-csv').href = '/api/admin/meters.csv?quarter=' + r.quarter; drawMeterAdmin(); loadNotOnRoute();
     }).catch(function (e) { status('mr-status', e.message, 'err'); });
   }
   $('mr-month').onchange = loadMeterAdmin;
@@ -862,4 +862,51 @@
       .then(function (r) { if (r.error) throw new Error(r.error); return r; });
   }
   function isExcel(file) { return /\.xlsx$/i.test(file.name); }
+
+  /* ---------------------- add a meter / properties not on the route ---------------------- */
+  var nr = [];
+  function openAddMeter(p) {
+    $('ma-form').hidden = false; $('ma-status').textContent = '';
+    $('ma-title').textContent = p ? 'Add ' + p.address + ' to the route' : 'Add a meter';
+    $('ma-seq').value = p && p.suggestSeq ? p.suggestSeq : ''; $('ma-name').value = p ? (p.names[0] || '') : ''; $('ma-address').value = p ? p.address : '';
+    ['ma-meter', 'ma-account', 'ma-start', 'ma-qb', 'ma-notes'].forEach(function (id) { $(id).value = ''; });
+    $('ma-hint').textContent = p && p.suggestSeq ? 'Suggested spot: right after the last meter on the same street (read sequence ' + (p.suggestSeq - 1) + '). Meters from there on move down one.' : 'Leave Read sequence blank to put it at the end of the route. Meters from that spot on move down one.';
+    $('ma-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(function () { (p ? $('ma-meter') : $('ma-name')).focus(); }, 300);
+  }
+  $('mr-add').onclick = function () { openAddMeter(null); };
+  $('ma-cancel').onclick = function () { $('ma-form').hidden = true; };
+  $('ma-form').onsubmit = function (e) {
+    e.preventDefault();
+    var b = { seq: $('ma-seq').value.trim(), name: $('ma-name').value, address: $('ma-address').value, meterNo: $('ma-meter').value, account: $('ma-account').value,
+      startReading: $('ma-start').value.replace(/[,\s]/g, ''), qbCustomer: $('ma-qb').value, notes: $('ma-notes').value, quarter: mr.data && mr.data.quarter };
+    status('ma-status', 'Adding…');
+    api('POST', '/api/admin/meters', b).then(function (r) {
+      mr.data = r; $('ma-form').hidden = true; drawMeterAdmin(); loadNotOnRoute();
+      var m = r.meters.filter(function (x) { return x.id === r.id; })[0];
+      status('mr-status', 'Added ' + (b.name || b.address) + ' at read sequence ' + (m ? m.seq : '') + '.', 'ok');
+      $('mr-q').value = b.address || b.name; drawMeterAdmin();
+    }).catch(function (err) { status('ma-status', err.message, 'err'); });
+  };
+  function loadNotOnRoute() {
+    return api('GET', '/api/admin/meters/not-on-route').then(function (r) { nr = r.properties; drawNotOnRoute(); }).catch(function () {});
+  }
+  $('nr-show').onchange = drawNotOnRoute;
+  function drawNotOnRoute() {
+    var show = $('nr-show').value, body = $('nr-body'); body.innerHTML = '';
+    var BUILD = { Home: 1, Condo: 1, Villa: 1, Comm: 1 };
+    var list = nr.filter(function (p) { return show === 'skipped' ? p.skipped : !p.skipped && (show === 'all' || BUILD[p.type]); });
+    var open = nr.filter(function (p) { return !p.skipped; }), b = open.filter(function (p) { return BUILD[p.type]; }).length;
+    $('nr-count').textContent = open.length ? b + ' with a building, ' + (open.length - b) + ' lots, hangars and garages' + (nr.length > open.length ? ' · ' + (nr.length - open.length) + ' marked not needed' : '') : 'Every property on the members list is on the route.';
+    list.forEach(function (p) {
+      var tr = el('tr');
+      tr.appendChild(el('td', '', p.address)); tr.appendChild(el('td', '', p.type)); tr.appendChild(el('td', '', p.parcel)); tr.appendChild(el('td', '', p.names.join('; ')));
+      var td = el('td'); td.style.whiteSpace = 'nowrap';
+      if (!p.skipped) { var add = el('button', 'btn small', 'Add to route'); add.type = 'button'; add.onclick = function () { openAddMeter(p); }; td.appendChild(add); td.appendChild(document.createTextNode(' ')); }
+      var sk = el('button', 'btn ghost small', p.skipped ? 'Put back' : 'Not needed'); sk.type = 'button';
+      sk.onclick = function () { api('POST', '/api/admin/meters/skip', { address: p.address, skip: !p.skipped }).then(function (r) { nr = r.properties; drawNotOnRoute(); }).catch(function (e) { status('mr-status', e.message, 'err'); }); };
+      td.appendChild(sk); tr.appendChild(td); body.appendChild(tr);
+    });
+    $('nr-empty').hidden = list.length > 0;
+    $('nr-empty').textContent = show === 'skipped' ? 'Nothing marked not needed.' : nr.length ? 'Nothing to show here.' : 'Import the members list (Members tab) to see which properties are missing from the route.';
+  }
 })();

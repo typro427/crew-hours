@@ -114,3 +114,8 @@ table.roads td.num{font-variant-numeric:tabular-nums}
 .mr-table tr.done td{background:color-mix(in srgb, var(--ok) 6%, transparent)}
 .mr-edit td{background:var(--bg)}
 .mr-edit .mb-grid input{min-height:36px}
+/* properties not on the route: wrap long text so the table fits */
+#nr-body td{white-space:normal;vertical-align:middle}
+#nr-body td:first-child{min-width:180px;font-weight:600}
+#nr-body td:nth-child(4){max-width:260px}
+#nr-body td:last-child{white-space:nowrap;text-align:right}

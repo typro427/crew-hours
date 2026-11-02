@@ -375,3 +375,44 @@ test('meter list from Excel: names, QuickBooks name, "no meter", checks and curr
   assert.strictEqual(act[2].meterNo, ''); assert.strictEqual(act[2].notes, 'No meter'); assert.strictEqual(act[2].nameCheck, true);
   assert.strictEqual((await O.raw('/api/admin/meters/import-xlsx', Buffer.from('not excel'))).status, 400);
 });
+
+test('add a meter mid-route; properties not on the route; not needed / put back', async () => {
+  await O('POST', '/api/admin/members/import', { columns: ['Status', 'Last name', 'First name(s)', 'Property type', 'Parcel ID', 'Deerfield address'], rows: [
+    { Status: 'Active', 'Last name': 'Onroute', 'First name(s)': 'Al', 'Property type': 'Home', 'Deerfield address': 'Halfway House' },
+    { Status: 'Active', 'Last name': 'Testy', 'First name(s)': 'Greg', 'Property type': 'Home', 'Deerfield address': '434 Fake Vista Lane' },
+    { Status: 'Active', 'Last name': 'Newhome', 'First name(s)': 'Nina', 'Property type': 'Home', 'Parcel ID': '999 A 1', 'Deerfield address': '440 Fake Vista Lane' },
+    { Status: 'Active', 'Last name': 'Lotowner', 'First name(s)': 'Lou', 'Property type': 'Lot', 'Deerfield address': '500 Fake Vista Lot 3' },
+    { Status: 'Inactive / sold', 'Last name': 'Gone', 'Property type': 'Home', 'Deerfield address': '450 Fake Vista' }
+  ] });
+  let r = await O('GET', '/api/admin/meters/not-on-route');
+  const addrs = r.body.properties.map(p => p.address);
+  assert.ok(addrs.includes('440 Fake Vista Lane') && addrs.includes('500 Fake Vista Lot 3'));
+  assert.ok(!addrs.includes('434 Fake Vista Lane'), '434 is on the route (as "434 Fake Vista")');
+  assert.ok(!addrs.includes('450 Fake Vista'), 'inactive owners are left out');
+  const nh = r.body.properties.find(p => p.address === '440 Fake Vista Lane');
+  assert.deepStrictEqual(nh.names, ['Newhome, Nina']); assert.strictEqual(nh.type, 'Home');
+  const before = (await O('GET', '/api/admin/meters?all=1')).body.meters.filter(m => m.active);
+  const fake = before.find(m => m.address === '434 Fake Vista');
+  assert.strictEqual(nh.suggestSeq, fake.seq + 1, 'suggested right after the last meter on the same street');
+  // add it there: later meters move down one
+  r = await O('POST', '/api/admin/meters', { seq: nh.suggestSeq, name: 'Newhome, Nina', address: '440 Fake Vista Lane', meterNo: '7777777', startReading: '120' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const after = r.body.meters.filter(m => m.active);
+  assert.strictEqual(after.length, before.length + 1);
+  const added = after.find(m => m.id === r.body.id);
+  assert.strictEqual(added.seq, nh.suggestSeq); assert.strictEqual(added.previous, 120);
+  const moved = after.find(m => m.id === before.find(m => m.seq === nh.suggestSeq).id);
+  assert.strictEqual(moved.seq, nh.suggestSeq + 1, 'the meter that was there moved down one');
+  r = await O('GET', '/api/admin/meters/not-on-route');
+  assert.ok(!r.body.properties.some(p => p.address === '440 Fake Vista Lane'), 'gone from the list once added');
+  // not needed / put back
+  r = await O('POST', '/api/admin/meters/skip', { address: '500 Fake Vista Lot 3' });
+  assert.strictEqual(r.body.properties.find(p => p.address === '500 Fake Vista Lot 3').skipped, true);
+  r = await O('POST', '/api/admin/meters/skip', { address: '500 Fake Vista Lot 3', skip: false });
+  assert.strictEqual(r.body.properties.find(p => p.address === '500 Fake Vista Lot 3').skipped, false);
+  // blank seq = end of the route
+  r = await O('POST', '/api/admin/meters', { name: 'End, Ed', address: '1 End Road' });
+  const end = r.body.meters.filter(m => m.active);
+  assert.strictEqual(end[end.length - 1].name, 'End, Ed');
+  assert.strictEqual((await O('POST', '/api/admin/meters', {})).status, 400);
+});

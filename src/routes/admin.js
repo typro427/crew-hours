@@ -184,6 +184,9 @@ r.delete('/mows/:id', async (req, res) => {
 const MT = require('../meters');
 r.get('/meters', async (req, res) => res.json(await MT.route(req.company, req.query.quarter, { all: req.query.all === '1' })));
 r.post('/meters/import', async (req, res) => res.json(await MT.replaceAll(req.company.id, (req.body || {}).meters)));
+r.post('/meters', async (req, res) => { const id = await MT.add(req.company.id, req.body || {}); res.json({ id, ...(await MT.route(req.company, (req.body || {}).quarter, { all: true })) }); });
+r.get('/meters/not-on-route', async (req, res) => res.json({ properties: await MT.notOnRoute(req.company.id) }));
+r.post('/meters/skip', async (req, res) => { const b = req.body || {}; await MT.skip(req.company.id, b.address, b.skip !== false); res.json({ properties: await MT.notOnRoute(req.company.id) }); });
 r.post('/meters/import-xlsx', async (req, res) => {
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Pick the Excel file first.' });
   res.json(await MT.importExcel(req.company, req.body));

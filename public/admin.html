@@ -92,7 +92,7 @@
       <div class="card">
         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div><h3>Meter readings</h3><p class="hint" id="mr-progress" style="margin:0"></p></div>
-          <div class="row" style="gap:8px"><select id="mr-month" aria-label="Quarter"></select><a class="btn ghost small" id="mr-csv">Download CSV</a></div>
+          <div class="row" style="gap:8px"><select id="mr-month" aria-label="Quarter"></select><button class="btn small" type="button" id="mr-add">+ Add meter</button><a class="btn ghost small" id="mr-csv">Download CSV</a></div>
         </div>
         <div class="mb-search">
           <input id="mr-q" type="search" placeholder="Find: name, address, meter #, act #, seq" autocomplete="off" aria-label="Find a meter">
@@ -101,6 +101,30 @@
         <div class="tablebox"><table class="roads mr-table"><thead><tr><th>Seq</th><th>Act #</th><th>Customer</th><th>Service address</th><th>Meter ID</th><th class="num">Last</th><th class="num">Current</th><th class="num">Usage</th><th>Read by</th><th></th></tr></thead><tbody id="mr-body"></tbody></table></div>
         <p class="hint" id="mr-empty" hidden></p>
         <p class="hint">“Check” means the name couldn't be confirmed against the members list. Click Edit to fix the name, then untick Check.</p>
+      </div>
+      <form class="card" id="ma-form" hidden novalidate>
+        <div class="row" style="justify-content:space-between"><h3 id="ma-title">Add a meter</h3><button class="btn ghost small" type="button" id="ma-cancel">Cancel</button></div>
+        <div class="mb-grid">
+          <div><label for="ma-seq">Read sequence</label><input id="ma-seq" inputmode="numeric" placeholder="Last"></div>
+          <div><label for="ma-name">Customer name</label><input id="ma-name" maxlength="120"></div>
+          <div><label for="ma-address">Service address</label><input id="ma-address" maxlength="160"></div>
+          <div><label for="ma-meter">Meter ID</label><input id="ma-meter" maxlength="40" placeholder="Leave blank if no meter yet"></div>
+          <div><label for="ma-account">Act #</label><input id="ma-account" maxlength="40"></div>
+          <div><label for="ma-start">Last reading</label><input id="ma-start" inputmode="numeric" placeholder="0"></div>
+          <div><label for="ma-qb">QuickBooks customer</label><input id="ma-qb" maxlength="160"></div>
+          <div><label for="ma-notes">Notes</label><input id="ma-notes" maxlength="300"></div>
+        </div>
+        <p class="hint" id="ma-hint">It goes into the route at that read sequence; meters from there on move down one.</p>
+        <div class="row"><button class="btn" type="submit">Add to route</button><span class="status" id="ma-status" role="status"></span></div>
+      </form>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div><h3>Properties not on the route</h3><p class="hint" id="nr-count" style="margin:0"></p></div>
+          <select id="nr-show" aria-label="Which properties"><option value="build">Homes, condos, villas, commercial</option><option value="all">All, including lots, hangars, garages</option><option value="skipped">Marked not needed</option></select>
+        </div>
+        <div class="tablebox"><table class="roads"><thead><tr><th>Deerfield address</th><th>Type</th><th>Parcel ID</th><th>Owner (members list)</th><th></th></tr></thead><tbody id="nr-body"></tbody></table></div>
+        <p class="hint" id="nr-empty" hidden></p>
+        <p class="hint">From the members list: active Deerfield properties with no meter on the route. <b>Add to route</b> fills in the form above; <b>Not needed</b> hides it (undo any time under “Marked not needed”).</p>
       </div>
       <div class="card">
         <h3>Import the meter list</h3>

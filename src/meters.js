@@ -143,4 +143,96 @@ async function importExcel(company, buffer) {
   return { meters: r.meters, readings: saved };
 }
 
-module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel };
+/* ------------------- adding meters, and properties not on the route ------------------- */
+
+/** Add one meter at a read-sequence spot; meters at that spot and after move down one. */
+async function add(companyId, b) {
+  const s = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  const name = s(b.name, 120), address = s(b.address, 160);
+  if (!name && !address) V.bad('Enter a name or an address.');
+  const max = (await db.one('SELECT COALESCE(max(seq),0)::int AS m FROM meters WHERE company_id=$1 AND active', [companyId])).m;
+  const seq = b.seq === '' || b.seq == null ? max + 1 : V.int(b.seq, 'Read sequence', 1, 100000);
+  const start = b.startReading === '' || b.startReading == null ? null : Number(b.startReading);
+  if (start != null && !(isFinite(start) && start >= 0)) V.bad('The last reading must be a number.');
+  return db.tx(async t => {
+    await t.q('UPDATE meters SET seq=seq+1 WHERE company_id=$1 AND seq>=$2', [companyId, seq]);
+    const r = await t.one(`INSERT INTO meters (company_id, seq, account, meter_no, name, address, notes, start_reading, qb_customer, old_name)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$5) RETURNING id`,
+      [companyId, seq, s(b.account, 40), s(b.meterNo, 40), name, address, s(b.notes, 300), start, s(b.qbCustomer, 160)]);
+    await t.q('DELETE FROM meter_skips WHERE company_id=$1 AND address=$2', [companyId, address]);
+    return r.id;
+  });
+}
+
+// Address matching that copes with "2c 470 Deerfield Landing" = "470 Deerfield Landing #2", "131A" = "131 ... Unit A".
+const ABBR = { ln: 'lane', dr: 'drive', rd: 'road', ct: 'court', cir: 'circle', pt: 'point', pl: 'place', e: 'east', w: 'west', n: 'north', s: 'south' };
+const GEN = new Set(['lane', 'drive', 'road', 'way', 'unit', 'condo', 'lot', 'the', 'of']);
+function addrKey(a) {
+  const t = String(a || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(x => ABBR[x] || x);
+  const big = t.filter(x => /^\d{3,5}[a-z]?$/.test(x));
+  let house = null, letter = null; const nums = new Set();
+  for (const x of t) {
+    let m = /^(\d{2,5})([a-z]?)$/.exec(x);
+    if (m && house === null && (!big.length || x === big[0])) { house = m[1]; letter = m[2] || null; continue; }
+    m = /^(\d{1,2})([a-z]?)$|^([a-z])(\d{1,2})$/.exec(x);
+    if (m) nums.add(m[1] || m[4]);
+  }
+  const ui = t.indexOf('unit');
+  if (ui >= 0 && /^[a-z]$/.test(t[ui + 1] || '')) letter = t[ui + 1];
+  if (!letter && /^[ab]$/.test(t[t.length - 1] || '')) letter = t[t.length - 1];
+  const plain = t.filter(x => !/\d/.test(x) && !GEN.has(x) && x.length > 1);
+  const words = new Set(plain);
+  for (let i = 0; i + 1 < plain.length; i++) words.add(plain[i] + plain[i + 1]);   // "White Tail" = "Whitetail", "Deer Hill" = "Deerhill"
+  return { house, letter, nums, words };
+}
+function sameProperty(a, b) {
+  if (!a.house || a.house !== b.house) return false;
+  if (![...a.words].some(w => b.words.has(w))) return false;
+  const TYPE = ['point', 'circle', 'place', 'court', 'path', 'trail', 'knoll', 'crossing'];   // these tell streets apart
+  const ta = TYPE.filter(x => a.words.has(x)), tb = TYPE.filter(x => b.words.has(x));
+  if (ta.length && tb.length && !ta.some(x => tb.includes(x))) return false;
+  if (a.letter && b.letter && a.letter !== b.letter) return false;
+  if (a.nums.size && b.nums.size && ![...a.nums].some(n => b.nums.has(n))) return false;
+  return true;
+}
+
+/**
+ * Deerfield properties on the members list (active) with no meter on the route.
+ * Each comes with the owner's name and a suggested read-sequence spot: right after the last meter on the same street.
+ */
+async function notOnRoute(companyId) {
+  const meters = await db.q('SELECT seq, address, name, old_name FROM meters WHERE company_id=$1 AND active ORDER BY seq', [companyId]);
+  const last = s => String(s || '').toLowerCase().split(/[,(/\s]/)[0];
+  const mk = meters.map(m => ({ seq: m.seq, k: addrKey(m.address), names: new Set([last(m.name), last(m.old_name)].filter(Boolean)) }));
+  const members = await db.q(`SELECT data FROM members WHERE company_id=$1 AND COALESCE(data->>'Status','Active')='Active' AND COALESCE(data->>'Deerfield address','')<>'' ORDER BY position`, [companyId]);
+  const skips = new Set((await db.q('SELECT address FROM meter_skips WHERE company_id=$1', [companyId])).map(r => r.address));
+  const out = new Map();
+  for (const { data: d } of members) {
+    const address = d['Deerfield address'].trim();
+    const k = addrKey(address);
+    if (!k.house) { if (!out.has(address)) out.set(address, null); else continue; }
+    else if (mk.some(m => sameProperty(k, m.k))) continue;
+    // Same house number and the same owner on the meter, but the street is written differently (Deer Run Circle vs Point).
+    else if (mk.some(m => m.k.house === k.house && m.names.has(last(d['Last name'])) && [...k.words].some(w => m.k.words.has(w)))) continue;
+    const name = [d['Last name'], d['First name(s)']].filter(Boolean).join(', ') || d['Trust or LLC'] || '';
+    const e = out.get(address) || { address, type: d['Property type'] || '', parcel: d['Parcel ID'] || '', names: [], skipped: skips.has(address), suggestSeq: null };
+    if (name && !e.names.includes(name)) e.names.push(name);
+    if (e.suggestSeq == null) {   // after the last meter on the same street
+      const street = [...k.words];
+      const same = mk.filter(m => street.length && street.every(w => m.k.words.has(w)));
+      e.suggestSeq = same.length ? Math.max(...same.map(m => m.seq)) + 1 : null;
+    }
+    out.set(address, e);
+  }
+  const ORDER = { Home: 0, Condo: 1, Villa: 2, Comm: 3, '': 4, Lot: 5, Hangar: 6, Garage: 7 };
+  return [...out.values()].filter(Boolean).sort((a, b) => (ORDER[a.type] ?? 4) - (ORDER[b.type] ?? 4) || a.address.localeCompare(b.address));
+}
+
+async function skip(companyId, address, on) {
+  const a = String(address || '').trim().slice(0, 200);
+  if (!a) V.bad('Which address?');
+  if (on) await db.q('INSERT INTO meter_skips (company_id, address) VALUES ($1,$2) ON CONFLICT DO NOTHING', [companyId, a]);
+  else await db.q('DELETE FROM meter_skips WHERE company_id=$1 AND address=$2', [companyId, a]);
+}
+
+module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel, add, notOnRoute, skip, addrKey, sameProperty };

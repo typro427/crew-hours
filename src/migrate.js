@@ -179,6 +179,12 @@ CREATE TABLE IF NOT EXISTS meters (
 );
 CREATE INDEX IF NOT EXISTS meters_company ON meters (company_id, seq);
 ALTER TABLE meters ADD COLUMN IF NOT EXISTS qb_customer TEXT NOT NULL DEFAULT '';   -- the customer's name exactly as in QuickBooks
+-- Properties the boss marked "not needed" on the "not on the route" list.
+CREATE TABLE IF NOT EXISTS meter_skips (
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  address    TEXT NOT NULL,
+  PRIMARY KEY (company_id, address)
+);
 CREATE TABLE IF NOT EXISTS meter_reads (
   id         SERIAL PRIMARY KEY,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
