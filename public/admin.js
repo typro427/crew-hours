@@ -401,12 +401,28 @@
     openC.appendChild(el('h3', '', L.openTitle)); var openL = el('div', 'tasks'), openE = el('p', 'hint', L.openEmpty); openC.appendChild(openL); openC.appendChild(openE);
     doneC.appendChild(el('h3', '', L.doneTitle)); doneC.lastChild.appendChild(el('span', 'hint', ' (last 60 days)'));
     var doneL = el('div', 'tasks'), doneE = el('p', 'hint', L.doneEmpty); doneC.appendChild(doneL); doneC.appendChild(doneE);
-    var wrap = el('div', 'stack'); [form, openC, doneC].forEach(function (n) { wrap.appendChild(n); }); root.appendChild(wrap);
+    var spendC = el('div', 'card'); spendC.hidden = !L.arrival;
+    var wrap = el('div', 'stack'); [form, openC, doneC, spendC].forEach(function (n) { wrap.appendChild(n); }); root.appendChild(wrap);
+    function drawSpending(s) {
+      spendC.innerHTML = ''; if (!s) return;
+      spendC.appendChild(el('h3', '', 'Spending'));
+      var m2 = function (v) { return '$' + Math.round(v).toLocaleString(); };
+      spendC.appendChild(el('p', 'hint', s.waiting ? s.waiting + ' ordered and waiting to arrive' + (s.waitingEstimate ? ' (about ' + m2(s.waitingEstimate) + ')' : '') + '.' : 'Nothing waiting to arrive.'));
+      if (!s.months.length) { spendC.appendChild(el('p', 'hint', 'When things arrive, mark them arrived with the real cost and the monthly totals show here.')); return; }
+      var tb = el('table', 'roads'), h = el('tr'); ['Month', 'Items arrived', 'Real cost', 'Estimate (same items)', 'Difference'].forEach(function (x) { h.appendChild(el('th', '', x)); });
+      var th = el('thead'); th.appendChild(h); tb.appendChild(th); var bd = el('tbody'); tb.appendChild(bd);
+      s.months.forEach(function (m) {
+        var tr = el('tr'), d = m.actual - m.estimate, mo = new Date(m.month + '-15T12:00:00Z').toLocaleDateString([], { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        [mo, m.items + (m.noCost ? ' (' + m.noCost + ' with no cost)' : ''), m2(m.actual), m.estimate ? m2(m.estimate) : '—', m.estimate ? (d >= 0 ? '+' : '−') + m2(Math.abs(d)) : ''].forEach(function (x, i) { tr.appendChild(el('td', i === 4 && d > 0 ? 'warn' : '', x)); });
+        bd.appendChild(tr);
+      });
+      var box = el('div', 'tablebox'); box.appendChild(tb); spendC.appendChild(box);
+    }
     function say(m, c) { st.textContent = m || ''; st.className = 'status' + (c ? ' ' + c : ''); }
     me.load = function () {
       say('');
-      return Promise.all([api('GET', '/api/admin/tasks?kind=' + kind), api('GET', '/api/admin/crew')]).then(function (r) {
-        me.tasks = r[0].tasks; crew = r[1].crew; fillWho(); draw();
+      return Promise.all([api('GET', '/api/admin/tasks?kind=' + kind), api('GET', '/api/admin/crew'), L.arrival ? api('GET', '/api/admin/orders/spending') : null]).then(function (r) {
+        me.tasks = r[0].tasks; crew = r[1].crew; fillWho(); draw(); drawSpending(r[2]);
       }).catch(function (e) { say(e.message, 'err'); });
     };
     function fillWho() {
@@ -426,11 +442,13 @@
         if (t.due) { var late = t.status === 'open' && t.due < me_today(); meta.appendChild(el('span', late ? 'late' : '', (late ? (L.overdueWord || 'Overdue: ') : (L.dueWord || 'Due ')) + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due))); }
         if (t.qty) meta.appendChild(el('span', '', 'Qty ' + t.qty));
         if (t.cost != null) meta.appendChild(el('span', '', '≈ $' + Number(t.cost).toLocaleString()));
+        if (L.arrival && t.status === 'done') meta.appendChild(el('span', t.arrivedAt ? '' : 'late', t.arrivedAt ? 'Arrived ' + new Date(t.arrivedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (t.arrivedByName ? ' (' + t.arrivedByName + ')' : '') + (t.actualCost != null ? ' · real cost $' + Number(t.actualCost).toLocaleString() : ' · no cost entered') : 'Waiting to arrive'));
         if (t.status === 'done') meta.appendChild(el('span', '', L.doneWord + ' by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
         left.appendChild(meta); top.appendChild(left);
         var acts = el('div', 't-acts');
         function btn(label, fn) { var b = el('button', 'btn ghost small', label); b.type = 'button'; b.onclick = fn; acts.appendChild(b); return b; }
         if (t.status === 'open' && L.progress) btn('+ Progress', function () { progressForm(t, r); });
+        if (L.arrival && t.status === 'done') btn(t.arrivedAt ? 'Real cost' : 'Mark arrived', function () { arriveForm(t, r); });
         if (t.status === 'open') btn('Edit', function () { edit(t); });
         else btn('Reopen', function () { api('PUT', '/api/admin/tasks/' + t.id, { reopen: true }).then(function (x) { me.tasks = x.tasks; draw(); }).catch(function (e) { say(e.message, 'err'); }); });
         var del = btn('Delete', function () {
@@ -489,6 +507,22 @@
           .catch(function (e) { save.disabled = false; ps.textContent = e.message; ps.className = 'status err'; });
       };
       row.appendChild(save); row.appendChild(no); row.appendChild(ps); f.appendChild(row); r.appendChild(f);
+    }
+    function arriveForm(t, r) {
+      if (r.querySelector('.t-prog')) return;
+      var f = el('div', 't-prog'), c = el('input'), ps = el('span', 'status');
+      c.inputMode = 'decimal'; c.placeholder = t.cost != null ? 'Estimate was $' + Number(t.cost).toLocaleString() : 'e.g. 172.40'; c.value = t.actualCost != null ? t.actualCost : '';
+      f.appendChild(el('label', '', 'Real cost ($)')); f.appendChild(c);
+      var row = el('div', 'row'), save = el('button', 'btn', t.arrivedAt ? 'Save cost' : 'It arrived'), no = el('button', 'btn ghost', 'Cancel');
+      save.type = no.type = 'button'; no.onclick = function () { f.remove(); };
+      save.onclick = function () {
+        api('POST', '/api/admin/tasks/' + t.id + '/arrived', { actualCost: c.value.replace(/[$,\s]/g, '') })
+          .then(function (q) { me.tasks = q.tasks; draw(); drawSpending(q.spending); say('Saved.', 'ok'); })
+          .catch(function (e) { ps.textContent = e.message; ps.className = 'status err'; });
+      };
+      row.appendChild(save); row.appendChild(no);
+      if (t.arrivedAt) { var un = el('button', 'btn ghost', 'Not arrived yet'); un.type = 'button'; un.onclick = function () { api('POST', '/api/admin/tasks/' + t.id + '/arrived', { undo: true }).then(function (q) { me.tasks = q.tasks; draw(); drawSpending(q.spending); }).catch(function (e) { say(e.message, 'err'); }); }; row.appendChild(un); }
+      row.appendChild(ps); f.appendChild(row); r.appendChild(f); c.focus();
     }
     function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; fQty.value = t.qty || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
     function reset() { me.editing = null; form.reset(); fPics = []; drawPics(); sv.textContent = L.addBtn; cancel.hidden = true; }
@@ -715,7 +749,7 @@
     detailsPh: 'Where, what to bring, anything they should know', addBtn: 'Add task', needTitle: 'Give the task a name.', addedOk: 'Task added. The crew will see it in their app.',
     formHint: 'The crew sees it under Tasks in their app. When they finish, they add notes and photos and you get an email.',
     openTitle: 'Open', openEmpty: 'Nothing open.', doneTitle: 'Done', doneEmpty: 'Nothing finished yet.', byWord: 'Added by', doneWord: 'Done' });
-  var orderPanel = TaskPanel('order', $('orders-panel'), { qtyField: true, formTitle: 'Add something to order', titleLabel: 'What', titlePh: 'e.g. 2" PVC ball valve',
+  var orderPanel = TaskPanel('order', $('orders-panel'), { qtyField: true, arrival: true, formTitle: 'Add something to order', titleLabel: 'What', titlePh: 'e.g. 2" PVC ball valve',
     detailsPh: 'Size, brand, where it is for, where to buy', addBtn: 'Add', needTitle: 'Say what needs ordering.', addedOk: 'Added to the order list.',
     formHint: 'Crew you switch on (Crew & PINs → Needs to order) can add items from their app too, with a picture. You get an email when they do.',
     openTitle: 'Needs to order', openEmpty: 'Nothing to order.', doneTitle: 'Ordered', doneEmpty: 'Nothing ordered yet.', byWord: 'Added by', doneWord: 'Ordered',

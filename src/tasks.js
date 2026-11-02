@@ -13,20 +13,22 @@ const TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e
 const COLS = `t.id, t.title, t.details, t.assigned_to AS "assignedTo", a.name AS "assignedName", to_char(t.due, 'YYYY-MM-DD') AS due,
   t.status, t.cost, t.qty, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
   t.address, t.owner, t.owner_phone AS "ownerPhone",
+  t.arrived_at AS "arrivedAt", ar.name AS "arrivedByName", t.actual_cost AS "actualCost",
   COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id AND p.update_id IS NULL), '[]') AS photos,
   COALESCE((SELECT json_agg(json_build_object('id', u.id, 'at', u.created_at, 'by', u.by_name, 'crewId', u.crew_id, 'note', u.note,
       'photos', COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.update_id=u.id), '[]')) ORDER BY u.id)
     FROM task_updates u WHERE u.task_id=t.id), '[]') AS updates`;
-const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by LEFT JOIN crew cb ON cb.id=t.created_by';
+const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by LEFT JOIN crew cb ON cb.id=t.created_by LEFT JOIN crew ar ON ar.id=t.arrived_by';
 
 /** The boss's list: everything open, plus what was finished in the last 60 days. */
 const kindOf = k => (k === 'repair' || k === 'order' ? k : 'task');   // task | repair (water leaks) | order (needs to order)
-const forOwner = async (companyId, kind) => (kindOf(kind) === 'repair' && await fillOwners(companyId), db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$2 AND (t.status='open' OR t.done_at > now() - interval '60 days')
+const forOwner = async (companyId, kind) => (kindOf(kind) === 'repair' && await fillOwners(companyId), db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$2 AND (t.status='open' OR t.done_at > now() - interval '60 days' OR (t.kind='order' AND t.arrived_at IS NULL))
   ORDER BY t.status='done', CASE WHEN t.status='open' THEN t.due END NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, kindOf(kind)]));
 
 /** A crew member sees open tasks for them or for anyone, and what they finished in the last 14 days. */
 const forCrew = async (companyId, crewId, kind) => (kindOf(kind) === 'repair' && await fillOwners(companyId), db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$3 AND
-  ((t.status='open' AND (t.assigned_to IS NULL OR t.assigned_to=$2)) OR (t.status='done' AND t.done_by=$2 AND t.done_at > now() - interval '14 days'))
+  ((t.status='open' AND (t.assigned_to IS NULL OR t.assigned_to=$2)) OR (t.status='done' AND t.done_by=$2 AND t.done_at > now() - interval '14 days')
+   OR (t.kind='order' AND t.status='done' AND (t.arrived_at IS NULL OR t.arrived_at > now() - interval '14 days')))
   ORDER BY t.status='done', t.due NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, crewId, kindOf(kind)]));
 
 // ---- Who owns the place with the leak: look the address up on the members list. ----
@@ -125,7 +127,8 @@ async function update(companyId, id, b) {
   const v = await fields(companyId, b, cur);
   const moved = v.title !== cur.title || v.details !== cur.details || v.address !== cur.address;   // look the owner up again
   await db.q('UPDATE tasks SET title=$1, details=$2, due=$3, assigned_to=$4, cost=$5, address=$6, qty=$7, owner_checked=owner_checked AND NOT $8 WHERE id=$9', [v.title, v.details, v.due, v.assigned, v.cost, v.address, v.qty, moved, id]);
-  if (b.reopen) await db.q("UPDATE tasks SET status='open', done_at=NULL, done_by=NULL WHERE id=$1", [id]);
+  if (b.actualCost !== undefined && cur.arrived_at) await db.q('UPDATE tasks SET actual_cost=$1 WHERE id=$2', [roughCost(b.actualCost), id]);
+  if (b.reopen) await db.q("UPDATE tasks SET status='open', done_at=NULL, done_by=NULL, arrived_at=NULL, arrived_by=NULL, actual_cost=NULL WHERE id=$1", [id]);
 }
 
 const remove = (companyId, id) => db.q('DELETE FROM tasks WHERE id=$1 AND company_id=$2', [id, companyId]);
@@ -186,6 +189,26 @@ async function removeProgress(companyId, updateId, crewId) {
   await db.q('DELETE FROM task_updates WHERE id=$1', [updateId]);
 }
 const kindOfUpdate = async (companyId, id) => { const r = await db.one('SELECT t.kind FROM task_updates u JOIN tasks t ON t.id=u.task_id WHERE u.id=$1 AND u.company_id=$2', [id, companyId]); return r && r.kind; };
+
+/** An ordered item arrived: when, who, and what it really cost. undo clears it. */
+async function arrived(companyId, id, crewId, b) {
+  const t = await db.one("SELECT id, kind, status FROM tasks WHERE id=$1 AND company_id=$2", [id, companyId]);
+  if (!t || t.kind !== 'order') V.bad('That item was not found.');
+  if (b && b.undo) { await db.q('UPDATE tasks SET arrived_at=NULL, arrived_by=NULL, actual_cost=NULL WHERE id=$1', [id]); return; }
+  if (t.status !== 'done') V.bad('Mark it ordered first.');
+  const cost = b && b.actualCost !== undefined ? roughCost(b.actualCost) : null;
+  await db.q('UPDATE tasks SET arrived_at=COALESCE(arrived_at, now()), arrived_by=COALESCE($2, arrived_by), actual_cost=$3 WHERE id=$1', [id, crewId, cost]);
+}
+
+/** Spending on orders by month the item arrived, last 12 months: real cost, and the estimate for the same items. */
+async function spending(companyId, tz) {
+  const rows = await db.q(`SELECT to_char(date_trunc('month', arrived_at AT TIME ZONE $2), 'YYYY-MM') AS month, count(*)::int AS items,
+      COALESCE(sum(actual_cost), 0)::float AS actual, COALESCE(sum(cost) FILTER (WHERE actual_cost IS NOT NULL), 0)::float AS estimate,
+      count(*) FILTER (WHERE actual_cost IS NULL)::int AS "noCost"
+    FROM tasks WHERE company_id=$1 AND kind='order' AND arrived_at > now() - interval '12 months' GROUP BY 1 ORDER BY 1 DESC`, [companyId, tz || 'America/New_York']);
+  const waiting = await db.one(`SELECT count(*)::int AS n, COALESCE(sum(cost),0)::float AS est FROM tasks WHERE company_id=$1 AND kind='order' AND status='done' AND arrived_at IS NULL`, [companyId]);
+  return { months: rows, waiting: waiting.n, waitingEstimate: waiting.est };
+}
 
 /** Crew can delete a task they added, while it's still open. */
 async function removeByCrew(company, crew, id) {
@@ -250,4 +273,4 @@ const kindOfTaskPhoto = async (companyId, id) => { const r = await db.one('SELEC
 /** One photo, only for someone in the same company. */
 const photo = (companyId, photoId) => db.one('SELECT mime, data FROM task_photos WHERE id=$1 AND company_id=$2', [photoId, companyId]);
 
-module.exports = { progress, removeProgress, kindOfUpdate, fillOwners, recheckOwners, ownerAt, activeMembers, kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };
+module.exports = { arrived, spending, progress, removeProgress, kindOfUpdate, fillOwners, recheckOwners, ownerAt, activeMembers, kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };

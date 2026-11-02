@@ -85,6 +85,10 @@ r.post('/:slug/tasks/:id/progress', A.requireCrew, async (req, res) => {
   await K.progress(req.company.id, Number(req.params.id), { crew: req.crew }, req.body || {});
   res.json(await taskList(req, kind));
 });
+r.post('/:slug/tasks/:id/arrived', A.requireCrew, F.need('orders'), async (req, res) => {
+  await K.arrived(req.company.id, Number(req.params.id), req.crew.id, { actualCost: (req.body || {}).actualCost });
+  res.json(await taskList(req, 'order'));
+});
 r.delete('/:slug/tasks/updates/:id', A.requireCrew, async (req, res) => {
   const kind = await K.kindOfUpdate(req.company.id, Number(req.params.id));
   if (!kind || !F.can(req.crew, featTask(kind))) return off(res);

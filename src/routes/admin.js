@@ -158,6 +158,8 @@ r.get('/tasks', async (req, res) => res.json(await tasksOut(req, req.query.kind)
 r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json(await tasksOut(req, (req.body || {}).kind)); });
 r.put('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await tasksOut(req, k)); });
 r.post('/tasks/:id/progress', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.progress(req.company.id, Number(req.params.id), { boss: req.owner.name || 'Boss' }, req.body || {}); res.json(await tasksOut(req, k)); });
+r.post('/tasks/:id/arrived', async (req, res) => { await K.arrived(req.company.id, Number(req.params.id), null, req.body || {}); res.json({ ...(await tasksOut(req, 'order')), spending: await K.spending(req.company.id, req.company.timezone) }); });
+r.get('/orders/spending', async (req, res) => res.json(await K.spending(req.company.id, req.company.timezone)));
 r.delete('/tasks/updates/:id', async (req, res) => { const k = await K.kindOfUpdate(req.company.id, Number(req.params.id)); await K.removeProgress(req.company.id, Number(req.params.id)); res.json(await tasksOut(req, k)); });
 r.delete('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.remove(req.company.id, Number(req.params.id)); res.json(await tasksOut(req, k)); });
 /* --------------------------------- roads ----------------------------------- */

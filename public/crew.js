@@ -62,6 +62,7 @@
     delJob:          function(a){ return ["DELETE", "/jobs/" + a[1]]; },
     delReceipt:      function(a){ return ["DELETE", "/receipts/" + a[1]]; },
     doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; },
+    arrivedTask:     function(a){ return ["POST", "/tasks/" + a[1] + "/arrived", { actualCost:a[2] }]; },
     progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3] }]; },
     delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; }
   };
@@ -576,7 +577,11 @@
         if(done) meta.appendChild(el("span","ok",L.doneTag+(t.doneAt ? " "+new Date(t.doneAt).toLocaleDateString([], {month:"short", day:"numeric"}) : "")+(t.doneByName && !isMe(t.doneByName) ? " by "+t.doneByName : "")));
         else if(t.due) meta.appendChild(el("span", t.due<today ? "late" : "", (t.due<today ? (L.overdueWord||"Overdue: ") : (L.dueWord||"Due "))+dayLabel(t.due)));
         if(t.qty) meta.appendChild(el("span","cost","Qty "+t.qty));
-        if(t.cost!=null) meta.appendChild(el("span","cost","≈ $"+Number(t.cost).toLocaleString()));
+        if(t.cost!=null && !(L.arrival && t.actualCost!=null)) meta.appendChild(el("span","cost","≈ $"+Number(t.cost).toLocaleString()));
+        if(L.arrival && done){
+          if(t.arrivedAt) meta.appendChild(el("span","ok","Arrived "+new Date(t.arrivedAt).toLocaleDateString([], {month:"short", day:"numeric"})+(t.actualCost!=null ? " · $"+Number(t.actualCost).toLocaleString()+(t.cost!=null ? " (est. $"+Number(t.cost).toLocaleString()+")" : "") : "")));
+          else meta.appendChild(el("span","late","Waiting to arrive"));
+        }
         if(!L.hideFor) meta.appendChild(el("span","", t.assignedTo ? (t.assignedName && !isMe(t.assignedName) ? "For "+t.assignedName : "For you") : "For anyone on the crew"));
         card.appendChild(meta);
         if(t.address) card.appendChild(el("div","by","📍 "+t.address));
@@ -594,6 +599,12 @@
         var room=me.maxPhotos-used;
         if(me.openForm===t.id) card.appendChild(doneForm(t, room));
         else if(me.progForm===t.id) card.appendChild(progressForm(t, room));
+        else if(L.arrival && done){
+          if(!t.arrivedAt){
+            if(me.arriveForm===t.id) card.appendChild(arriveForm(t));
+            else { var ab=el("button","primary","Mark arrived"); ab.type="button"; ab.onclick=function(){ me.arriveForm=t.id; draw(); }; var ar=el("div","row"); ar.appendChild(ab); card.appendChild(ar); }
+          }
+        }
         else if(!done || room>0){
           var b=el("button", done ? "ghost" : "primary", done ? "Add more photos" : L.markDone); b.type="button";
           b.onclick=function(){ me.openForm=t.id; me.progForm=null; draw(); };
@@ -615,6 +626,22 @@
         }
         list.appendChild(card);
       });
+    }
+    function arriveForm(t){
+      var f=el("div",""); f.style.cssText="display:flex;flex-direction:column;gap:10px";
+      var fst=statusLine(), c=el("input"); c.inputMode="decimal"; c.autocomplete="off"; c.placeholder=t.cost!=null ? "Estimate was $"+Number(t.cost).toLocaleString() : "e.g. 172.40";
+      f.appendChild(el("label","","What did it really cost? ($, optional)")); f.appendChild(c);
+      var row=el("div","row"), sv=el("button","primary","It arrived"), cancel=el("button","ghost","Cancel"); sv.type=cancel.type="button";
+      cancel.onclick=function(){ me.arriveForm=null; draw(); };
+      sv.onclick=function(){
+        var v=c.value.replace(/[$,\s]/g,"");
+        if(v!=="" && !/^\d+(\.\d{1,2})?$/.test(v)) return say(fst,"The cost must be a dollar amount, like 172.40.","err");
+        if(busy) return; busy=true; sv.disabled=true; say(fst,"Saving…");
+        call("arrivedTask",[token,t.id,v], function(res){ busy=false; me.arriveForm=null; me.tasks=res.tasks||[]; draw(); say(st,"Marked arrived.","ok"); },
+          function(msg){ busy=false; sv.disabled=false; say(fst,msg,"err"); });
+      };
+      row.appendChild(sv); row.appendChild(cancel); f.appendChild(row); f.appendChild(fst);
+      return f;
     }
     function updatesFor(t, ups){
       var box=el("div","updates");
@@ -807,7 +834,7 @@
     detailsLabel:"Description (optional)", detailsPh:"Size, brand, where it's for, where to buy", forLabel:"For", forMe:"Me", forAnyone:"Anyone", hideFor:true, costField:true, photosOnCreate:true,
     photoLabel:"Picture (optional)", dueLabel:"Due by (optional)", dueWord:"Due by ", overdueWord:"Past due: ",
     addSave:"Add to order list", needTitle:"Say what needs ordering.", addedOk:"Added. The boss got an email.", empty:"Nothing needs ordering right now.",
-    doneTag:"Ordered ✓", byYou:"Added by you", byOther:"Added by", markDone:"Mark ordered", del:"Delete this item",
+    doneTag:"Ordered ✓", arrival:true, byYou:"Added by you", byOther:"Added by", markDone:"Mark ordered", del:"Delete this item",
     donePh:"Where from? Order number? When will it arrive?", whatYouDid:"Order details", doneSend:"Ordered", doneOk:"Marked ordered." });
   orderBoard.onCount=function(n){ $("order-count").hidden=!n; $("order-count").textContent=n; };
   var roadBoard=PlaceBoard("road", $("road-screen"), { searchPh:"Search roads", hint:"Tap a road to log that you mowed it.", empty:"No roads yet.", back:"‹ All roads", dateLabel:"Date you mowed it", save:"Save: mowed",

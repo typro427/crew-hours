@@ -627,3 +627,30 @@ test('address jobs: off by default, time in/out, costs, receipts, owner from the
   assert.strictEqual((await O2('GET', '/api/admin/receipts/' + j.receipts[0])).status, 404);
   await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, jobs: false, hours: true } });
 });
+
+test('needs to order: ordered -> arrived with the real cost; monthly spending', async () => {
+  const row = (await O('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Jake');
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, orders: true } });
+  let r = await jake('POST', '/tasks', { kind: 'order', title: 'Pump seal kit', cost: '200' });
+  const item = r.body.tasks.find(t => t.title === 'Pump seal kit');
+  assert.strictEqual((await jake('POST', `/tasks/${item.id}/arrived`, {})).status, 400, 'order it first');
+  await jake('POST', `/tasks/${item.id}/done`, { notes: 'Ordered from Grainger' });
+  r = await jake('GET', '/tasks?kind=order');
+  let t = r.body.tasks.find(x => x.id === item.id);
+  assert.strictEqual(t.status, 'done'); assert.strictEqual(t.arrivedAt, null);
+  assert.ok((await sam('GET', '/tasks?kind=order')).status === 403);
+  r = await jake('POST', `/tasks/${item.id}/arrived`, { actualCost: '$215.50' });
+  t = r.body.tasks.find(x => x.id === item.id);
+  assert.ok(t.arrivedAt); assert.strictEqual(t.actualCost, 215.5); assert.strictEqual(t.arrivedByName, 'Jake');
+  let s = (await O('GET', '/api/admin/orders/spending')).body;
+  const m = s.months[0];
+  assert.strictEqual(m.actual, 215.5); assert.strictEqual(m.estimate, 200);
+  // the boss fixes the cost, then undoes
+  r = await O('POST', `/api/admin/tasks/${item.id}/arrived`, { actualCost: '210' });
+  assert.strictEqual(r.body.spending.months[0].actual, 210);
+  r = await O('POST', `/api/admin/tasks/${item.id}/arrived`, { undo: true });
+  assert.strictEqual(r.body.tasks.find(x => x.id === item.id).arrivedAt, null, 'still listed while waiting');
+  assert.ok(r.body.spending.waiting >= 1);
+  assert.strictEqual((await O('POST', `/api/admin/tasks/${item.id}/arrived`, { actualCost: 'x' })).status, 400);
+  assert.strictEqual((await O2('POST', `/api/admin/tasks/${item.id}/arrived`, {})).status, 400, 'other company');
+});
