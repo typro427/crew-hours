@@ -155,6 +155,7 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_phone TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_checked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS qty TEXT NOT NULL DEFAULT '';   -- how many to order: "4", "2 boxes", "100 ft"
 -- Progress updates while a job is underway: a note and/or photos, before it's marked done.
 CREATE TABLE IF NOT EXISTS task_updates (
   id         SERIAL PRIMARY KEY,

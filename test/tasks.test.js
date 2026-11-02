@@ -437,6 +437,14 @@ test('needs to order: off by default, rough cost and picture when adding, mark o
   assert.strictEqual(tabs.cost, 89); assert.strictEqual(tabs.photos.length, 1);
   r = await O('PUT', '/api/admin/tasks/' + tabs.id, { cost: '' });
   assert.strictEqual(r.body.tasks.find(t => t.id === tabs.id).cost, null);
+  // quantity: free text, saved and editable
+  r = await jake('POST', '/tasks', { kind: 'order', title: 'Chlorine pucks', qty: '  2   boxes ' });
+  const pucks = r.body.tasks.find(t => t.title === 'Chlorine pucks');
+  assert.strictEqual(pucks.qty, '2 boxes');
+  r = await O('PUT', '/api/admin/tasks/' + pucks.id, { qty: '3 boxes' });
+  assert.strictEqual(r.body.tasks.find(t => t.id === pucks.id).qty, '3 boxes');
+  r = await O('POST', '/api/admin/tasks', { kind: 'order', title: 'Pipe', qty: '100 ft' });
+  assert.strictEqual(r.body.tasks.find(t => t.title === 'Pipe').qty, '100 ft');
   // mark ordered
   r = await jake('POST', `/tasks/${item.id}/done`, { notes: 'Ordered from Ferguson, arrives Friday' });
   assert.strictEqual(r.body.tasks.find(t => t.id === item.id).status, 'done');

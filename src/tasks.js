@@ -11,7 +11,7 @@ const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/webp': [0x52, 0x49, 0x46, 0x46] };
 
 const COLS = `t.id, t.title, t.details, t.assigned_to AS "assignedTo", a.name AS "assignedName", to_char(t.due, 'YYYY-MM-DD') AS due,
-  t.status, t.cost, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
+  t.status, t.cost, t.qty, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
   t.address, t.owner, t.owner_phone AS "ownerPhone",
   COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id AND p.update_id IS NULL), '[]') AS photos,
   COALESCE((SELECT json_agg(json_build_object('id', u.id, 'at', u.created_at, 'by', u.by_name, 'crewId', u.crew_id, 'note', u.note,
@@ -71,6 +71,7 @@ async function fillOwners(companyId) {
 }
 /** Look everything up again (after a new members list is imported). */
 const recheckOwners = companyId => db.q("UPDATE tasks SET owner_checked=FALSE WHERE company_id=$1 AND kind='repair'", [companyId]);
+const cleanQty = v => String(v == null ? '' : v).trim().replace(/\s+/g, ' ').slice(0, 30);
 const cleanAddress = v => String(v || '').trim().replace(/\s+/g, ' ').slice(0, 200);
 
 /** "$1,200" / "1200" / "" -> 1200 / null */
@@ -88,7 +89,8 @@ async function fields(companyId, b, cur) {
     due: b.due !== undefined ? (b.due ? b.due : null) : cur.due,
     assigned: b.assignedTo !== undefined ? (b.assignedTo ? Number(b.assignedTo) : null) : cur.assigned_to,
     cost: b.cost !== undefined ? roughCost(b.cost) : (cur.cost == null ? null : Number(cur.cost)),
-    address: b.address !== undefined ? cleanAddress(b.address) : (cur.address || '')
+    address: b.address !== undefined ? cleanAddress(b.address) : (cur.address || ''),
+    qty: b.qty !== undefined ? cleanQty(b.qty) : (cur.qty || '')
   };
   if (v.due && !T.isDate(v.due)) V.bad('Pick a valid due date.');
   if (v.assigned && !(await db.one('SELECT 1 FROM crew WHERE id=$1 AND company_id=$2', [v.assigned, companyId]))) V.bad('Pick someone from your crew.');
@@ -96,13 +98,13 @@ async function fields(companyId, b, cur) {
 }
 
 async function create(companyId, b) {
-  const v = await fields(companyId, b, { details: '', due: null, assigned_to: null, address: '' });
+  const v = await fields(companyId, b, { details: '', due: null, assigned_to: null, address: '', qty: '' });
   const n = await db.one("SELECT count(*)::int AS n FROM tasks WHERE company_id=$1 AND status='open'", [companyId]);
   if (n.n >= 500) V.bad('That is a lot of open tasks. Finish or delete some first.');
   const photos = (Array.isArray(b.photos) ? b.photos : []).map(photoBytes);
   if (photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos.`);
   await db.tx(async t => {
-    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, kind, cost, address) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id', [companyId, v.title, v.details, v.due, v.assigned, kindOf(b.kind), v.cost, v.address]);
+    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, kind, cost, address, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id', [companyId, v.title, v.details, v.due, v.assigned, kindOf(b.kind), v.cost, v.address, v.qty]);
     for (const p of photos) await t.q('INSERT INTO task_photos (task_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [r.id, companyId, p.mime, p.buf]);
   });
 }
@@ -112,7 +114,7 @@ async function update(companyId, id, b) {
   if (!cur) V.bad('That task was not found.');
   const v = await fields(companyId, b, cur);
   const moved = v.title !== cur.title || v.details !== cur.details || v.address !== cur.address;   // look the owner up again
-  await db.q('UPDATE tasks SET title=$1, details=$2, due=$3, assigned_to=$4, cost=$5, address=$6, owner_checked=owner_checked AND NOT $7 WHERE id=$8', [v.title, v.details, v.due, v.assigned, v.cost, v.address, moved, id]);
+  await db.q('UPDATE tasks SET title=$1, details=$2, due=$3, assigned_to=$4, cost=$5, address=$6, qty=$7, owner_checked=owner_checked AND NOT $8 WHERE id=$9', [v.title, v.details, v.due, v.assigned, v.cost, v.address, v.qty, moved, id]);
   if (b.reopen) await db.q("UPDATE tasks SET status='open', done_at=NULL, done_by=NULL WHERE id=$1", [id]);
 }
 
@@ -130,11 +132,11 @@ async function createByCrew(company, crew, b) {
   const photos = (Array.isArray(b.photos) ? b.photos : []).map(photoBytes);   // e.g. a picture of the part to order
   if (photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos.`);
   await db.tx(async t => {
-    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind, cost, address) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
-      [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind, roughCost(b.cost), cleanAddress(b.address)]);
+    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind, cost, address, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
+      [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind, roughCost(b.cost), cleanAddress(b.address), cleanQty(b.qty)]);
     for (const p of photos) await t.q('INSERT INTO task_photos (task_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [r.id, company.id, p.mime, p.buf]);
   });
-  notifyNew(company, crew.name, title, details, !!b.forMe, kind, due, roughCost(b.cost)).catch(() => {});   // logged in email.js
+  notifyNew(company, crew.name, title, details, !!b.forMe, kind, due, roughCost(b.cost), cleanQty(b.qty)).catch(() => {});   // logged in email.js
 }
 
 /**
@@ -176,13 +178,13 @@ async function removeByCrew(company, crew, id) {
   await db.q('DELETE FROM tasks WHERE id=$1', [id]);
 }
 
-async function notifyNew(company, who, title, details, forMe, kind, due, cost) {
+async function notifyNew(company, who, title, details, forMe, kind, due, cost, qty) {
   const to = await R.recipients(company);
   if (!to || !to.length) return;
   const repair = kind === 'repair', order = kind === 'order';
   await send({ to, subject: order ? `Needs to order: ${title} (from ${who})` : repair ? `Water system problem reported by ${who}: ${title}` : `New task from ${who}: ${title}`,
     html: layout(order ? `Needs to order: ${esc(title)}` : repair ? `Water system: ${esc(title)}` : `New task: ${esc(title)}`,
-      `<p><b>${esc(who)}</b> ${order ? 'added something that needs ordering' + (due ? ', needed by <b>' + esc(due) + '</b>' : '') + (cost != null ? ', about <b>$' + cost.toLocaleString('en-US') + '</b>' : '') : repair ? 'reported a leak or repair' : 'added a task'}${forMe && !order ? ' and will handle it' : ''}.</p>` +
+      `<p><b>${esc(who)}</b> ${order ? 'added something that needs ordering' + (qty ? ', quantity <b>' + esc(qty) + '</b>' : '') + (due ? ', needed by <b>' + esc(due) + '</b>' : '') + (cost != null ? ', about <b>$' + cost.toLocaleString('en-US') + '</b>' : '') : repair ? 'reported a leak or repair' : 'added a task'}${forMe && !order ? ' and will handle it' : ''}.</p>` +
       (details ? `<p style="white-space:pre-wrap">${esc(details)}</p>` : '') +
       `<p><a href="${config.appUrl}/admin#${order ? 'orders' : repair ? 'water' : 'tasks'}">See it in your dashboard</a></p>`) });
 }

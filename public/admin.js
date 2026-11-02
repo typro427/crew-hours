@@ -374,6 +374,8 @@
     g.appendChild(w1); g.appendChild(w2); form.appendChild(g);
     if (L.hideFor) w1.hidden = true;
     var fCost = el('input'); fCost.inputMode = 'decimal'; fCost.placeholder = 'e.g. 250';
+    var fQty = el('input'); fQty.maxLength = 30; fQty.placeholder = 'e.g. 4, 2 boxes, 100 ft'; fQty.autocomplete = 'off';
+    if (L.qtyField) { var wq = el('div'); wq.appendChild(el('label', '', 'Quantity')); wq.lastChild.appendChild(el('span', 'hint', ' (optional)')); wq.appendChild(fQty); g.appendChild(wq); }
     if (L.costField) { var wc = el('div'); wc.appendChild(el('label', '', 'Rough cost ($)')); wc.lastChild.appendChild(el('span', 'hint', ' (optional)')); wc.appendChild(fCost); g.appendChild(wc); }
     var fPics = [], fPhoto = el('input'), fThumbs = el('div', 't-thumbs');
     fPhoto.type = 'file'; fPhoto.accept = 'image/*'; fPhoto.multiple = true;
@@ -421,6 +423,7 @@
         if (!L.hideFor) meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
         if (t.createdByName) meta.appendChild(el('span', '', L.byWord + ' ' + t.createdByName));
         if (t.due) { var late = t.status === 'open' && t.due < me_today(); meta.appendChild(el('span', late ? 'late' : '', (late ? (L.overdueWord || 'Overdue: ') : (L.dueWord || 'Due ')) + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due))); }
+        if (t.qty) meta.appendChild(el('span', '', 'Qty ' + t.qty));
         if (t.cost != null) meta.appendChild(el('span', '', '≈ $' + Number(t.cost).toLocaleString()));
         if (t.status === 'done') meta.appendChild(el('span', '', L.doneWord + ' by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
         left.appendChild(meta); top.appendChild(left);
@@ -486,7 +489,7 @@
       };
       row.appendChild(save); row.appendChild(no); row.appendChild(ps); f.appendChild(row); r.appendChild(f);
     }
-    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
+    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; fQty.value = t.qty || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
     function reset() { me.editing = null; form.reset(); fPics = []; drawPics(); sv.textContent = L.addBtn; cancel.hidden = true; }
     cancel.onclick = reset;
     form.onsubmit = function (e) {
@@ -494,6 +497,7 @@
       var body = { kind: kind, title: fT.value.trim(), details: fD.value, assignedTo: L.hideFor ? null : (fW.value ? Number(fW.value) : null), due: fDue.value || null };
       if (L.costField) body.cost = fCost.value.replace(/[$,\s]/g, '');
       if (L.addressField) body.address = fA.value.trim();
+      if (L.qtyField) body.qty = fQty.value.trim();
       if (!me.editing && fPics.length) body.photos = fPics.slice();
       if (!body.title) return say(L.needTitle, 'err');
       var id = me.editing;
@@ -642,7 +646,7 @@
     detailsPh: 'Where, what to bring, anything they should know', addBtn: 'Add task', needTitle: 'Give the task a name.', addedOk: 'Task added. The crew will see it in their app.',
     formHint: 'The crew sees it under Tasks in their app. When they finish, they add notes and photos and you get an email.',
     openTitle: 'Open', openEmpty: 'Nothing open.', doneTitle: 'Done', doneEmpty: 'Nothing finished yet.', byWord: 'Added by', doneWord: 'Done' });
-  var orderPanel = TaskPanel('order', $('orders-panel'), { formTitle: 'Add something to order', titleLabel: 'What', titlePh: 'e.g. 2" PVC ball valve x4',
+  var orderPanel = TaskPanel('order', $('orders-panel'), { qtyField: true, formTitle: 'Add something to order', titleLabel: 'What', titlePh: 'e.g. 2" PVC ball valve',
     detailsPh: 'Size, brand, where it is for, where to buy', addBtn: 'Add', needTitle: 'Say what needs ordering.', addedOk: 'Added to the order list.',
     formHint: 'Crew you switch on (Crew & PINs → Needs to order) can add items from their app too, with a picture. You get an email when they do.',
     openTitle: 'Needs to order', openEmpty: 'Nothing to order.', doneTitle: 'Ordered', doneEmpty: 'Nothing ordered yet.', byWord: 'Added by', doneWord: 'Ordered',
