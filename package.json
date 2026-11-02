@@ -4,7 +4,9 @@
   "private": true,
   "description": "Crew Hours: simple timesheets for small crews. PIN login for workers, weekly email for the boss.",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
     "migrate": "node src/migrate.js",
@@ -12,6 +14,7 @@
   },
   "dependencies": {
     "bcryptjs": "2.4.3",
+    "exceljs": "4.4.0",
     "express": "4.21.2",
     "nodemailer": "6.9.16",
     "pg": "8.13.1",

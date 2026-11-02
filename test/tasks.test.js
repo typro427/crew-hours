@@ -17,12 +17,14 @@ after(async () => { server.close(); await db.pool.end(); });
 
 function owner() {
   let cookie = '';
-  return async (method, url, body) => {
+  const f = async (method, url, body) => {
     const r = await fetch(base + url, { method, headers: { 'x-ch': '1', 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const sc = r.headers.get('set-cookie'); if (sc) cookie = sc.split(';')[0];
     const type = r.headers.get('content-type') || '';
     return { status: r.status, body: type.includes('json') ? await r.json() : Buffer.from(await r.arrayBuffer()), type };
   };
+  f.raw = async (url, buf) => { const r = await fetch(base + url, { method: 'POST', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream', Cookie: cookie }, body: buf }); return { status: r.status, body: await r.json() }; };
+  return f;
 }
 const crewApi = (slug, token) => async (method, path, body) => {
   const r = await fetch(`${base}/api/c/${slug}${path}`, { method, headers: { 'x-ch': '1', 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -349,4 +351,27 @@ test('meter route: import keeps order, crew enter readings, usage from last, his
   await O('PUT', '/api/admin/crew/' + sRow.id, { features: { ...sRow.features, w_meters: false } });
   assert.strictEqual((await sam('GET', '/meters')).status, 403);
   assert.strictEqual((await O2('GET', '/api/admin/meters')).body.meters.length, 0, 'other company');
+});
+
+test('meter list from Excel: names, QuickBooks name, "no meter", checks and current readings come in', async () => {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Meter list');
+  ws.addRow(['Deerfield Water System: Meter list']); ws.addRow([]); ws.addRow([]);
+  ws.addRow(['Read Sequence', 'Act #', 'Customer Name', 'QuickBooks Customer', 'Service Address', 'Meter ID', 'Last Reading', 'Current Reading', 'Usage', 'Name Status', 'Name on Old Sheet']);
+  ws.addRow([1, '2751415', 'Test Greens', '', 'Halfway House', '2751415', 27011, 27600, { formula: 'H5-G5', result: 589 }, 'Confirmed', '']);
+  ws.addRow([2, '2751416', 'Fixed In Excel, Greg', 'Testy, Greg & Pat', '434 Fake Vista', '2751416', 66476, null, '', 'Updated from master list', 'Old, Name']);
+  ws.addRow([3, '1A', 'No Meter, Pat', '', '142 Fake Trot 1A', 'no meter', 0, null, '', 'Check: more than one possible owner', '']);
+  const buf = await wb.xlsx.writeBuffer();
+  const r = await fetch(base + '/api/admin/meters/import-xlsx', { method: 'POST', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream', Cookie: '' + (await (async () => { return ''; })()) }, body: buf });
+  assert.strictEqual(r.status, 401, 'needs the owner login');
+  const up = await O.raw('/api/admin/meters/import-xlsx', buf);
+  assert.strictEqual(up.status, 200, JSON.stringify(up.body));
+  assert.deepStrictEqual(up.body, { meters: 3, readings: 1 });
+  const adm = (await O('GET', '/api/admin/meters?all=1')).body;
+  const act = adm.meters.filter(m => m.active);
+  assert.deepStrictEqual(act.map(m => m.name), ['Test Greens', 'Fixed In Excel, Greg', 'No Meter, Pat']);
+  assert.strictEqual(act[0].current, 27600, 'current reading saved for this quarter');
+  assert.strictEqual(act[1].qbCustomer, 'Testy, Greg & Pat'); assert.strictEqual(act[1].nameCheck, false);
+  assert.strictEqual(act[2].meterNo, ''); assert.strictEqual(act[2].notes, 'No meter'); assert.strictEqual(act[2].nameCheck, true);
+  assert.strictEqual((await O.raw('/api/admin/meters/import-xlsx', Buffer.from('not excel'))).status, 400);
 });

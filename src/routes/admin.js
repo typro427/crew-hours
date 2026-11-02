@@ -184,6 +184,10 @@ r.delete('/mows/:id', async (req, res) => {
 const MT = require('../meters');
 r.get('/meters', async (req, res) => res.json(await MT.route(req.company, req.query.quarter, { all: req.query.all === '1' })));
 r.post('/meters/import', async (req, res) => res.json(await MT.replaceAll(req.company.id, (req.body || {}).meters)));
+r.post('/meters/import-xlsx', async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Pick the Excel file first.' });
+  res.json(await MT.importExcel(req.company, req.body));
+});
 r.put('/meters/:id', async (req, res) => { await MT.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await MT.route(req.company, (req.body || {}).quarter, { all: true })); });
 r.post('/meters/:id/read', async (req, res) => { await MT.read(req.company, null, Number(req.params.id), req.body || {}); res.json({ ok: true }); });
 r.get('/meters.csv', async (req, res) => {

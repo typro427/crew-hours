@@ -335,6 +335,9 @@
     var f = $('imp-file').files[0];
     if (!f) return status('imp-status', 'Pick the import file first.', 'err');
     status('imp-status', 'Importing…');
+    if (isExcel(f)) return sendMeterExcel(f).then(function (r) {
+      status('imp-status', 'Done. Imported ' + r.meters + ' meters from Excel' + (r.readings ? ' and ' + r.readings + ' current readings' : '') + '. See them under Water System → Meters.', 'ok');
+    }).catch(function (e) { status('imp-status', e.message, 'err'); });
     f.text().then(function (txt) {
       var data; try { data = JSON.parse(txt.replace(/^\ufeff/, '')); } catch (e) {
         throw new Error(/^%PDF/.test(txt) ? "That's a PDF. Pick the .json file Claude made instead." : /^PK/.test(txt) ? "That's an Excel file. Save it as CSV and use the Members tab's import box, or pick the .json file." : "That file isn't a Crew Hours import file. Pick the .json file.");
@@ -814,6 +817,10 @@
     var file = $('mr-file').files[0];
     if (!file) return status('mr-status', 'Pick the meter list file first.', 'err');
     status('mr-status', 'Importing…');
+    if (isExcel(file)) return sendMeterExcel(file).then(function (r) {
+      status('mr-status', 'Imported ' + r.meters + ' meters from Excel' + (r.readings ? ' and ' + r.readings + ' current readings.' : '.'), 'ok'); $('mr-file').value = ''; return loadMeterAdmin();
+    }).catch(function (e) { status('mr-status', e.message, 'err'); });
+    if (/\.xls$/i.test(file.name)) return status('mr-status', 'That is an old-style .xls file. Open it in Excel and save it as .xlsx, then try again.', 'err');
     file.text().then(function (txt) {
       var b; try { b = JSON.parse(txt.replace(/^﻿/, '')); } catch (e) { throw new Error(/^%PDF/.test(txt) ? "That's a PDF. Pick the .json file Claude made." : "That file isn't a meter list file."); }
       if (b.format !== 'crewhours-meters-1') throw new Error("That file isn't a meter list file.");
@@ -846,4 +853,13 @@
     gdArmed = false; api('POST', '/api/admin/google/disconnect').then(function () { status('gd-status', 'Disconnected. Backups already in your Drive stay there.', 'ok'); return loadMe(); })
       .catch(function (e) { status('gd-status', e.message, 'err'); });
   };
+
+  /* Excel meter list → server (raw bytes). */
+  function sendMeterExcel(file) {
+    return file.arrayBuffer().then(function (buf) {
+      return fetch('/api/admin/meters/import-xlsx', { method: 'POST', credentials: 'same-origin', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream' }, body: buf });
+    }).then(function (r) { return r.json().catch(function () { return { error: 'Something went wrong. Try again.' }; }); })
+      .then(function (r) { if (r.error) throw new Error(r.error); return r; });
+  }
+  function isExcel(file) { return /\.xlsx$/i.test(file.name); }
 })();

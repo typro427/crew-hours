@@ -84,4 +84,63 @@ async function update(companyId, id, b) {
      b.nameCheck !== undefined ? !!b.nameCheck : cur.name_check, b.active !== undefined ? !!b.active : cur.active, s(b.qbCustomer, 160, cur.qb_customer), id]);
 }
 
-module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label };
+/**
+ * Read the meter list from the Excel file (the "Meter list" sheet Claude made, or any sheet with the same column names).
+ * Returns { meters, readings } where readings are any "Current Reading" values filled in.
+ */
+async function fromExcel(buffer) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  try { await wb.xlsx.load(buffer); } catch (e) { V.bad("That Excel file couldn't be opened. Save it as .xlsx and try again."); }
+  const ws = wb.getWorksheet('Meter list') || wb.worksheets[0];
+  if (!ws) V.bad('That Excel file has no sheets.');
+  const text = v => {
+    if (v == null) return '';
+    if (typeof v === 'object') { if (v.result !== undefined) return text(v.result); if (v.richText) return v.richText.map(r => r.text).join(''); if (v.text) return String(v.text); if (v instanceof Date) return v.toISOString().slice(0, 10); }
+    return String(v).trim();
+  };
+  let hdrRow = 0, cols = {};
+  const WANT = { 'read sequence': 'seq', 'act #': 'account', 'customer name': 'name', 'quickbooks customer': 'qbCustomer', 'service address': 'address',
+    'meter id': 'meterNo', 'last reading': 'startReading', 'current reading': 'current', 'name status': 'status', 'name on old sheet': 'oldName', 'notes': 'notes' };
+  ws.eachRow((row, n) => {
+    if (hdrRow) return;
+    const found = {};
+    row.eachCell((c, i) => { const k = WANT[text(c.value).toLowerCase()]; if (k) found[k] = i; });
+    if (found.seq && found.name) { hdrRow = n; cols = found; }
+  });
+  if (!hdrRow) V.bad('That Excel file needs columns called "Read Sequence" and "Customer Name". Use the meter list Claude made.');
+  const meters = [], readings = [];
+  ws.eachRow((row, n) => {
+    if (n <= hdrRow) return;
+    const g = k => (cols[k] ? text(row.getCell(cols[k]).value) : '');
+    const seq = Number(g('seq'));
+    if (!g('seq') || !Number.isFinite(seq)) return;
+    let meterNo = g('meterNo'), notes = g('notes');
+    if (/^no meter/i.test(meterNo)) { notes = notes || 'No meter'; meterNo = ''; }
+    const status = g('status');
+    const m = { seq, account: g('account'), meterNo, name: g('name'), qbCustomer: g('qbCustomer'), address: g('address'), notes,
+      startReading: g('startReading').replace(/,/g, ''), oldName: g('oldName') || g('name'), nameCheck: /^check|^not on master/i.test(status) };
+    meters.push(m);
+    const cur = g('current').replace(/,/g, '');
+    if (cur !== '') {
+      if (!/^\d+(\.\d+)?$/.test(cur)) V.bad(`Row ${n}: the current reading "${cur}" isn't a number.`);
+      readings.push({ seq, account: m.account, meterNo, reading: Number(cur) });
+    }
+  });
+  if (!meters.length) V.bad('No meters found under the header row.');
+  return { meters, readings };
+}
+
+/** Import from Excel: replace the list (keeping history), then save any current readings for this quarter. */
+async function importExcel(company, buffer) {
+  const { meters, readings } = await fromExcel(buffer);
+  const r = await replaceAll(company.id, meters);
+  let saved = 0;
+  for (const x of readings) {
+    const mt = await db.one('SELECT id FROM meters WHERE company_id=$1 AND active AND seq=$2 AND account=$3 AND meter_no=$4', [company.id, x.seq, x.account, x.meterNo]);
+    if (mt) { await read(company, null, mt.id, { reading: x.reading }); saved++; }
+  }
+  return { meters: r.meters, readings: saved };
+}
+
+module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel };

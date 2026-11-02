@@ -104,8 +104,8 @@
       </div>
       <div class="card">
         <h3>Import the meter list</h3>
-        <p class="hint">Upload the meter list file (.json). Meters that are already here keep their reading history. Meters are read once a quarter (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec); each quarter's reading becomes the next quarter's “last”.</p>
-        <div class="row"><input type="file" id="mr-file" accept=".json,application/json"><button class="btn" id="mr-import" type="button">Import</button></div>
+        <p class="hint">Upload the meter list: the .json file, or the Excel meter list (.xlsx), including after you've fixed names in it. Current Reading values in the Excel file are saved for this quarter. Meters that are already here keep their reading history. Meters are read once a quarter (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec); each quarter's reading becomes the next quarter's “last”.</p>
+        <div class="row"><input type="file" id="mr-file" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"><button class="btn" id="mr-import" type="button">Import</button></div>
         <span class="status" id="mr-status" role="status"></span>
       </div>
     </div>
@@ -214,7 +214,7 @@
     <div class="card" id="import-card">
       <h2>Import from another system</h2>
       <p class="muted">Bring in crew, PINs and past hours from a Crew Hours import file. Safe to run twice: people and days already here are left alone.</p>
-      <div class="row"><input type="file" id="imp-file" accept=".json,application/json"><button class="btn" id="imp-go" type="button">Import</button></div>
+      <div class="row"><input type="file" id="imp-file" accept=".json,.xlsx,application/json"><button class="btn" id="imp-go" type="button">Import</button></div>
       <span class="status" id="imp-status" role="status"></span>
     </div>
   </section>
