@@ -32,6 +32,7 @@
     if (name === 'roads') loadRoads();
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
+    if (name === 'orders') orderPanel.load();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -318,6 +319,7 @@
     else if (h === '#roads') showTab('roads');
     else if (h === '#water') showTab('water');
     else if (h === '#members') showTab('members');
+    else if (h === '#orders') showTab('orders');
     else if (/^#gdrive/.test(h)) {
       showTab('settings'); var gm = /^#gdrive-error=(.*)$/.exec(h);
       if (h === '#gdrive-ok') status('gd-status', 'Google Drive connected. The first backup is running now.', 'ok');
@@ -363,11 +365,30 @@
     form.appendChild(el('h3', '', L.formTitle));
     function field(label, node, hint) { var l = el('label', '', label); if (hint) l.appendChild(el('span', 'hint', ' ' + hint)); form.appendChild(l); form.appendChild(node); return node; }
     var fT = field(L.titleLabel, el('input')); fT.maxLength = 120; fT.placeholder = L.titlePh; fT.autocomplete = 'off';
-    var fD = field('Details', el('textarea'), '(optional)'); fD.maxLength = 2000; fD.rows = 3; fD.placeholder = L.detailsPh;
+    var fD = field(L.detailsLabel || 'Details', el('textarea'), '(optional)'); fD.maxLength = 2000; fD.rows = 3; fD.placeholder = L.detailsPh;
     var g = el('div', 'grid2'), w1 = el('div'), w2 = el('div');
     var fW = el('select'), fDue = el('input'); fDue.type = 'date';
-    w1.appendChild(el('label', '', 'For')); w1.appendChild(fW); w2.appendChild(el('label', '', 'Due')); w2.lastChild.appendChild(el('span', 'hint', ' (optional)')); w2.appendChild(fDue);
+    w1.appendChild(el('label', '', 'For')); w1.appendChild(fW); w2.appendChild(el('label', '', L.dueLabel || 'Due')); w2.lastChild.appendChild(el('span', 'hint', ' (optional)')); w2.appendChild(fDue);
     g.appendChild(w1); g.appendChild(w2); form.appendChild(g);
+    if (L.hideFor) w1.hidden = true;
+    var fCost = el('input'); fCost.inputMode = 'decimal'; fCost.placeholder = 'e.g. 250';
+    if (L.costField) { var wc = el('div'); wc.appendChild(el('label', '', 'Rough cost ($)')); wc.lastChild.appendChild(el('span', 'hint', ' (optional)')); wc.appendChild(fCost); g.appendChild(wc); }
+    var fPics = [], fPhoto = el('input'), fThumbs = el('div', 't-thumbs');
+    fPhoto.type = 'file'; fPhoto.accept = 'image/*'; fPhoto.multiple = true;
+    if (L.photosOnCreate) {
+      var wp = el('div'); wp.appendChild(el('label', '', 'Picture')); wp.lastChild.appendChild(el('span', 'hint', ' (optional)')); wp.appendChild(fPhoto); wp.appendChild(fThumbs); form.appendChild(wp);
+      fPhoto.onchange = function () {
+        var files = Array.prototype.slice.call(fPhoto.files || [], 0, Math.max(0, 6 - fPics.length)); fPhoto.value = '';
+        files.reduce(function (p, f) { return p.then(function () { return shrinkImage(f).then(function (d) { fPics.push(d); }); }); }, Promise.resolve())
+          .then(drawPics).catch(function (e) { say(e.message, 'err'); });
+      };
+    }
+    function drawPics() {
+      fThumbs.innerHTML = '';
+      fPics.forEach(function (src, i) { var w = el('span'); w.style.position = 'relative'; var im = el('img'); im.src = src; im.alt = 'New photo'; im.style.cssText = 'width:90px;height:90px;object-fit:cover;border-radius:8px';
+        var x = el('button', 'btn ghost small', '×'); x.type = 'button'; x.style.cssText = 'position:absolute;top:-6px;right:-6px;padding:0 7px'; x.onclick = function () { fPics.splice(i, 1); drawPics(); };
+        w.appendChild(im); w.appendChild(x); fThumbs.appendChild(w); });
+    }
     var row = el('div', 'row'), sv = el('button', 'btn', L.addBtn), cancel = el('button', 'btn ghost', 'Cancel'), st = el('span', 'status');
     sv.type = 'submit'; cancel.type = 'button'; cancel.hidden = true; row.appendChild(sv); row.appendChild(cancel); row.appendChild(st); form.appendChild(row);
     form.appendChild(el('p', 'hint', L.formHint));
@@ -395,9 +416,10 @@
         var r = el('div', 'trow'), top = el('div', 't-top'), left = el('div');
         left.appendChild(el('b', '', t.title));
         var meta = el('div', 't-meta');
-        meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
+        if (!L.hideFor) meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
         if (t.createdByName) meta.appendChild(el('span', '', L.byWord + ' ' + t.createdByName));
-        if (t.due) { var late = t.status === 'open' && t.due < me_today(); meta.appendChild(el('span', late ? 'late' : '', (late ? 'Overdue: ' : 'Due ') + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due))); }
+        if (t.due) { var late = t.status === 'open' && t.due < me_today(); meta.appendChild(el('span', late ? 'late' : '', (late ? (L.overdueWord || 'Overdue: ') : (L.dueWord || 'Due ')) + DAYS[toUTC(t.due).getUTCDay()] + ' ' + short(t.due))); }
+        if (t.cost != null) meta.appendChild(el('span', '', '≈ $' + Number(t.cost).toLocaleString()));
         if (t.status === 'done') meta.appendChild(el('span', '', L.doneWord + ' by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
         left.appendChild(meta); top.appendChild(left);
         var acts = el('div', 't-acts');
@@ -415,13 +437,19 @@
         if (t.status === 'open') { openL.appendChild(r); no++; } else { doneL.appendChild(r); nd++; }
       });
       openE.hidden = no > 0; doneE.hidden = nd > 0;
+      if (L.costField) {
+        var openT = me.tasks.filter(function (t) { return t.status === 'open'; }), tot = openT.reduce(function (a, t) { return a + (Number(t.cost) || 0); }, 0);
+        openC.firstChild.textContent = L.openTitle + (openT.length ? ' · about $' + Math.round(tot).toLocaleString() : '');
+      }
     }
-    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
-    function reset() { me.editing = null; form.reset(); sv.textContent = L.addBtn; cancel.hidden = true; }
+    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
+    function reset() { me.editing = null; form.reset(); fPics = []; drawPics(); sv.textContent = L.addBtn; cancel.hidden = true; }
     cancel.onclick = reset;
     form.onsubmit = function (e) {
       e.preventDefault();
-      var body = { kind: kind, title: fT.value.trim(), details: fD.value, assignedTo: fW.value ? Number(fW.value) : null, due: fDue.value || null };
+      var body = { kind: kind, title: fT.value.trim(), details: fD.value, assignedTo: L.hideFor ? null : (fW.value ? Number(fW.value) : null), due: fDue.value || null };
+      if (L.costField) body.cost = fCost.value.replace(/[$,\s]/g, '');
+      if (!me.editing && fPics.length) body.photos = fPics.slice();
       if (!body.title) return say(L.needTitle, 'err');
       var id = me.editing;
       api(id ? 'PUT' : 'POST', '/api/admin/tasks' + (id ? '/' + id : ''), body).then(function (r) {
@@ -569,6 +597,11 @@
     detailsPh: 'Where, what to bring, anything they should know', addBtn: 'Add task', needTitle: 'Give the task a name.', addedOk: 'Task added. The crew will see it in their app.',
     formHint: 'The crew sees it under Tasks in their app. When they finish, they add notes and photos and you get an email.',
     openTitle: 'Open', openEmpty: 'Nothing open.', doneTitle: 'Done', doneEmpty: 'Nothing finished yet.', byWord: 'Added by', doneWord: 'Done' });
+  var orderPanel = TaskPanel('order', $('orders-panel'), { formTitle: 'Add something to order', titleLabel: 'What', titlePh: 'e.g. 2" PVC ball valve x4',
+    detailsPh: 'Size, brand, where it is for, where to buy', addBtn: 'Add', needTitle: 'Say what needs ordering.', addedOk: 'Added to the order list.',
+    formHint: 'Crew you switch on (Crew & PINs → Needs to order) can add items from their app too, with a picture. You get an email when they do.',
+    openTitle: 'Needs to order', openEmpty: 'Nothing to order.', doneTitle: 'Ordered', doneEmpty: 'Nothing ordered yet.', byWord: 'Added by', doneWord: 'Ordered',
+    hideFor: true, costField: true, photosOnCreate: true, detailsLabel: 'Description', dueLabel: 'Due by', dueWord: 'Due by ', overdueWord: 'Past due: ' });
   var repairPanel = TaskPanel('repair', $('water-repairs'), { formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
     detailsPh: 'What needs doing, parts needed', addBtn: 'Add', needTitle: 'Say what the problem is and where.', addedOk: 'Added. The crew will see it under Water System.',
     formHint: 'The crew can also report problems from their app. When they fix one, they add notes and photos and you get an email.',
@@ -913,5 +946,16 @@
     });
     $('nr-empty').hidden = list.length > 0;
     $('nr-empty').textContent = show === 'skipped' ? 'Nothing marked not needed.' : nr.length ? 'Nothing to show here.' : 'Import the members list (Members tab) to see which properties are missing from the route.';
+  }
+
+  // Phone photos are huge: shrink to 1600 px JPEG before sending.
+  function shrinkImage(file) {
+    return new Promise(function (ok, fail) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () { var s = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.8)); };
+      img.onerror = function () { URL.revokeObjectURL(url); fail(new Error("Couldn't read that picture.")); };
+      img.src = url;
+    });
   }
 })();

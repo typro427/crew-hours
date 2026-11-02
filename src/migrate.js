@@ -149,6 +149,7 @@ ALTER TABLE roads DROP CONSTRAINT IF EXISTS roads_company_id_name_key;
 CREATE UNIQUE INDEX IF NOT EXISTS roads_kind_name ON roads (company_id, kind, name);
 -- Tasks and water repairs share one table: kind is 'task' or 'repair'.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'task';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cost NUMERIC;   -- rough cost, for "needs to order" items
 -- Which parts of the app each crew member can use (null = everything).
 ALTER TABLE crew ADD COLUMN IF NOT EXISTS features JSONB;
 -- Members list (searchable database): rows are {column: value}; the column list is kept on the company.

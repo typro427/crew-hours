@@ -37,7 +37,8 @@ app.use('/api/admin/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/members/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/meters/import', express.json({ limit: '5mb' }));
 app.use('/api/admin/meters/import-xlsx', express.raw({ type: () => true, limit: '15mb' }));
-app.use(/^\/api\/c\/[^/]+\/(tasks\/\d+\/done|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));   // photos
+app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/done|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
+app.use(/^\/api\/admin\/tasks(\/\d+)?$/, express.json({ limit: '25mb' }));   // photos
 app.use(express.json({ limit: '100kb' }));
 
 // Requests that change things must come from our own pages (blocks cross-site form tricks).

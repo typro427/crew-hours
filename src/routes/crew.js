@@ -52,7 +52,7 @@ const K = require('../tasks');
 const RD = require('../roads');
 const RG = require('../readings');
 const F = require('../features');
-const featTask = k => (k === 'repair' ? 'w_repairs' : 'tasks');
+const featTask = k => (k === 'repair' ? 'w_repairs' : k === 'order' ? 'orders' : 'tasks');
 const featPlace = k => (k === 'water' ? 'w_sites' : 'roads');
 const off = res => res.status(403).json({ error: "The boss hasn't turned this on for you." });
 const sendPhoto = (res, p) => p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();

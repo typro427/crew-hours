@@ -112,7 +112,7 @@
 
   function signOut(msg){
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -141,6 +141,8 @@
     $("water-screen").hidden = which!=="water";
     $("tab-members").setAttribute("aria-selected", which==="members");
     $("member-screen").hidden = which!=="members";
+    $("tab-orders").setAttribute("aria-selected", which==="orders");
+    $("order-screen").hidden = which!=="orders";
     $("tab-crew").setAttribute("aria-selected", which==="crew");
     $("log-screen").hidden = which!=="mine";
     $("task-screen").hidden = which!=="tasks";
@@ -150,7 +152,9 @@
     if(which==="roads") roadBoard.load();
     if(which==="water") showWater(waterTab);
     if(which==="members") searchMembers();
+    if(which==="orders") orderBoard.load();
   }
+  $("tab-orders").onclick = function(){ showScreen("orders"); };
   $("tab-members").onclick = function(){ showScreen("members"); };
   $("tab-roads").onclick = function(){ roadBoard.reset(); showScreen("roads"); };
   $("tab-water").onclick = function(){ showScreen("water"); };
@@ -501,23 +505,31 @@
     var fD=el("textarea"); fD.maxLength=2000; fD.placeholder=L.detailsPh;
     var fF=el("select"); [["me",L.forMe],["anyone",L.forAnyone]].forEach(function(o){ var x=el("option","",o[1]); x.value=o[0]; fF.appendChild(x); });
     var fDue=el("input"); fDue.type="date";
-    [[L.titleLabel,fT],[L.detailsLabel,fD],["",fF],["Due (optional)",fDue]].forEach(function(x){ if(x[0]){ form.appendChild(el("label","",x[0])); } else { form.appendChild(el("label","",L.forLabel)); } form.appendChild(x[1]); });
+    var fCost=el("input"); fCost.inputMode="decimal"; fCost.placeholder="e.g. 250"; fCost.autocomplete="off";
+    var fPst=statusLine(), fPk=L.photosOnCreate ? photoPicker(6, fPst) : null;
+    [[L.titleLabel,fT],[L.detailsLabel,fD],["",fF],[L.dueLabel||"Due (optional)",fDue]].forEach(function(x){ if(x[0]){ form.appendChild(el("label","",x[0])); } else { form.appendChild(el("label","",L.forLabel)); } form.appendChild(x[1]); });
     if(L.hideDue){ fDue.hidden=true; fDue.previousSibling.hidden=true; }
+    if(L.hideFor){ fF.hidden=true; fF.previousSibling.hidden=true; }
+    if(L.costField){ form.appendChild(el("label","","Rough cost ($, optional)")); form.appendChild(fCost); }
+    if(fPk){ form.appendChild(el("label","",L.photoLabel||"Photo (optional)")); form.appendChild(fPk.el); form.appendChild(fPst); }
     var fRow=el("div","row"), fSave=el("button","primary",L.addSave), fCancel=el("button","ghost","Cancel"); fSave.type=fCancel.type="button";
     fRow.appendChild(fSave); fRow.appendChild(fCancel); form.appendChild(fRow);
     var fSt=statusLine(); form.appendChild(fSt);
-    var list=el("div","tasklist"), empty=el("p","hint",L.empty), st=statusLine();
-    empty.style.cssText="margin:0;text-align:center";
-    [top,form,list,empty,st].forEach(function(n){ root.appendChild(n); });
+    var list=el("div","tasklist"), empty=el("p","hint",L.empty), st=statusLine(), totalLine=el("div","hint");
+    empty.style.cssText="margin:0;text-align:center"; totalLine.style.cssText="margin:0;font-weight:600";
+    [top,totalLine,form,list,empty,st].forEach(function(n){ root.appendChild(n); });
     function showForm(on){ form.hidden=!on; top.hidden=on; say(fSt,""); if(on) fT.focus(); }
     addBtn.onclick=function(){ showForm(true); };
     fCancel.onclick=function(){ showForm(false); };
     fSave.onclick=function(){
       if(busy) return;
       if(!fT.value.trim()) return say(fSt,L.needTitle,"err");
-      busy=true; fSave.disabled=true; say(fSt,"Saving…");
-      call("newTask",[token,{ kind:kind, title:fT.value.trim(), details:fD.value, forMe:fF.value==="me", due:fDue.value||null }], function(res){
-        busy=false; fSave.disabled=false; me.tasks=res.tasks||[]; fT.value=""; fD.value=""; fDue.value=""; showForm(false); draw(); say(st,L.addedOk,"ok");
+      var cost=fCost.value.replace(/[$,\s]/g,"");
+      if(L.costField && cost!=="" && !/^\d+(\.\d{1,2})?$/.test(cost)) return say(fSt,"The rough cost must be a dollar amount, like 250.","err");
+      var pics=fPk ? fPk.get() : [];
+      busy=true; fSave.disabled=true; say(fSt, pics.length ? "Sending photos…" : "Saving…");
+      call("newTask",[token,{ kind:kind, title:fT.value.trim(), details:fD.value, forMe:!L.hideFor && fF.value==="me", due:fDue.value||null, cost:L.costField ? cost : undefined, photos:pics }], function(res){
+        busy=false; fSave.disabled=false; me.tasks=res.tasks||[]; fT.value=""; fD.value=""; fDue.value=""; fCost.value=""; if(fPk) fPk.clear(); showForm(false); draw(); say(st,L.addedOk,"ok");
       }, function(msg){ busy=false; fSave.disabled=false; say(fSt,msg,"err"); });
     };
     me.load=function(quiet){
@@ -528,16 +540,21 @@
     };
     function draw(){
       list.innerHTML="";
-      var open=me.tasks.filter(function(t){ return t.status==="open"; }).length;
+      var openList=me.tasks.filter(function(t){ return t.status==="open"; }), open=openList.length;
       if(me.onCount) me.onCount(open);
+      if(L.costField){
+        var tot=openList.reduce(function(a,t){ return a+(Number(t.cost)||0); },0), priced=openList.filter(function(t){ return t.cost!=null; }).length;
+        totalLine.textContent = open ? open+" to order"+(priced ? " · about $"+Math.round(tot).toLocaleString()+(priced<open ? " (for "+priced+" with a cost)" : "") : "") : "";
+      }
       empty.hidden = me.tasks.length>0;
       me.tasks.forEach(function(t){
         var done=t.status==="done", card=el("div","task"+(done?" done":""));
         card.appendChild(el("h3","",t.title));
         var meta=el("div","meta");
         if(done) meta.appendChild(el("span","ok",L.doneTag+(t.doneAt ? " "+new Date(t.doneAt).toLocaleDateString([], {month:"short", day:"numeric"}) : "")+(t.doneByName && !isMe(t.doneByName) ? " by "+t.doneByName : "")));
-        else if(t.due) meta.appendChild(el("span", t.due<today ? "late" : "", (t.due<today ? "Overdue: " : "Due ")+dayLabel(t.due)));
-        meta.appendChild(el("span","", t.assignedTo ? (t.assignedName && !isMe(t.assignedName) ? "For "+t.assignedName : "For you") : "For anyone on the crew"));
+        else if(t.due) meta.appendChild(el("span", t.due<today ? "late" : "", (t.due<today ? (L.overdueWord||"Overdue: ") : (L.dueWord||"Due "))+dayLabel(t.due)));
+        if(t.cost!=null) meta.appendChild(el("span","cost","≈ $"+Number(t.cost).toLocaleString()));
+        if(!L.hideFor) meta.appendChild(el("span","", t.assignedTo ? (t.assignedName && !isMe(t.assignedName) ? "For "+t.assignedName : "For you") : "For anyone on the crew"));
         card.appendChild(meta);
         if(t.createdByName) card.appendChild(el("div","by", isMe(t.createdByName) ? L.byYou : L.byOther+" "+t.createdByName));
         if(t.details) card.appendChild(el("p","details",t.details));
@@ -708,6 +725,13 @@
     detailsLabel:"Details (optional)", detailsPh:"How bad, what you saw, what's needed", forLabel:"Who's fixing it", forMe:"I'll fix it", forAnyone:"Needs someone", addSave:"Report it", needTitle:"Say what the problem is and where.",
     addedOk:"Reported. The boss got an email.", empty:"No open leaks or repairs.", doneTag:"Fixed ✓", byYou:"Reported by you", byOther:"Reported by",
     markDone:"Mark fixed", del:"Delete this report", donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
+  var orderBoard=TaskBoard("order", $("order-screen"), { add:"+ Add something to order", newTitle:"Needs to order", titleLabel:"What", titlePh:"e.g. 2\" PVC ball valve x4",
+    detailsLabel:"Description (optional)", detailsPh:"Size, brand, where it's for, where to buy", forLabel:"For", forMe:"Me", forAnyone:"Anyone", hideFor:true, costField:true, photosOnCreate:true,
+    photoLabel:"Picture (optional)", dueLabel:"Due by (optional)", dueWord:"Due by ", overdueWord:"Past due: ",
+    addSave:"Add to order list", needTitle:"Say what needs ordering.", addedOk:"Added. The boss got an email.", empty:"Nothing needs ordering right now.",
+    doneTag:"Ordered ✓", byYou:"Added by you", byOther:"Added by", markDone:"Mark ordered", del:"Delete this item",
+    donePh:"Where from? Order number? When will it arrive?", whatYouDid:"Order details", doneSend:"Ordered", doneOk:"Marked ordered." });
+  orderBoard.onCount=function(n){ $("order-count").hidden=!n; $("order-count").textContent=n; };
   var roadBoard=PlaceBoard("road", $("road-screen"), { searchPh:"Search roads", hint:"Tap a road to log that you mowed it.", empty:"No roads yet.", back:"‹ All roads", dateLabel:"Date you mowed it", save:"Save: mowed",
     never:"Not mowed yet", lastWord:"Last mowed", oldDays:14, savedMsg:function(n,d){ return "Saved. "+n+" marked mowed "+d+"."; } });
   var siteBoard=PlaceBoard("water", $("wp-sites"), { searchPh:"Search sites", hint:"Tap a site to log a check and its readings.", empty:"The boss hasn't added any sites yet.", back:"‹ All sites", dateLabel:"Date you checked it", save:"Save: checked",
@@ -914,6 +938,8 @@
     $("tab-roads").hidden=!(features.roads && setup.roads>0);
     $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
+    $("tab-orders").hidden=!features.orders;
+    if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);
     accessLoaded=true;
   }

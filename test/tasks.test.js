@@ -219,7 +219,7 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
   const wk = (await sam('GET', '/week')).body;
-  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false });
+  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false, orders: false });
   assert.strictEqual((await sam('GET', '/roads')).status, 403);
   assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
   assert.strictEqual((await sam('GET', '/roads?kind=water')).status, 200);
@@ -415,4 +415,29 @@ test('add a meter mid-route; properties not on the route; not needed / put back'
   const end = r.body.meters.filter(m => m.active);
   assert.strictEqual(end[end.length - 1].name, 'End, Ed');
   assert.strictEqual((await O('POST', '/api/admin/meters', {})).status, 400);
+});
+
+test('needs to order: off by default, rough cost and picture when adding, mark ordered', async () => {
+  assert.strictEqual((await jake('GET', '/tasks?kind=order')).status, 403, 'off until the boss turns it on');
+  const row = (await O('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Jake');
+  assert.strictEqual(row.features.orders, false);
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, orders: true } });
+  assert.strictEqual((await jake('POST', '/tasks', { kind: 'order', title: 'Ball valves', cost: 'abc' })).status, 400);
+  let r = await jake('POST', '/tasks', { kind: 'order', title: '2" PVC ball valve x4', details: 'For the pump house', due: '2026-12-01', cost: '$1,250.50', photos: [JPEG] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const item = r.body.tasks[0];
+  assert.strictEqual(item.cost, 1250.5); assert.strictEqual(item.due, '2026-12-01'); assert.strictEqual(item.photos.length, 1); assert.strictEqual(r.body.kind, 'order');
+  assert.ok(!(await jake('GET', '/tasks')).body.tasks.some(t => t.id === item.id), 'not in the normal Tasks list');
+  assert.strictEqual((await sam('GET', '/tasks?kind=order')).status, 403, 'Sam has it off');
+  // boss: sees it, adds one with a cost, edits cost
+  let b = (await O('GET', '/api/admin/tasks?kind=order')).body.tasks;
+  assert.strictEqual(b.find(t => t.id === item.id).createdByName, 'Jake');
+  r = await O('POST', '/api/admin/tasks', { kind: 'order', title: 'Chlorine tablets', cost: '89', photos: [JPEG] });
+  const tabs = r.body.tasks.find(t => t.title === 'Chlorine tablets');
+  assert.strictEqual(tabs.cost, 89); assert.strictEqual(tabs.photos.length, 1);
+  r = await O('PUT', '/api/admin/tasks/' + tabs.id, { cost: '' });
+  assert.strictEqual(r.body.tasks.find(t => t.id === tabs.id).cost, null);
+  // mark ordered
+  r = await jake('POST', `/tasks/${item.id}/done`, { notes: 'Ordered from Ferguson, arrives Friday' });
+  assert.strictEqual(r.body.tasks.find(t => t.id === item.id).status, 'done');
 });
