@@ -127,6 +127,18 @@ CREATE TABLE IF NOT EXISTS task_photos (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS task_photos_task ON task_photos (task_id);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES crew(id) ON DELETE SET NULL;
+-- Photos the crew adds to a day's hours.
+CREATE TABLE IF NOT EXISTS day_photos (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id    INTEGER NOT NULL REFERENCES crew(id) ON DELETE CASCADE,
+  day        DATE NOT NULL,
+  mime       TEXT NOT NULL,
+  data       BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS day_photos_day ON day_photos (company_id, day);
 CREATE TABLE IF NOT EXISTS slug_redirects (old_slug TEXT PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE);
 `;
 

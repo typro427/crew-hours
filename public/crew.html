@@ -106,15 +106,31 @@
         <button class="ghost" id="clear" hidden>Clear day</button>
       </div>
       <div class="status" id="save-status" role="status"></div>
+      <div class="dayphotos" id="dp-box">
+        <div class="dp-k">Photos of the work <span class="hint" id="dp-hint"></span></div>
+        <div class="thumbs" id="dp-thumbs"></div>
+        <label class="photo-btn" id="dp-add">📷 Add photos<input type="file" id="dp-file" accept="image/*" multiple></label>
+        <div class="status" id="dp-status" role="status"></div>
+      </div>
       <div class="total"><span class="muted">Your total this week</span><b id="my-total">0.00 h</b></div>
     </div>
   </section>
 
   <!-- Tasks from the boss -->
   <section id="task-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="row" id="nt-open-row"><button class="ghost" id="nt-open" type="button">+ Add a task</button></div>
+    <div class="task" id="nt-form" hidden>
+      <h3>New task</h3>
+      <label for="nt-title">Task</label><input id="nt-title" maxlength="120" placeholder="e.g. Replace broken sprinkler head by the gate" autocomplete="off">
+      <label for="nt-details">Details <span class="hint">(optional)</span></label><textarea id="nt-details" maxlength="2000" placeholder="Where it is, what's needed"></textarea>
+      <label for="nt-for">For</label><select id="nt-for"><option value="me">Me</option><option value="anyone">Anyone on the crew</option></select>
+      <label for="nt-due">Due <span class="hint">(optional)</span></label><input id="nt-due" type="date">
+      <div class="row"><button class="primary" id="nt-save" type="button">Add task</button><button class="ghost" id="nt-cancel" type="button">Cancel</button></div>
+      <div class="status" id="nt-status" role="status"></div>
+    </div>
     <div id="task-list" class="tasklist"></div>
     <div class="status" id="task-status" role="status"></div>
-    <p class="hint" id="task-empty" hidden style="margin:0;text-align:center">No tasks right now. The boss will add them here.</p>
+    <p class="hint" id="task-empty" hidden style="margin:0;text-align:center">No tasks right now. Tasks from the boss show up here, or add your own.</p>
   </section>
 
   <!-- Boss: crew week -->

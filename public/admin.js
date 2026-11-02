@@ -169,6 +169,12 @@
       var row = el('div', 'd'); row.appendChild(el('div', 'k', LONG[toUTC(d).getUTCDay()] + ', ' + short(d) + ' · ' + fmt(e.total) + ' h'));
       if (e.start) row.appendChild(line(s.mainLabel, e.start, e.end, e.outT, e.inT, e.summary, e.hours));
       if (e.oStart) row.appendChild(line(s.otherLabel + (e.oJob ? ' (' + e.oJob + ')' : ''), e.oStart, e.oEnd, e.oOutT, e.oInT, e.oSummary, e.oHours));
+      if (e.photos && e.photos.length) {
+        var th = el('div', 't-thumbs');
+        e.photos.forEach(function (id) { var a = el('a'); a.href = '/api/admin/day-photo/' + id; a.target = '_blank'; a.rel = 'noopener';
+          var i = el('img'); i.src = a.href; i.alt = 'Photo from ' + p.name; i.loading = 'lazy'; a.appendChild(i); th.appendChild(a); });
+        row.appendChild(th);
+      }
       box.appendChild(row);
     });
     if (!any) box.appendChild(el('p', 'muted', 'Nothing logged this week.'));
@@ -341,6 +347,7 @@
       left.appendChild(el('b', '', t.title));
       var meta = el('div', 't-meta');
       meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
+      if (t.createdByName) meta.appendChild(el('span', '', 'Added by ' + t.createdByName));
       var d = dueText(t); if (d) meta.appendChild(d);
       if (t.status === 'done') meta.appendChild(el('span', '', 'Done by ' + (t.doneByName || 'someone') + ' · ' + new Date(t.doneAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
       left.appendChild(meta); top.appendChild(left);

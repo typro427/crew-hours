@@ -139,3 +139,11 @@ tfoot td{font-weight:700;border-bottom:0}
 .photo-btn input{display:none}
 .viewer{position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
 .viewer img{max-width:100%;max-height:100%;border-radius:6px}
+
+.dayphotos{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.dp-k{font-weight:600}
+#nt-form label{font-weight:600;font-size:15px}
+#nt-form input,#nt-form select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px}
+.task .by{font-size:14px;color:var(--muted)}
+.task .linkdel{background:none;border:0;padding:0;color:var(--err);text-decoration:underline;font:inherit;font-size:14px;cursor:pointer;align-self:flex-start}
+.d .thumbs img{width:64px;height:64px}

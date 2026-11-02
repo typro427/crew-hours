@@ -11,9 +11,9 @@ const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/webp': [0x52, 0x49, 0x46, 0x46] };
 
 const COLS = `t.id, t.title, t.details, t.assigned_to AS "assignedTo", a.name AS "assignedName", to_char(t.due, 'YYYY-MM-DD') AS due,
-  t.status, t.created_at AS "createdAt", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
+  t.status, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
   COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id), '[]') AS photos`;
-const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by';
+const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by LEFT JOIN crew cb ON cb.id=t.created_by';
 
 /** The boss's list: everything open, plus what was finished in the last 60 days. */
 const forOwner = companyId => db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND (t.status='open' OR t.done_at > now() - interval '60 days')
@@ -52,6 +52,35 @@ async function update(companyId, id, b) {
 }
 
 const remove = (companyId, id) => db.q('DELETE FROM tasks WHERE id=$1 AND company_id=$2', [id, companyId]);
+
+/** A crew member adds a task: for themselves or for anyone. The boss gets an email. */
+async function createByCrew(company, crew, b) {
+  const title = V.str(b.title, 'a task name', 1, 120);
+  const details = String(b.details || '').trim().slice(0, 2000);
+  const due = b.due ? b.due : null;
+  if (due && !T.isDate(due)) V.bad('Pick a valid due date.');
+  const n = await db.one("SELECT count(*)::int AS n FROM tasks WHERE company_id=$1 AND status='open'", [company.id]);
+  if (n.n >= 500) V.bad('There are a lot of open tasks. Ask the boss to clear some first.');
+  await db.q('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by) VALUES ($1,$2,$3,$4,$5,$6)',
+    [company.id, title, details, due, b.forMe ? crew.id : null, crew.id]);
+  notifyNew(company, crew.name, title, details, !!b.forMe).catch(() => {});   // logged in email.js
+}
+
+/** Crew can delete a task they added, while it's still open. */
+async function removeByCrew(company, crew, id) {
+  const t = await db.one("SELECT 1 FROM tasks WHERE id=$1 AND company_id=$2 AND created_by=$3 AND status='open'", [id, company.id, crew.id]);
+  if (!t) V.bad('You can only delete open tasks you added yourself.');
+  await db.q('DELETE FROM tasks WHERE id=$1', [id]);
+}
+
+async function notifyNew(company, who, title, details, forMe) {
+  const to = await R.recipients(company);
+  if (!to || !to.length) return;
+  await send({ to, subject: `New task from ${who}: ${title}`,
+    html: layout(`New task: ${esc(title)}`, `<p><b>${esc(who)}</b> added a task${forMe ? ' for themselves' : ' for anyone on the crew'}.</p>` +
+      (details ? `<p style="white-space:pre-wrap">${esc(details)}</p>` : '') +
+      `<p><a href="${config.appUrl}/admin#tasks">See it in your dashboard</a></p>`) });
+}
 
 /** Turns "data:image/jpeg;base64,...." into checked bytes. */
 function photoBytes(dataUrl) {
@@ -94,4 +123,4 @@ async function notifyDone(company, t, who, notes, photoCount) {
 /** One photo, only for someone in the same company. */
 const photo = (companyId, photoId) => db.one('SELECT mime, data FROM task_photos WHERE id=$1 AND company_id=$2', [photoId, companyId]);
 
-module.exports = { forOwner, forCrew, create, update, remove, complete, photo, MAX_PHOTOS };
+module.exports = { forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };

@@ -84,3 +84,42 @@ test('other companies cannot see the photos; reopen and delete work', async () =
   assert.ok(!r.body.tasks.some(x => x.id === t.id));
   assert.strictEqual((await db.one('SELECT count(*)::int AS n FROM task_photos')).n, 0, 'photos go with the task');
 });
+
+test('crew can add tasks: for themselves or anyone; only the person who added one can delete it', async () => {
+  let r = await jake('POST', '/tasks', { title: 'Replace sprinkler head by the gate', forMe: true });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  r = await jake('POST', '/tasks', { title: 'Pick up mulch', details: '20 bags', forMe: false });
+  const mine = r.body.tasks.find(t => t.title.startsWith('Replace')), anyone = r.body.tasks.find(t => t.title === 'Pick up mulch');
+  assert.strictEqual(mine.createdByName, 'Jake'); assert.strictEqual(mine.assignedName, 'Jake');
+  assert.strictEqual(anyone.assignedTo, null);
+  const samSees = (await sam('GET', '/tasks')).body.tasks.map(t => t.title);
+  assert.ok(samSees.includes('Pick up mulch') && !samSees.includes('Replace sprinkler head by the gate'));
+  const boss = (await O('GET', '/api/admin/tasks')).body.tasks.find(t => t.title === 'Pick up mulch');
+  assert.strictEqual(boss.createdByName, 'Jake');
+  assert.strictEqual((await sam('DELETE', '/tasks/' + anyone.id)).status, 400, "Sam can't delete Jake's task");
+  assert.strictEqual((await jake('POST', '/tasks', { title: '' })).status, 400);
+  r = await jake('DELETE', '/tasks/' + anyone.id);
+  assert.strictEqual(r.status, 200); assert.ok(!r.body.tasks.some(t => t.id === anyone.id));
+});
+
+test('photos on a day: only after saving, up to 6, boss and managers see them, cleared with the day', async () => {
+  const day = (await jake('GET', '/week')).body.today;
+  assert.strictEqual((await jake('POST', `/day/${day}/photos`, { photos: [JPEG] })).status, 400, 'save the day first');
+  assert.strictEqual((await jake('POST', '/day', { date: day, work: { start: '08:00', end: '12:00', summary: 'Mowed' } })).status, 200);
+  let r = await jake('POST', `/day/${day}/photos`, { photos: [JPEG, JPEG] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.days[day].photos.length, 2);
+  assert.strictEqual((await jake('POST', `/day/${day}/photos`, { photos: [JPEG, JPEG, JPEG, JPEG, JPEG] })).status, 400, 'max 6');
+  const id = r.body.days[day].photos[0];
+  const wk = (await O('GET', '/api/admin/week?start=' + day)).body;
+  assert.deepStrictEqual(wk.people.find(p => p.name === 'Jake').days[day].photos, r.body.days[day].photos);
+  assert.strictEqual((await O('GET', '/api/admin/day-photo/' + id)).status, 200);
+  assert.strictEqual((await O2('GET', '/api/admin/day-photo/' + id)).status, 404, 'other company');
+  assert.strictEqual((await sam('GET', '/day-photo/' + id)).status, 404, 'other crew member');
+  assert.strictEqual((await jake('GET', '/day-photo/' + id)).type, 'image/jpeg');
+  assert.strictEqual((await sam('DELETE', '/day-photo/' + id)).status, 400);
+  r = await jake('DELETE', '/day-photo/' + id);
+  assert.strictEqual(r.body.days[day].photos.length, 1);
+  await jake('DELETE', '/day/' + day);
+  assert.strictEqual((await db.one('SELECT count(*)::int AS n FROM day_photos')).n, 0);
+});

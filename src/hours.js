@@ -38,11 +38,21 @@ async function isApproved(companyId, weekStart) {
   return !!(r && r.approved);
 }
 
+/** Photo ids per crew member per day, for one week. */
+async function weekPhotos(companyId, ws, crewId) {
+  const rows = await db.q(`SELECT id, crew_id, to_char(day, 'YYYY-MM-DD') AS day FROM day_photos WHERE company_id=$1 AND day BETWEEN $2 AND $3
+    ${crewId ? 'AND crew_id=$4' : ''} ORDER BY id`, crewId ? [companyId, ws, T.shift(ws, 6), crewId] : [companyId, ws, T.shift(ws, 6)]);
+  const map = {};
+  rows.forEach(r => { ((map[r.crew_id] = map[r.crew_id] || {})[r.day] = map[r.crew_id][r.day] || []).push(r.id); });
+  return map;
+}
+
 async function myWeek(company, crew, weekStart) {
   const ws = weekOf(company, weekStart);
   const rows = await db.q('SELECT * FROM entries WHERE crew_id=$1 AND day BETWEEN $2 AND $3', [crew.id, ws, T.shift(ws, 6)]);
+  const pics = (await weekPhotos(company.id, ws, crew.id))[crew.id] || {};
   const days = {};
-  rows.forEach(r => { days[r.day] = shape(r); });
+  rows.forEach(r => { days[r.day] = shape(r); days[r.day].photos = pics[r.day] || []; });
   return { name: crew.name, manager: crew.is_manager, weekStart: ws, today: today(company), days,
            locked: await isApproved(company.id, ws), settings: publicSettings(company) };
 }
@@ -101,8 +111,36 @@ async function clearDay(company, crew, date) {
   if (await isApproved(company.id, weekOf(company, date)))
     throw new T.InputError('This week was approved by the boss and is locked.');
   await db.q('DELETE FROM entries WHERE crew_id=$1 AND day=$2', [crew.id, date]);
+  await db.q('DELETE FROM day_photos WHERE crew_id=$1 AND day=$2', [crew.id, date]);
   return myWeek(company, crew, date);
 }
+
+const MAX_DAY_PHOTOS = 6;
+/** Crew adds photos of the day's work to a saved day. */
+async function addDayPhotos(company, crew, date, photos, photoBytes) {
+  checkEditable(company, date);
+  if (await isApproved(company.id, weekOf(company, date))) throw new T.InputError('This week was approved by the boss and is locked.');
+  if (!(await db.one('SELECT 1 FROM entries WHERE crew_id=$1 AND day=$2', [crew.id, date]))) throw new T.InputError('Save your hours for this day first, then add photos.');
+  const list = (Array.isArray(photos) ? photos : []).map(photoBytes);
+  if (!list.length) throw new T.InputError('Pick a photo to add.');
+  const have = (await db.one('SELECT count(*)::int AS n FROM day_photos WHERE crew_id=$1 AND day=$2', [crew.id, date])).n;
+  if (have + list.length > MAX_DAY_PHOTOS) throw new T.InputError(`Up to ${MAX_DAY_PHOTOS} photos per day.`);
+  for (const p of list) await db.q('INSERT INTO day_photos (company_id, crew_id, day, mime, data) VALUES ($1,$2,$3,$4,$5)', [company.id, crew.id, date, p.mime, p.buf]);
+  return myWeek(company, crew, date);
+}
+
+async function removeDayPhoto(company, crew, id) {
+  const p = await db.one("SELECT to_char(day, 'YYYY-MM-DD') AS day FROM day_photos WHERE id=$1 AND crew_id=$2", [id, crew.id]);
+  if (!p) throw new T.InputError('That photo was not found.');
+  checkEditable(company, p.day);
+  if (await isApproved(company.id, weekOf(company, p.day))) throw new T.InputError('This week was approved by the boss and is locked.');
+  await db.q('DELETE FROM day_photos WHERE id=$1', [id]);
+  return myWeek(company, crew, p.day);
+}
+
+/** One day photo. Crew members see their own; managers and the boss see everyone's in the company. */
+const dayPhoto = (companyId, id, crewId) => db.one(`SELECT mime, data FROM day_photos WHERE id=$1 AND company_id=$2 ${crewId ? 'AND crew_id=$3' : ''}`,
+  crewId ? [id, companyId, crewId] : [id, companyId]);
 
 /** Everyone's week, for the boss. Managers themselves are left out unless they logged time. */
 async function crewWeek(company, weekStart) {
@@ -111,9 +149,10 @@ async function crewWeek(company, weekStart) {
   const crew = await db.q('SELECT id, name, active, is_manager FROM crew WHERE company_id=$1 ORDER BY lower(name)', [company.id]);
   const rows = await db.q('SELECT * FROM entries WHERE company_id=$1 AND day BETWEEN $2 AND $3', [company.id, ws, dates[6]]);
   const ot = Number(company.overtime_after);
+  const pics = await weekPhotos(company.id, ws);
   const people = crew.map(c => {
     const days = {};
-    rows.filter(r => r.crew_id === c.id).forEach(r => { days[r.day] = shape(r); });
+    rows.filter(r => r.crew_id === c.id).forEach(r => { days[r.day] = shape(r); days[r.day].photos = (pics[c.id] || {})[r.day] || []; });
     const total = T.round2(dates.reduce((a, d) => a + (days[d] ? days[d].total : 0), 0));
     return { id: c.id, name: c.name, active: c.active, manager: c.is_manager, days, total, ot: T.round2(Math.max(0, total - ot)) };
   }).filter(p => Object.keys(p.days).length || (p.active && !p.manager));
@@ -132,4 +171,4 @@ async function setApproved(company, weekStart, approved, byName) {
   return crewWeek(company, ws);
 }
 
-module.exports = { autoSwitch, publicSettings, planOk, myWeek, saveDay, clearDay, crewWeek, setApproved, weekOf, today, shape };
+module.exports = { addDayPhotos, removeDayPhoto, dayPhoto, MAX_DAY_PHOTOS, autoSwitch, publicSettings, planOk, myWeek, saveDay, clearDay, crewWeek, setApproved, weekOf, today, shape };

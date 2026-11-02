@@ -47,6 +47,24 @@ r.post('/:slug/tasks/:id/done', A.requireCrew, async (req, res) => {
   await K.complete(req.company, req.crew, Number(req.params.id), req.body || {});
   res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
 });
+r.post('/:slug/tasks', A.requireCrew, async (req, res) => {
+  await K.createByCrew(req.company, req.crew, req.body || {});
+  res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
+});
+r.delete('/:slug/tasks/:id', A.requireCrew, async (req, res) => {
+  await K.removeByCrew(req.company, req.crew, Number(req.params.id));
+  res.json({ tasks: await K.forCrew(req.company.id, req.crew.id), maxPhotos: K.MAX_PHOTOS });
+});
+
+// Photos of the day's work, attached to a saved day.
+r.post('/:slug/day/:date/photos', A.requireCrew, async (req, res) =>
+  res.json(await H.addDayPhotos(req.company, req.crew, req.params.date, (req.body || {}).photos, K.photoBytes)));
+r.delete('/:slug/day-photo/:id', A.requireCrew, async (req, res) => res.json(await H.removeDayPhoto(req.company, req.crew, Number(req.params.id))));
+r.get('/:slug/day-photo/:id', A.requireCrew, async (req, res) => {
+  const p = await H.dayPhoto(req.company.id, Number(req.params.id), req.crew.is_manager ? null : req.crew.id);
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
+});
 r.get('/:slug/tasks/photo/:id', A.requireCrew, async (req, res) => {
   const p = await K.photo(req.company.id, Number(req.params.id));
   if (!p) return res.status(404).end();

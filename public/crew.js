@@ -41,6 +41,10 @@
     getCrewWeek:     function(a){ return ["GET", "/crew-week?start=" + encodeURIComponent(a[1]||"")]; },
     setWeekApproved: function(a){ return ["POST", "/approve", { weekStart:a[1], approved:a[2] }]; },
     getTasks:        function(){ return ["GET", "/tasks"]; },
+    newTask:         function(a){ return ["POST", "/tasks", a[1]]; },
+    delTask:         function(a){ return ["DELETE", "/tasks/" + a[1]]; },
+    addDayPhotos:    function(a){ return ["POST", "/day/" + a[1] + "/photos", { photos:a[2] }]; },
+    delDayPhoto:     function(a){ return ["DELETE", "/day-photo/" + a[1]]; },
     doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; }
   };
   function call(fn, args, ok, fail){
@@ -138,7 +142,7 @@
   }
   function applyWeek(res, select){
     week=res.weekStart; days=res.days||{}; today=res.today; maxBack=(res.maxDaysBack!=null?res.maxDaysBack:settings.maxDaysBack); locked=!!res.locked;
-    if(res.manager!==undefined && !!res.manager!==isBoss){ isBoss=!!res.manager; $("tabs").hidden=!isBoss; }
+    if(res.manager!==undefined && !!res.manager!==isBoss){ isBoss=!!res.manager; $("tab-crew").hidden=!isBoss; }
     $("who-name").textContent = res.name; $("who").hidden=false;
     var dates = weekDates(week);
     sel = select && dates.indexOf(select)!==-1 ? select : (dates.indexOf(today)!==-1 ? today : dates[6]);
@@ -188,8 +192,36 @@
     ["start-in","end-in","out-in","back-in","summary-in","ojob-in","ostart-in","oend-in","oout-in","oback-in","osummary-in","save","break-add","obreak-add","break-remove","obreak-remove"]
       .forEach(function(id){ $(id).disabled = locked; });
     showTab(e && !(e.hours>0) && e.oHours>0 ? "other" : "work");
-    showCalc();
+    showCalc(); drawDayPhotos();
   }
+  // ---- photos of the day's work ----
+  function drawDayPhotos(){
+    var e=days[sel], pics=(e && e.photos) || [], th=$("dp-thumbs"); th.innerHTML="";
+    setStatus("dp-status","");
+    $("dp-hint").textContent = !e ? "(save your hours first)" : pics.length ? "("+pics.length+" of 6)" : "(optional)";
+    pics.forEach(function(id){
+      var x=document.createElement("div"); x.className="x"; var im=document.createElement("img"); im.alt="Photo"; photoInto(im, id, "day");
+      im.onclick=function(){ if(im.src) viewer(im.src); }; x.appendChild(im);
+      if(!locked){ var del=document.createElement("button"); del.type="button"; del.textContent="×"; del.setAttribute("aria-label","Remove photo");
+        del.onclick=function(){ if(busy) return; busy=true; var d=sel; setStatus("dp-status","Removing…");
+          call("delDayPhoto",[token, id], function(res){ busy=false; applyWeek(res, d); }, function(msg){ busy=false; setStatus("dp-status",msg,"err"); }); };
+        x.appendChild(del); }
+      th.appendChild(x);
+    });
+    $("dp-add").hidden = !e || locked || pics.length>=6;
+  }
+  $("dp-file").onchange = function(){
+    var e=days[sel], room=6-((e && e.photos) || []).length, d=sel;
+    var files=Array.prototype.slice.call(this.files||[], 0, Math.max(0, room)); this.value="";
+    if(!files.length || busy) return;
+    busy=true; setStatus("dp-status","Adding photos…");
+    var pics=[];
+    files.reduce(function(p, f){ return p.then(function(){ return shrink(f).then(function(x){ pics.push(x); }); }); }, Promise.resolve())
+      .then(function(){
+        call("addDayPhotos",[token, d, pics], function(res){ busy=false; applyWeek(res, d); setStatus("dp-status","Photos added.","ok"); },
+          function(msg){ busy=false; setStatus("dp-status",msg,"err"); });
+      }).catch(function(err){ busy=false; setStatus("dp-status",err.message,"err"); });
+  };
   function dayTotal(e){ return (Number(e.hours)||0)+(Number(e.oHours)||0); }
   function showCalc(){
     var w=workHours($("start-in").value,$("end-in").value,$("out-in").value,$("back-in").value);
@@ -351,6 +383,9 @@
       var k=document.createElement("div"); k.className="k"; k.textContent=LONG[toUTC(d).getUTCDay()]+", "+short(d)+" · "+fmt(e.total)+" h"; row.appendChild(k);
       if(e.hours>0 || e.open) row.appendChild(line(settings.mainLabel, e.start, e.end, e.outT, e.inT, e.summary));
       if(e.oHours>0 || e.oOpen) row.appendChild(line(settings.otherLabel+(e.oJob?" ("+e.oJob+")":""), e.oStart, e.oEnd, e.oOutT, e.oInT, e.oSummary));
+      if(e.photos && e.photos.length){ var th=document.createElement("div"); th.className="thumbs";
+        e.photos.forEach(function(id){ var im=document.createElement("img"); im.alt="Photo"; photoInto(im, id, "day"); im.onclick=function(){ if(im.src) viewer(im.src); }; th.appendChild(im); });
+        row.appendChild(th); }
       box.appendChild(row);
     });
     if(!any){ var n=document.createElement("p"); n.className="muted"; n.style.margin="0"; n.textContent="Nothing logged this week."; box.appendChild(n); }
@@ -379,11 +414,12 @@
     call("getTasks",[], function(res){ tasks=res.tasks||[]; maxPhotos=res.maxPhotos||6; setStatus("task-status",""); drawTasks(); },
       function(msg){ if(!quiet) setStatus("task-status",msg,"err"); });
   }
-  function photoInto(img, id){
-    if(photoUrls[id]){ img.src=photoUrls[id]; return; }
-    fetch(API+"/tasks/photo/"+id, { headers:{ Authorization:"Bearer "+token } })
+  function photoInto(img, id, kind){
+    var key=(kind||"task")+id;
+    if(photoUrls[key]){ img.src=photoUrls[key]; return; }
+    fetch(API+(kind==="day" ? "/day-photo/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
       .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
-      .then(function(b){ photoUrls[id]=URL.createObjectURL(b); img.src=photoUrls[id]; }).catch(function(){});
+      .then(function(b){ photoUrls[key]=URL.createObjectURL(b); img.src=photoUrls[key]; }).catch(function(){});
   }
   function viewer(src){
     var v=el("div","viewer"), i=el("img"); i.src=src; i.alt="Photo"; v.appendChild(i);
@@ -416,6 +452,7 @@
       else if(t.due) meta.appendChild(el("span", t.due<today ? "late" : "", (t.due<today ? "Overdue: " : "Due ")+DAYS[toUTC(t.due).getUTCDay()]+" "+short(t.due)));
       meta.appendChild(el("span","", t.assignedTo ? "For you" : "For anyone on the crew"));
       card.appendChild(meta);
+      if(t.createdByName) card.appendChild(el("div","by", t.createdBy && t.createdByName===$("who-name").textContent ? "Added by you" : "Added by "+t.createdByName));
       if(t.details) card.appendChild(el("p","details",t.details));
       if(done && t.doneNotes) card.appendChild(el("p","notes",t.doneNotes));
       if(t.photos && t.photos.length){
@@ -430,9 +467,33 @@
         b.onclick=function(){ openForm=t.id; drawTasks(); };
         var row=el("div","row"); row.appendChild(b); card.appendChild(row);
       }
+      if(!done && t.createdByName && t.createdByName===$("who-name").textContent && openForm!==t.id){
+        var dl=el("button","linkdel","Delete this task"); dl.type="button";
+        dl.onclick=function(){
+          if(dl.textContent!=="Tap again to delete"){ dl.textContent="Tap again to delete"; setTimeout(function(){ dl.textContent="Delete this task"; },3000); return; }
+          call("delTask",[token, t.id], function(res){ tasks=res.tasks||[]; drawTasks(); setStatus("task-status","Task deleted.","ok"); },
+            function(msg){ setStatus("task-status",msg,"err"); });
+        };
+        card.appendChild(dl);
+      }
       list.appendChild(card);
     });
   }
+  // ---- crew adds a task ----
+  function ntShow(on){ $("nt-form").hidden=!on; $("nt-open-row").hidden=on; if(on) $("nt-title").focus(); setStatus("nt-status",""); }
+  $("nt-open").onclick=function(){ ntShow(true); };
+  $("nt-cancel").onclick=function(){ ntShow(false); };
+  $("nt-save").onclick=function(){
+    if(busy) return;
+    var title=$("nt-title").value.trim();
+    if(!title) return setStatus("nt-status","Give the task a name.","err");
+    busy=true; $("nt-save").disabled=true; setStatus("nt-status","Adding…");
+    call("newTask",[token, { title:title, details:$("nt-details").value, forMe:$("nt-for").value==="me", due:$("nt-due").value||null }], function(res){
+      busy=false; $("nt-save").disabled=false; tasks=res.tasks||[];
+      $("nt-title").value=""; $("nt-details").value=""; $("nt-due").value=""; ntShow(false); drawTasks();
+      setStatus("task-status","Task added. The boss can see it too.","ok");
+    }, function(msg){ busy=false; $("nt-save").disabled=false; setStatus("nt-status",msg,"err"); });
+  };
   function doneForm(t, room){
     var f=el("div",""); f.style.cssText="display:flex;flex-direction:column;gap:10px";
     var done=t.status==="done", pics=pending[t.id]=pending[t.id]||[];
