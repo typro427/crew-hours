@@ -218,6 +218,7 @@
       var row = el('div', 'crow' + (c.active ? '' : ' inactive'));
       var left = el('div'); left.appendChild(el('span', 'nm', c.name));
       if (c.is_manager) left.appendChild(el('span', 'pill mgr', 'Manager'));
+      if (c.email) left.appendChild(el('span', 'pill', '✉ weekly email'));
       if (!c.active) left.appendChild(el('span', 'pill off', 'Can’t log in'));
       var offs = c.features ? Object.keys(featLabels).filter(function (k) { return c.features[k] === false; }) : [];
       if (offs.length) left.appendChild(el('span', 'hint', ' ' + offs.length + ' off'));
@@ -234,6 +235,14 @@
         var n = el('div'); n.innerHTML = '<label>Name</label>'; var ni = el('input'); ni.value = c.name; ni.maxLength = 60; n.appendChild(ni);
         var p = el('div'); p.innerHTML = '<label>New PIN <span class="hint">leave blank to keep</span></label>'; var pi = el('input'); pi.inputMode = 'numeric'; pi.maxLength = 4; pi.autocomplete = 'off'; p.appendChild(pi);
         var m = el('label', 'check'); var mi = el('input'); mi.type = 'checkbox'; mi.checked = c.is_manager; m.appendChild(mi); m.appendChild(document.createTextNode(' Manager'));
+        var em = el('div'); em.innerHTML = '<label>Email <span class="hint">optional: they get their own hours and address jobs each week</span></label>';
+        var ei = el('input'); ei.type = 'email'; ei.value = c.email || ''; ei.maxLength = 200; ei.autocomplete = 'off'; ei.placeholder = 'name@example.com'; em.appendChild(ei);
+        var send = el('button', 'btn ghost small', 'Send last week’s email now'); send.type = 'button'; send.hidden = !c.email;
+        send.onclick = function () {
+          status('add-status', 'Sending…');
+          api('POST', '/api/admin/crew/' + c.id + '/email-week', {}).then(function (r) { status('add-status', 'Sent to ' + r.to + '.', 'ok'); }).catch(function (e2) { status('add-status', e2.message, 'err'); });
+        };
+        em.appendChild(send);
         var sv = el('button', 'btn small', 'Save'); sv.type = 'submit';
         // What this person can use in the app.
         var fs = el('div', 'feats'); fs.appendChild(el('span', 'k', 'Can use in the app'));
@@ -242,11 +251,11 @@
           var l = el('label', 'check'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !c.features || c.features[k] !== false;
           boxes[k] = cb; l.appendChild(cb); l.appendChild(document.createTextNode(' ' + featLabels[k])); fs.appendChild(l);
         });
-        f.appendChild(n); f.appendChild(p); f.appendChild(m); f.appendChild(fs); f.appendChild(sv);
+        f.appendChild(n); f.appendChild(p); f.appendChild(em); f.appendChild(m); f.appendChild(fs); f.appendChild(sv);
         f.onsubmit = function (e) {
           e.preventDefault();
           var feats = {}; Object.keys(boxes).forEach(function (k) { feats[k] = boxes[k].checked; });
-          updateCrew(c.id, { name: ni.value, pin: pi.value, manager: mi.checked, features: feats }, true);
+          updateCrew(c.id, { name: ni.value, pin: pi.value, email: ei.value, manager: mi.checked, features: feats }, true);
         };
         row.appendChild(f);
       }

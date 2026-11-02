@@ -62,7 +62,7 @@ app.get('/api/backup', async (req, res, next) => {
       exportedAt: new Date().toISOString(),
       companies: await db.q('SELECT * FROM companies ORDER BY id'),
       owners: await db.q('SELECT id, company_id, email, name, created_at FROM owners ORDER BY id'),
-      crew: await db.q('SELECT id, company_id, name, active, is_manager, created_at FROM crew ORDER BY id'),
+      crew: await db.q('SELECT id, company_id, name, active, is_manager, email, features, created_at FROM crew ORDER BY id'),
       entries: await db.q('SELECT * FROM entries ORDER BY company_id, day'),
       approvals: await db.q('SELECT * FROM approvals ORDER BY company_id, week_start'),
       tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id'),

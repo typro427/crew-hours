@@ -31,6 +31,11 @@ async function tick(now = new Date()) {
       if (!paused && date === ws && hour >= c.summary_hour) {
         const last = T.shift(ws, -7);
         if (await claim(c.id, 'weekly', last)) await sendOrRelease(c.id, 'weekly', last, () => R.sendWeekly(c, last));
+        // each crew member with an email gets their own week
+        for (const p of await db.q("SELECT * FROM crew WHERE company_id=$1 AND active AND email<>''", [c.id])) {
+          const kind = 'crew-week:' + p.id;
+          if (await claim(c.id, kind, last)) await sendOrRelease(c.id, kind, last, () => R.sendPersonal(c, p, last)).catch(e => console.error(`[scheduler] crew ${p.id}:`, e.message));
+        }
       }
       if (!paused && date === T.shift(ws, 6) && hour >= c.missing_hour) {
         if (await claim(c.id, 'missing', ws)) await sendOrRelease(c.id, 'missing', ws, () => R.sendMissing(c));

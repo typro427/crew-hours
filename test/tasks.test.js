@@ -672,3 +672,29 @@ test('weekly email: adds roads, leaks, meters, orders and address jobs; leaves o
   assert.ok(!/Sam: no hours logged/.test(r.html), 'Sam has no time sheet');
   await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, hours: true, jobs: false } });
 });
+
+test('crew weekly email: their own time sheet and address jobs, to the email on their entry', async () => {
+  const { send } = require('../src/email');
+  const R = require('../src/reports'), H2 = require('../src/hours'), db2 = require('../src/db');
+  const c = await db2.one("SELECT * FROM companies WHERE name='Deerfield'");
+  const sam1 = (await O('GET', '/api/admin/crew')).body.crew.find(x => x.name === 'Sam');
+  assert.strictEqual((await O('PUT', '/api/admin/crew/' + sam1.id, { email: 'not-an-email' })).status, 400);
+  assert.strictEqual((await O('POST', `/api/admin/crew/${sam1.id}/email-week`, {})).status, 400, 'needs an email');
+  let r = await O('PUT', '/api/admin/crew/' + sam1.id, { email: 'Sam@Example.com', features: { ...sam1.features, hours: false, jobs: true } });
+  assert.strictEqual(r.body.crew.find(x => x.id === sam1.id).email, 'sam@example.com');
+  const ws = H2.weekOf(c, H2.today(c));
+  send.outbox.length = 0;
+  r = await O('POST', `/api/admin/crew/${sam1.id}/email-week`, { weekStart: ws });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const m = send.outbox.find(x => x.to.includes('sam@example.com'));
+  assert.ok(m, 'sent to Sam');
+  assert.match(m.subject, /^Your week: .* address jobs?, [0-9.]+ h on site/);
+  assert.match(m.html, /Address jobs/); assert.match(m.html, /141 Deer Meadow Dr/); assert.match(m.html, /Chemicals \+ materials: \$/);
+  assert.ok(!/Time sheet/.test(m.html), 'no time sheet section when hours are off');
+  // with the time sheet on, it's in there too
+  await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, hours: true, jobs: false } });
+  const p = await db2.one('SELECT * FROM crew WHERE id=$1', [sam1.id]);
+  const e = await R.personalWeekly(c, p, ws);
+  assert.match(e.html, /Time sheet/); assert.ok(!/Address jobs/.test(e.html));
+  await O('PUT', '/api/admin/crew/' + sam1.id, { email: '' });
+});

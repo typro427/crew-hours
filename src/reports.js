@@ -117,7 +117,60 @@ async function missingHours(company) {
            html: layout(`Hours check: ${range}`, html) };
 }
 
+/**
+ * One crew member's own week: their time sheet (if they keep one) and their address jobs, with totals.
+ * Sent to the email on their Crew & PINs entry.
+ */
+async function personalWeekly(company, person, weekStart) {
+  const F = require('./features'), J = require('./jobs');
+  const ws = H.weekOf(company, weekStart), dates = T.weekDates(ws);
+  const range = `${T.pretty(dates[0])} – ${T.pretty(dates[6])}`;
+  const td = 'padding:6px 8px;border-bottom:1px solid #ddd;font-size:14px;vertical-align:top';
+  const th = 'padding:6px 8px;border-bottom:2px solid #333;font-size:12px;text-transform:uppercase;text-align:left';
+  const money = n => n == null ? '' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const ampm = t => { if (!t) return ''; const h = Number(t.slice(0, 2)); return `${h % 12 || 12}:${t.slice(3, 5)} ${h < 12 ? 'AM' : 'PM'}`; };
+  let html = '', summary = [];
+  if (F.can(person, 'hours')) {
+    const w = await H.crewWeek(company, ws), me = w.people.find(p => p.id === person.id);
+    const total = me ? me.total : 0;
+    summary.push(`${total.toFixed(2)} h on the time sheet`);
+    html += `<h3 style="margin:0 0 6px">Time sheet</h3>`;
+    if (!me || !Object.keys(me.days).length) html += '<p style="color:#555">Nothing logged on the time sheet this week.</p>';
+    else {
+      html += `<table style="border-collapse:collapse"><tr><th style="${th}">Day</th><th style="${th}">Hours</th><th style="${th}">What you did</th></tr>`;
+      dates.filter(d => me.days[d]).forEach(d => { const e = me.days[d];
+        html += `<tr><td style="${td}">${T.dayName(d)} ${T.pretty(d)}</td><td style="${td};text-align:right">${e.total.toFixed(2)}</td><td style="${td}">${esc([e.summary, e.oSummary].filter(Boolean).join(' · '))}</td></tr>`; });
+      html += `<tr><td style="${td};font-weight:bold">Total</td><td style="${td};text-align:right;font-weight:bold">${total.toFixed(2)}</td><td style="${td}"></td></tr></table>`;
+    }
+  }
+  if (F.can(person, 'jobs')) {
+    const { jobs, totals: t } = await J.forOwner(company.id, { from: dates[0], to: dates[6], crew: person.id });
+    summary.push(`${t.jobs} address job${t.jobs === 1 ? '' : 's'}, ${t.hours} h on site`);
+    html += `<h3 style="margin:${html ? '20px' : '0'} 0 6px">Address jobs</h3>`;
+    if (!jobs.length) html += '<p style="color:#555">No address jobs logged this week.</p>';
+    else {
+      html += `<div style="overflow-x:auto"><table style="border-collapse:collapse"><tr>${['Date', 'Address', 'In', 'Out', 'Hours', 'Chemicals', 'Materials', 'Receipts'].map(x => `<th style="${th}">${x}</th>`).join('')}</tr>`;
+      [...jobs].reverse().forEach(j => {
+        html += `<tr><td style="${td}">${T.dayName(j.day)} ${T.pretty(j.day)}</td><td style="${td}">${esc(j.address)}${j.owner ? `<br><span style="color:#777">${esc(j.owner)}</span>` : ''}${j.notes ? `<br><span style="color:#555">${esc(j.notes)}</span>` : ''}</td>`
+          + `<td style="${td}">${ampm(j.timeIn)}</td><td style="${td}">${j.timeIn && !j.timeOut ? '<b>no time out</b>' : ampm(j.timeOut)}</td><td style="${td};text-align:right">${j.hours == null ? '' : j.hours}</td>`
+          + `<td style="${td};text-align:right">${money(j.chemCost)}</td><td style="${td};text-align:right">${money(j.materialCost)}</td><td style="${td};text-align:right">${j.receipts.length || ''}</td></tr>`;
+      });
+      html += `<tr><td style="${td};font-weight:bold" colspan="4">Total · ${t.jobs} job${t.jobs === 1 ? '' : 's'}</td><td style="${td};text-align:right;font-weight:bold">${t.hours}</td><td style="${td};text-align:right;font-weight:bold">${money(t.chemCost)}</td><td style="${td};text-align:right;font-weight:bold">${money(t.materialCost)}</td><td style="${td}"></td></tr></table></div>`;
+      html += `<p style="margin:10px 0 0"><b>Chemicals + materials: ${money(t.total)}</b></p>`;
+    }
+  }
+  if (!html) html = '<p>Nothing to report this week.</p>';
+  html += `<p style="color:#777;font-size:12px;margin-top:18px">From ${esc(company.name)}'s Crew Hours. Something wrong? Fix it in the app this week, or tell the boss.</p>`;
+  return { subject: `Your week: ${range} · ${summary.join(' · ') || 'nothing logged'}`, html: layout(`${esc(person.name)}: your week, ${range}`, html) };
+}
+async function sendPersonal(company, person, weekStart) {
+  if (!person.email) return null;
+  const r = await personalWeekly(company, person, weekStart);
+  await send({ to: [person.email], ...r });
+  return r;
+}
+
 async function sendWeekly(company, weekStart, opts) { const r = await weeklySummary(company, weekStart, opts); await send({ to: await recipients(company), ...r }); return r; }
 async function sendMissing(company) { const r = await missingHours(company); await send({ to: await recipients(company), subject: r.subject, html: r.html }); return r; }
 
-module.exports = { operations, weeklySummary, missingHours, sendWeekly, sendMissing, recipients };
+module.exports = { personalWeekly, sendPersonal, operations, weeklySummary, missingHours, sendWeekly, sendMissing, recipients };

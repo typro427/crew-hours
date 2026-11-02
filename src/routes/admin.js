@@ -108,7 +108,7 @@ r.put('/settings', async (req, res) => {
 
 /* ------------------------------- crew members ------------------------------- */
 const F = require('../features');
-const crewList = async companyId => (await db.q('SELECT id, name, active, is_manager, features, created_at FROM crew WHERE company_id=$1 ORDER BY active DESC, lower(name)', [companyId]))
+const crewList = async companyId => (await db.q('SELECT id, name, active, is_manager, features, email, created_at FROM crew WHERE company_id=$1 ORDER BY active DESC, lower(name)', [companyId]))
   .map(c => ({ ...c, features: F.forCrew(c) }));
 
 r.get('/crew', async (req, res) => res.json({ crew: await crewList(req.company.id), billing: await billing(req.company), features: F.FEATURES }));
@@ -145,9 +145,22 @@ r.put('/crew/:id', async (req, res) => {
   if (active && !person.active) await checkRoom(req.company);
   const manager = b.manager !== undefined ? !!b.manager : person.is_manager;
   const features = b.features !== undefined ? F.clean(b.features) : person.features;
-  await db.q('UPDATE crew SET name=$1, pin_hmac=$2, active=$3, is_manager=$4, features=$5 WHERE id=$6', [name, pinH, active, manager, features ? JSON.stringify(features) : null, id]);
+  const email = b.email !== undefined ? (String(b.email || '').trim() ? V.email(b.email) : '') : person.email;
+  await db.q('UPDATE crew SET name=$1, pin_hmac=$2, active=$3, is_manager=$4, features=$5, email=$6 WHERE id=$7', [name, pinH, active, manager, features ? JSON.stringify(features) : null, email, id]);
   if (!active || pinH !== person.pin_hmac) await db.q('DELETE FROM crew_sessions WHERE crew_id=$1', [id]);   // sign them out
   res.json({ crew: await crewList(req.company.id), billing: await billing(req.company), features: F.FEATURES });
+});
+
+// Send a crew member their week now (last week by default), to check it looks right.
+r.post('/crew/:id/email-week', async (req, res) => {
+  const p = await db.one('SELECT * FROM crew WHERE id=$1 AND company_id=$2', [Number(req.params.id), req.company.id]);
+  if (!p) return res.status(404).json({ error: 'That crew member was not found.' });
+  if (!p.email) V.bad('Add their email first, then Save.');
+  if (A.limited('crewmail:' + p.id, 5, 60 * 60e3)) return res.status(429).json({ error: 'Too many emails. Try again in an hour.' });
+  A.fail('crewmail:' + p.id, 60 * 60e3);
+  const ws = req.body && T.isDate(req.body.weekStart) ? req.body.weekStart : require('../time').shift(H.weekOf(req.company, H.today(req.company)), -7);
+  await R.sendPersonal(req.company, p, ws);
+  res.json({ ok: true, to: p.email });
 });
 
 /* --------------------------------- tasks ----------------------------------- */
