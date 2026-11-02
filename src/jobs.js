@@ -156,7 +156,11 @@ async function totalsFor(company, crewId) {
     return { ...totals, billed: r2(jobs.reduce((a, j) => a + bill(j), 0)), open: jobs.filter(j => j.timeIn && !j.timeOut).length, from, to };
   }
   const ws = H.weekOf(company, today);
-  return { week: await range(ws, T.shift(ws, 6)), month: await range(today.slice(0, 8) + '01', today), rates: !!(set.laborRate || set.visitCharge) };
+  // this month, one line per address billed (what each client's invoice will show)
+  const mb = await JB.month(company, today.slice(0, 7), crewId);
+  const byAddress = mb.clients.map(c => ({ address: c.address, customer: c.customer, visits: c.totals.visits, hours: c.totals.hours,
+    chemCost: c.totals.chemCost, materialCost: c.totals.materialCost, billed: c.totals.total })).sort((a, b) => b.billed - a.billed || a.address.localeCompare(b.address));
+  return { week: await range(ws, T.shift(ws, 6)), month: { ...(await range(today.slice(0, 8) + '01', today)), byAddress, label: mb.label }, rates: !!(set.laborRate || set.visitCharge) };
 }
 
 function csv(list) {

@@ -299,9 +299,10 @@
       function(msg){ setStatus("save-status",msg,"err"); });
   }
   function applyWeek(res, select){
+    if(res.name) $("who-name").textContent = res.name;
+    if(res.manager!==undefined && !!res.manager!==isBoss){ isBoss=!!res.manager; $("tab-crew").hidden=!isBoss; }
     applyAccess(res);
     week=res.weekStart; days=res.days||{}; today=res.today; maxBack=(res.maxDaysBack!=null?res.maxDaysBack:settings.maxDaysBack); locked=!!res.locked;
-    if(res.manager!==undefined && !!res.manager!==isBoss){ isBoss=!!res.manager; $("tab-crew").hidden=!isBoss; }
     $("who-name").textContent = res.name; $("who").hidden=false;
     var dates = weekDates(week);
     sel = select && dates.indexOf(select)!==-1 ? select : (dates.indexOf(today)!==-1 ? today : dates[6]);
@@ -1049,6 +1050,20 @@
         if(p.open) c.appendChild(el("div","late", p.open+" still timed in"));
         tots.appendChild(c);
       });
+      // each address billed this month, like the invoices will show
+      var by=t.month.byAddress||[];
+      if(by.length){
+        var d=el("details","jt-by"); d.open=by.length<=6;
+        var sm=el("summary"); sm.appendChild(el("b","",(t.month.label||"This month")+" by address")); sm.appendChild(el("span","hint"," "+by.length+" address"+(by.length===1?"":"es"))); d.appendChild(sm);
+        by.forEach(function(a){
+          var r=el("div","jt-row"), l=el("div","");
+          l.appendChild(el("b","",a.address));
+          l.appendChild(el("span","", (a.customer && a.customer!==a.address ? a.customer+" · " : "")+a.visits+" visit"+(a.visits===1?"":"s")+" · "+a.hours+" h"+(a.chemCost ? " · chem "+money(a.chemCost) : "")+(a.materialCost ? " · mat "+money(a.materialCost) : "")));
+          r.appendChild(l); r.appendChild(el("b","jt-amt", t.rates ? money(a.billed) : money((a.chemCost||0)+(a.materialCost||0))));
+          d.appendChild(r);
+        });
+        tots.appendChild(d);
+      }
     }
     function nowHM(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
     function ampm(t){ if(!t) return ""; var h=Number(t.slice(0,2)), m=t.slice(3,5); return (h%12||12)+":"+m+" "+(h<12?"AM":"PM"); }
@@ -1364,6 +1379,8 @@
     $("tab-members").hidden=!features.members;
     $("tab-orders").hidden=!features.orders;
     $("tab-jobs").hidden=!(features.jobs || isBoss);   // managers can look at anyone's address jobs
+    var first=String($("who-name").textContent||"").trim().split(/\s+/)[0];
+    $("tab-jobs").textContent = features.jobs && first ? first+"\u2019s Billables" : "Billables";
     $("tab-mine").hidden=features.hours===false;
     if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);

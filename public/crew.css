@@ -251,3 +251,9 @@ tfoot td{font-weight:700;border-bottom:0}
 .jobtots .jt-grid{display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:13px;color:var(--muted)}
 .jobtots .jt-grid b{color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
 .jobtots .late{font-size:13px;margin-top:4px}
+.jobtots .jt-by{grid-column:1 / -1;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.jobtots .jt-by summary{cursor:pointer;padding:4px 0;min-height:32px}
+.jobtots .jt-row{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.jobtots .jt-row div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.jobtots .jt-row span{font-size:13px;color:var(--muted)}
+.jobtots .jt-amt{font-variant-numeric:tabular-nums;white-space:nowrap}
