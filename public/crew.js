@@ -506,7 +506,10 @@
     var box=$("road-list"); box.innerHTML="";
     roads.forEach(function(r){
       var b=el("button","roadrow"); b.type="button";
-      b.appendChild(el("b","",r.name));
+      var nm=el("span","rname"); nm.appendChild(el("b","",r.name));
+      var sub=[r.lengthMi!=null ? r.lengthMi+" mi" : "", r.surface||""].filter(Boolean).join(" · ");
+      if(sub) nm.appendChild(el("span","rsub",sub));
+      b.appendChild(nm);
       var n = r.lastDay ? Math.round((toUTC(today)-toUTC(r.lastDay))/864e5) : null;
       b.appendChild(el("span","when"+(r.lastDay ? (n>14 ? " old" : "") : " never"), r.lastDay ? short(r.lastDay)+" · "+ago(r.lastDay)+(r.lastBy ? "\n"+r.lastBy : "") : "Not mowed yet"));
       b.onclick=function(){ openRoad(r.id); };
@@ -523,6 +526,13 @@
     $("road-name").textContent=road.name;
     var last=road.mows[0];
     $("road-last").textContent = last ? "Last mowed "+DAYS[toUTC(last.day).getUTCDay()]+" "+short(last.day)+" ("+ago(last.day)+")"+(last.byName ? " by "+last.byName : "") : "Not mowed yet";
+    var info=$("road-info"); info.innerHTML="";
+    var facts=[road.lengthMi!=null ? road.lengthMi+" miles" : "", road.surface||""].filter(Boolean).join(" · ");
+    if(facts) info.appendChild(el("div","muted",facts));
+    var PL={1:"needs work",2:"soon",3:"can wait"}, chips=el("div","chips");
+    [["Roadway",road.pRoad],["Ditch line",road.pDitch],["Trees",road.pTrees]].forEach(function(x){ if(x[1]) chips.appendChild(el("span","chip p"+x[1], x[0]+": "+PL[x[1]])); });
+    if(chips.children.length) info.appendChild(chips);
+    if(road.notes) info.appendChild(el("p","rnotes",road.notes));
     drawRmPics();
     var h=$("road-history"); h.innerHTML="";
     if(!road.mows.length) h.appendChild(el("p","muted","Nothing logged yet."));

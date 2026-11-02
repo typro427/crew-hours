@@ -1,0 +1,285 @@
+{
+ "format": "crewhours-import-1",
+ "source": "Deerfield Roads and Infrastructure",
+ "roads": [
+  {
+   "name": "Deer Hill to Yellow Condos",
+   "lengthMi": 1.0,
+   "pRoad": 3,
+   "pDitch": 1,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Corner clean-up before cabins; ditch line spray & rip rap completion; tree limbs @ Deer Trail; some roadway patch needed"
+  },
+  {
+   "name": "Deer Trail",
+   "lengthMi": 0.2,
+   "pRoad": 3,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Nothing of immediate need noted"
+  },
+  {
+   "name": "Deer Meadow",
+   "lengthMi": 0.6,
+   "pRoad": 3,
+   "pDitch": 2,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Patch needed between Lyons and McKinney's; water rut present across from 141 Deer Meadow; spray ditches; trim tree limbs"
+  },
+  {
+   "name": "Fairway Vista",
+   "lengthMi": 0.7,
+   "pRoad": 3,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Spray grass/seal roadway cracks"
+  },
+  {
+   "name": "Deer Trot",
+   "lengthMi": 0.1,
+   "pRoad": 3,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Patch required at top of Deer Trot"
+  },
+  {
+   "name": "Bobby Clampett Way",
+   "lengthMi": 0.2,
+   "pRoad": 3,
+   "pDitch": 1,
+   "pTrees": 3,
+   "surface": "Gravel portion",
+   "notes": "Rip rap necessary; culvert buried at corner; some patching; Arndt does not want gravel portions paved"
+  },
+  {
+   "name": "Deerfield Landing",
+   "lengthMi": 0.8,
+   "pRoad": 1,
+   "pDitch": 1,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Culvert cleanout; ditch line clean/repair; roadway sinking and uneven"
+  },
+  {
+   "name": "Wedgewood Lane",
+   "lengthMi": 0.2,
+   "pRoad": 2,
+   "pDitch": 2,
+   "pTrees": 1,
+   "surface": "",
+   "notes": "Trees encroaching roadway; patch needed by 569 and 606 Wedgewood; culvert work needed"
+  },
+  {
+   "name": "Championship Way",
+   "lengthMi": 0.3,
+   "pRoad": 3,
+   "pDitch": 1,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Spray along lower portion of road"
+  },
+  {
+   "name": "Deer Ridge Lane",
+   "lengthMi": 0.8,
+   "pRoad": 1,
+   "pDitch": 1,
+   "pTrees": 1,
+   "surface": "",
+   "notes": "Roadway has places of settling; trees require cutting back; ditch line cleanup; challenge with leach field lines under roadway"
+  },
+  {
+   "name": "White Tail",
+   "lengthMi": 0.8,
+   "pRoad": 2,
+   "pDitch": 2,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Culvert cleanout; tree trimming; some roadway issues"
+  },
+  {
+   "name": "Airstrip Lane",
+   "lengthMi": 0.7,
+   "pRoad": 3,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "Taxiways",
+   "notes": "Clean-up on 1st taxiway (by Wilbur's); low spot on second to last taxiway"
+  },
+  {
+   "name": "Buck Horn",
+   "lengthMi": 0.2,
+   "pRoad": 2,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "A few low spots on roadway"
+  },
+  {
+   "name": "Buckeye Landing",
+   "lengthMi": 0.3,
+   "pRoad": 2,
+   "pDitch": 2,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Road patching; ditch line cleanup/rip rap; trees trimmed back"
+  },
+  {
+   "name": "Doe Lane",
+   "lengthMi": null,
+   "pRoad": 3,
+   "pDitch": 1,
+   "pTrees": 2,
+   "surface": "Paved",
+   "notes": "Ditch line maintenance; some tree trimming"
+  },
+  {
+   "name": "Deer Run Place",
+   "lengthMi": 0.2,
+   "pRoad": 3,
+   "pDitch": 1,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Ditch line/swale required at corner of Deer Run Place and Deer Run Pt."
+  },
+  {
+   "name": "Deer Run Point",
+   "lengthMi": 0.6,
+   "pRoad": 1,
+   "pDitch": 1,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Major road work needed"
+  },
+  {
+   "name": "Big Pine Point",
+   "lengthMi": 0.6,
+   "pRoad": 2,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Rework at end of roadway"
+  },
+  {
+   "name": "Deer Pond",
+   "lengthMi": null,
+   "pRoad": 1,
+   "pDitch": 2,
+   "pTrees": 1,
+   "surface": "Gravel",
+   "notes": "Requires paving; trees need thinned out"
+  },
+  {
+   "name": "Little Deer",
+   "lengthMi": 0.2,
+   "pRoad": 3,
+   "pDitch": 2,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Minor ditch clean-up"
+  },
+  {
+   "name": "Little Fawn",
+   "lengthMi": 1.7,
+   "pRoad": 1,
+   "pDitch": 2,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Paving needed; rip rap in several areas; trees need cleaned up"
+  },
+  {
+   "name": "Button Buck",
+   "lengthMi": 0.3,
+   "pRoad": 3,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Patch @ cul-de-sac"
+  },
+  {
+   "name": "Little Buck / Holly Lane",
+   "lengthMi": 0.9,
+   "pRoad": 2,
+   "pDitch": 2,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "A few rough spots on Little Buck; some tree and ditch line maintenance needed"
+  },
+  {
+   "name": "Deerwood Lane",
+   "lengthMi": 1.2,
+   "pRoad": 1,
+   "pDitch": 2,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Patch needed @ Deerfield Way intersection; pavement degrading towards lower portion"
+  },
+  {
+   "name": "Deerwalk — East & West",
+   "lengthMi": 0.7,
+   "pRoad": 3,
+   "pDitch": 1,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Ditch clean-out and maintenance"
+  },
+  {
+   "name": "Bambi Circle",
+   "lengthMi": 0.2,
+   "pRoad": 2,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Corner rework required"
+  },
+  {
+   "name": "Cedar Creek Point",
+   "lengthMi": 0.6,
+   "pRoad": 1,
+   "pDitch": 1,
+   "pTrees": 3,
+   "surface": "Gravel",
+   "notes": "Culvert work needed; paving required"
+  },
+  {
+   "name": "Lower Deerfield Way through Hilty Head",
+   "lengthMi": null,
+   "pRoad": 2,
+   "pDitch": 1,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Water flow issue near Davidson/Miller residences; some tree trimming"
+  },
+  {
+   "name": "Bucks & Does",
+   "lengthMi": 0.3,
+   "pRoad": 3,
+   "pDitch": 2,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Ditch line work"
+  },
+  {
+   "name": "Sam & Maria",
+   "lengthMi": 0.6,
+   "pRoad": 2,
+   "pDitch": 3,
+   "pTrees": 3,
+   "surface": "",
+   "notes": "Patch and top coat needed"
+  },
+  {
+   "name": "Antler Way",
+   "lengthMi": 0.2,
+   "pRoad": 3,
+   "pDitch": 2,
+   "pTrees": 2,
+   "surface": "",
+   "notes": "Tree and ditch line work needed"
+  }
+ ]
+}

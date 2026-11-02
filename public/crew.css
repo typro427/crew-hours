@@ -163,3 +163,13 @@ tfoot td{font-weight:700;border-bottom:0}
 .hrow:first-child{border-top:0}
 .hrow .hk{display:flex;justify-content:space-between;gap:10px}
 .hrow .notes{margin:0;white-space:pre-wrap;color:var(--muted)}
+
+.roadrow .rname{display:flex;flex-direction:column;gap:2px}
+.roadrow .rsub{font-size:13px;color:var(--muted);font-weight:400}
+.roadinfo{display:flex;flex-direction:column;gap:8px}
+.roadinfo:empty{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:13px;padding:3px 9px;border-radius:12px;background:var(--sunk);color:var(--ink);font-weight:600}
+.chip.p1{background:#f6d3cf;color:#7a1a10} .chip.p2{background:#f7e3c4;color:#6b3a06} .chip.p3{background:#d7ecdf;color:#1d5234}
+@media (prefers-color-scheme:dark){.chip.p1{background:#5a2420;color:#ffd6d1}.chip.p2{background:#57401f;color:#ffe2b8}.chip.p3{background:#1f4430;color:#c9f0d8}}
+.roadinfo .rnotes{margin:0;white-space:pre-wrap;font-size:15px}

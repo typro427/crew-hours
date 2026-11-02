@@ -153,3 +153,22 @@ test('roads mowed: boss sets the list, crew logs mowings with photos, history an
   r = await O('DELETE', '/api/admin/mows/' + mowId);
   assert.strictEqual(r.body.road.mows.length, 0);
 });
+
+test('road details import onto the pasted list without duplicates; boss can edit; crew sees them', async () => {
+  const file = require('./fixtures-deerfield-roads.json');
+  await O('PUT', '/api/admin/roads', { names: file.roads.map(r => r.name) });
+  let r = await O('POST', '/api/admin/import', file);
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.roadsAdded, 0); assert.strictEqual(r.body.roadsUpdated, 31);
+  r = await O('POST', '/api/admin/import', file);   // again: still 31
+  const list = (await O('GET', '/api/admin/roads')).body.roads;
+  assert.strictEqual(list.length, 31); assert.strictEqual(list[0].name, 'Deer Hill to Yellow Condos');
+  const dp = list.find(x => x.name === 'Deer Pond');
+  assert.deepStrictEqual([dp.lengthMi, dp.pRoad, dp.pDitch, dp.pTrees, dp.surface], [null, 1, 2, 1, 'Gravel']);
+  assert.strictEqual(list.reduce((a, x) => a + (x.lengthMi || 0), 0).toFixed(1), '15.2');
+  r = await O('PUT', `/api/admin/roads/${dp.id}/info`, { lengthMi: '0.4', surface: 'Gravel', pRoad: '1', pDitch: '', pTrees: '1', notes: 'Paving scheduled' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual((await O('PUT', `/api/admin/roads/${dp.id}/info`, { pRoad: '7' })).status, 400);
+  const crewView = (await jake('GET', '/roads/' + dp.id)).body.road;
+  assert.deepStrictEqual([crewView.lengthMi, crewView.pDitch, crewView.notes], [0.4, null, 'Paving scheduled']);
+});

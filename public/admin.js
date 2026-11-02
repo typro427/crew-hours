@@ -313,9 +313,10 @@
       var data; try { data = JSON.parse(txt); } catch (e) { throw new Error("That file isn't a Crew Hours import file."); }
       return api('POST', '/api/admin/import', data);
     }).then(function (r) {
-      var msg = 'Done. Added ' + r.crewAdded + ' crew and ' + r.daysAdded + ' days of hours.';
+      var msg = (r.crewAdded || r.daysAdded || !(r.roadsAdded || r.roadsUpdated)) ? 'Done. Added ' + r.crewAdded + ' crew and ' + r.daysAdded + ' days of hours.' : 'Done.';
       if (r.crewSkipped.length) msg += ' Skipped: ' + r.crewSkipped.join(', ') + '.';
       if (r.daysSkipped) msg += ' ' + r.daysSkipped + ' days were already here.';
+      if (r.roadsAdded || r.roadsUpdated) msg += ' Roads: ' + r.roadsAdded + ' added, ' + r.roadsUpdated + ' updated with their details.';
       if (r.problems.length) msg += ' Problems: ' + r.problems.join('; ') + '.';
       status('imp-status', msg, r.problems.length ? 'err' : 'ok');
       return loadMe();
@@ -404,6 +405,7 @@
     roads.forEach(function (x) {
       var tr = el('tr');
       tr.appendChild(el('td', '', x.name));
+      tr.appendChild(el('td', '', x.lengthMi != null ? x.lengthMi + ' mi' : ''));
       var n = x.lastDay ? daysAgo(x.lastDay) : null;
       tr.appendChild(el('td', x.lastDay ? (n > 14 ? 'old' : '') : 'never', x.lastDay ? DAYS[toUTC(x.lastDay).getUTCDay()] + ' ' + short(x.lastDay) + ' (' + (n <= 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago') + ')' : 'Not mowed yet'));
       tr.appendChild(el('td', '', x.lastBy || ''));
@@ -425,6 +427,32 @@
     top.appendChild(el('h3', '', road.name + ' · ' + road.mows.length + ' time' + (road.mows.length === 1 ? '' : 's') + ' logged'));
     var close = el('button', 'btn ghost small', 'Close'); close.type = 'button'; close.onclick = function () { roadPick = null; box.hidden = true; };
     top.appendChild(close); box.appendChild(top);
+    // Road details: shown to the crew when they open the road.
+    var PL = { 1: 'needs work', 2: 'soon', 3: 'can wait' }, chips = el('div', 'chips');
+    [['Roadway', road.pRoad], ['Ditch line', road.pDitch], ['Trees', road.pTrees]].forEach(function (x) { if (x[1]) chips.appendChild(el('span', 'chip p' + x[1], x[0] + ': ' + PL[x[1]])); });
+    var facts = [road.lengthMi != null ? road.lengthMi + ' miles' : '', road.surface || ''].filter(Boolean).join(' · ');
+    if (facts) box.appendChild(el('p', 'muted', facts));
+    if (chips.children.length) box.appendChild(chips);
+    if (road.notes) box.appendChild(el('p', 't-text', road.notes));
+    var ed = el('details'); ed.appendChild(el('summary', '', 'Edit road details'));
+    var g = el('div', 'rd-edit');
+    function fld(label, node) { var w = el('div'); var l = el('label', '', label); w.appendChild(l); w.appendChild(node); g.appendChild(w); return node; }
+    function inp(v, type) { var i = el('input'); i.type = type || 'text'; i.value = v == null ? '' : v; return i; }
+    function prSel(v) { var s = el('select'); [['', '—'], ['1', '1 · needs work'], ['2', '2 · soon'], ['3', '3 · can wait']].forEach(function (o) { var x = el('option', '', o[1]); x.value = o[0]; s.appendChild(x); }); s.value = v ? String(v) : ''; return s; }
+    var fLen = fld('Length (miles)', inp(road.lengthMi, 'number')); fLen.step = '0.1'; fLen.min = '0';
+    var fSurf = fld('Surface / other', inp(road.surface)); fSurf.placeholder = 'Paved, Gravel…';
+    var fR = fld('Roadway', prSel(road.pRoad)), fD = fld('Ditch line', prSel(road.pDitch)), fT = fld('Trees', prSel(road.pTrees));
+    ed.appendChild(g);
+    var nl = el('label', '', 'Notes for the crew'); var fN = el('textarea'); fN.value = road.notes || ''; fN.rows = 3; ed.appendChild(nl); ed.appendChild(fN);
+    var row2 = el('div', 'row'), sv = el('button', 'btn small', 'Save details'), st = el('span', 'status'); sv.type = 'button';
+    sv.onclick = function () {
+      api('PUT', '/api/admin/roads/' + road.id + '/info', { lengthMi: fLen.value, surface: fSurf.value, pRoad: fR.value, pDitch: fD.value, pTrees: fT.value, notes: fN.value })
+        .then(function (r) { roads = r.roads; drawRoads(); drawRoad(r.road); status('rd-status', 'Saved ' + r.road.name + '.', 'ok'); })
+        .catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
+    };
+    row2.appendChild(sv); row2.appendChild(st); ed.appendChild(row2);
+    box.appendChild(ed);
+    box.appendChild(el('h3', '', 'Mowing history'));
     if (!road.mows.length) box.appendChild(el('p', 'muted', 'Nothing logged yet.'));
     road.mows.forEach(function (m) {
       var row = el('div', 'mrow'), t = el('div', 't-top');

@@ -136,6 +136,10 @@ r.delete('/tasks/:id', async (req, res) => { await K.remove(req.company.id, Numb
 const RD = require('../roads');
 r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id) }));
 r.put('/roads', async (req, res) => { await RD.setList(req.company.id, (req.body || {}).names); res.json({ roads: await RD.list(req.company.id) }); });
+r.put('/roads/:id/info', async (req, res) => {
+  await RD.setInfo(req.company.id, Number(req.params.id), req.body || {});
+  res.json({ road: await RD.history(req.company.id, Number(req.params.id), 200), roads: await RD.list(req.company.id) });
+});
 r.get('/roads/:id', async (req, res) => res.json({ road: await RD.history(req.company.id, Number(req.params.id), 200) }));
 r.delete('/mows/:id', async (req, res) => {
   const roadId = await RD.removeMow(req.company.id, Number(req.params.id));
@@ -165,10 +169,13 @@ r.post('/import', async (req, res) => {
   const b = req.body || {}, c = req.company;
   if (b.format !== 'crewhours-import-1') V.bad("That file isn't a Crew Hours import file.");
   const crewIn = Array.isArray(b.crew) ? b.crew : [], entriesIn = Array.isArray(b.entries) ? b.entries : [];
+  const roadsIn = Array.isArray(b.roads) ? b.roads : [];
+  if (roadsIn.length > 500) V.bad('Up to 500 roads.');
   if (crewIn.length > 300 || entriesIn.length > 20000) V.bad('That file is too big to import at once.');
   const s = b.settings || {};
-  const result = { crewAdded: 0, crewSkipped: [], daysAdded: 0, daysSkipped: 0, problems: [] };
+  const result = { crewAdded: 0, crewSkipped: [], daysAdded: 0, daysSkipped: 0, roadsAdded: 0, roadsUpdated: 0, problems: [] };
   await db.tx(async t => {
+    if (roadsIn.length) { const rr = await require('../roads').importRoads(c.id, roadsIn, t); result.roadsAdded = rr.added; result.roadsUpdated = rr.updated; }
     if (s.weekStart !== undefined || s.mainLabel || s.otherOptions) {
       const opts = Array.isArray(s.otherOptions) ? s.otherOptions.map(x => V.str(x, 'an option', 1, 60)).slice(0, 25) : c.other_options;
       await t.q('UPDATE companies SET week_start=$1, main_label=$2, other_label=$3, other_options=$4, other_enabled=TRUE, overtime_after=$5 WHERE id=$6',

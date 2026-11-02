@@ -8,7 +8,8 @@ const MAX_PHOTOS = 4;      // per mowing
 const MAX_DAYS_BACK = 60;  // how far back the crew can log a mowing
 
 /** Every active road with when it was last mowed and by whom, in list order. */
-const list = companyId => db.q(`SELECT r.id, r.name,
+const INFO = `r.length_mi AS "lengthMi", r.p_road AS "pRoad", r.p_ditch AS "pDitch", r.p_trees AS "pTrees", r.surface, r.notes`;
+const list = companyId => db.q(`SELECT r.id, r.name, ${INFO},
     to_char(m.day, 'YYYY-MM-DD') AS "lastDay", c.name AS "lastBy",
     (SELECT count(*)::int FROM road_mows x WHERE x.road_id=r.id AND x.day >= date_trunc('year', now())::date) AS "timesThisYear"
   FROM roads r
@@ -18,7 +19,7 @@ const list = companyId => db.q(`SELECT r.id, r.name,
 
 /** One road's mowing history, newest first. */
 async function history(companyId, roadId, limit) {
-  const road = await db.one('SELECT id, name FROM roads WHERE id=$1 AND company_id=$2', [roadId, companyId]);
+  const road = await db.one(`SELECT r.id, r.name, ${INFO} FROM roads r WHERE r.id=$1 AND r.company_id=$2`, [roadId, companyId]);
   if (!road) V.bad('That road was not found.');
   road.mows = await db.q(`SELECT m.id, to_char(m.day, 'YYYY-MM-DD') AS day, m.notes, m.crew_id AS "crewId", c.name AS "byName",
       COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM road_mow_photos p WHERE p.mow_id=m.id), '[]') AS photos
@@ -42,6 +43,37 @@ async function setList(companyId, names) {
       else await t.q('INSERT INTO roads (company_id, name, position) VALUES ($1,$2,$3)', [companyId, clean[i], i]);
     }
   });
+}
+
+/** Length, surface, priorities (1 needs work, 2 soon, 3 can wait) and notes for one road. */
+function cleanInfo(b) {
+  const pr = (v, n) => { if (v === '' || v == null) return null; const x = V.int(v, n, 1, 3); return x; };
+  const len = b.lengthMi === '' || b.lengthMi == null ? null : V.num(b.lengthMi, 'Length', 0, 100);
+  return { len, pRoad: pr(b.pRoad, 'Roadway priority'), pDitch: pr(b.pDitch, 'Ditch line priority'), pTrees: pr(b.pTrees, 'Trees priority'),
+           surface: String(b.surface || '').trim().slice(0, 60), notes: String(b.notes || '').trim().slice(0, 2000) };
+}
+async function setInfo(companyId, roadId, b, q) {
+  const v = cleanInfo(b || {});
+  const r = await (q || db).q('UPDATE roads SET length_mi=$1, p_road=$2, p_ditch=$3, p_trees=$4, surface=$5, notes=$6 WHERE id=$7 AND company_id=$8 RETURNING id',
+    [v.len, v.pRoad, v.pDitch, v.pTrees, v.surface, v.notes, roadId, companyId]);
+  if (!r.length) V.bad('That road was not found.');
+}
+
+/** Import roads with their details (from the import file): matched by name, added if new, in the file's order. */
+async function importRoads(companyId, roads, t) {
+  const have = await t.q('SELECT id, name, position FROM roads WHERE company_id=$1', [companyId]);
+  const byName = new Map(have.map(r => [r.name.toLowerCase(), r]));
+  const loose = s => s.toLowerCase().replace(/\bthru\b/g, 'through').replace(/[^a-z0-9]+/g, '');
+  const byLoose = new Map(have.map(r => [loose(r.name), r]));
+  let added = 0, updated = 0;
+  for (let i = 0; i < roads.length; i++) {
+    const name = V.str(roads[i].name, 'a road name', 1, 80);
+    let row = byName.get(name.toLowerCase()) || byLoose.get(loose(name));
+    if (!row) { row = await t.one('INSERT INTO roads (company_id, name, position) VALUES ($1,$2,$3) RETURNING id', [companyId, name, i]); added++; }
+    else { await t.q('UPDATE roads SET active=TRUE, position=$1 WHERE id=$2', [i, row.id]); updated++; }
+    await setInfo(companyId, row.id, roads[i], t);
+  }
+  return { added, updated };
 }
 
 /** A crew member logs a mowing: the date (today or earlier), optional notes, up to 4 photos. */
@@ -73,4 +105,4 @@ async function removeMow(companyId, mowId, crewId) {
 
 const photo = (companyId, id) => db.one('SELECT mime, data FROM road_mow_photos WHERE id=$1 AND company_id=$2', [id, companyId]);
 
-module.exports = { list, history, setList, logMow, removeMow, photo, MAX_PHOTOS };
+module.exports = { list, history, setList, setInfo, importRoads, logMow, removeMow, photo, MAX_PHOTOS };
