@@ -841,13 +841,14 @@
     var d = mr.data, q = $('mr-q').value.trim().toLowerCase(), show = $('mr-show').value, body = $('mr-body'); body.innerHTML = '';
     var active = d.meters.filter(function (m) { return m.active; });
     var checks = active.filter(function (m) { return m.nameCheck; }).length;
-    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.label + (checks ? ' · ' + checks + ' names to check' : '');
+    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.label + (d.highUse ? ' · ⚠ ' + d.highUse + ' high use' : '') + (checks ? ' · ' + checks + ' names to check' : '');
     var shown = 0;
     d.meters.forEach(function (m) {
       if (show === 'inactive' ? m.active : !m.active) return;
       if (show === 'unread' && (m.current != null || !m.meterNo)) return;
       if (show === 'read' && m.current == null) return;
       if (show === 'low' && !(m.usage != null && m.usage < 0)) return;
+      if (show === 'high' && !((m.alert && m.alert.level === 'high') || m.flagOk)) return;
       if (show === 'check' && !m.nameCheck) return;
       if (q && [m.seq, m.account, m.name, m.oldName, m.qbCustomer, m.address, m.meterNo].join(' ').toLowerCase().indexOf(q) === -1) return;
       shown++;
@@ -870,7 +871,9 @@
           .catch(function (e) { inp.value = was; status('mr-status', e.message, 'err'); });
       };
       ct.appendChild(inp); tr.appendChild(ct);
-      tr.appendChild(el('td', 'num' + (m.usage != null && m.usage < 0 ? ' warn' : ''), m.usage == null ? '' : nfmt(m.usage)));
+      var ut = el('td', 'num' + (m.usage != null && m.usage < 0 ? ' warn' : ''), m.usage == null ? '' : nfmt(m.usage));
+      if ((m.alert && m.alert.level === 'high') || m.flagOk) ut.appendChild(highUseCell(m, d));
+      tr.appendChild(ut);
       tr.appendChild(el('td', '', m.readBy || ''));
       var et = el('td'), eb = el('button', 'btn ghost small', mr.edit === m.id ? 'Close' : 'Edit'); eb.type = 'button';
       eb.onclick = function () { mr.edit = mr.edit === m.id ? null : m.id; drawMeterAdmin(); };
@@ -880,6 +883,24 @@
     });
     $('mr-empty').hidden = shown > 0;
     $('mr-empty').textContent = d.meters.length ? 'No meters match.' : 'No meters yet. Import the meter list below.';
+  }
+  function highUseCell(m, d) {
+    var box = el('div', 'hu');
+    function act(label, fn) { var b = el('button', 'btn ghost small', label); b.type = 'button'; b.onclick = fn; box.appendChild(b); return b; }
+    function notLeak(ok) { api('POST', '/api/admin/meters/' + m.id + '/not-a-leak', { quarter: d.quarter, ok: ok }).then(function (r) { mr.data = r; drawMeterAdmin(); }).catch(function (e) { status('mr-status', e.message, 'err'); }); }
+    if (m.flagOk) { box.appendChild(el('span', 'hint', 'Marked not a leak')); act('Undo', function () { notLeak(false); }); return box; }
+    var a = m.alert;
+    box.appendChild(el('span', 'hu-flag', '⚠ ' + (a.times ? a.times + '× ' + (a.basis === 'own' ? 'usual' : 'typical') : 'High use')));
+    if (a.usual != null) box.appendChild(el('span', 'hint', (a.basis === 'own' ? 'Usually ' : 'Typical ') + nfmt(a.usual)));
+    if (m.leakTaskId) box.appendChild(el('span', 'hint', m.leakStatus === 'done' ? 'Leak fixed' : 'In Leaks & repairs'));
+    else act('Add to leaks', function () {
+      api('POST', '/api/admin/tasks', { kind: 'repair', meterId: m.id, quarter: d.quarter, address: m.address,
+        title: 'High water use' + (m.address ? ' at ' + m.address : '') + (m.meterNo ? ' (meter ' + m.meterNo + ')' : ''),
+        details: d.label + ': used ' + nfmt(m.usage) + (a.usual != null ? ', usually about ' + nfmt(a.usual) + ' a quarter' : '') + '. Possible leak on the owner\'s side.' })
+        .then(function () { status('mr-status', 'Added to Leaks & repairs.', 'ok'); return loadMeterAdmin(); }).catch(function (e) { status('mr-status', e.message, 'err'); });
+    });
+    act('Not a leak', function () { notLeak(true); });
+    return box;
   }
   function meterEditRow(m) {
     var tr = el('tr', 'mr-edit'), td = el('td'); td.colSpan = 10;

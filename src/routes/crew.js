@@ -136,12 +136,17 @@ r.get('/:slug/road-photo/:id', A.requireCrew, async (req, res) => {
 const MT = require('../meters');
 r.get('/:slug/meters', A.requireCrew, F.need('w_meters'), async (req, res) => {
   const rt = await MT.route(req.company);
-  res.json({ ...rt, meters: rt.meters.map(m => ({ id: m.id, seq: m.seq, account: m.account, meterNo: m.meterNo, name: m.name, address: m.address, notes: m.notes,
-    previous: m.previous, current: m.current, usage: m.usage, readBy: m.readBy, readNotes: m.readNotes })) });
+  res.json({ ...rt, meters: rt.meters.map(crewMeter) });
 });
+const crewMeter = m => ({ id: m.id, seq: m.seq, account: m.account, meterNo: m.meterNo, name: m.name, address: m.address, notes: m.notes,
+  previous: m.previous, current: m.current, usage: m.usage, readBy: m.readBy, readNotes: m.readNotes, alert: m.alert, leakTaskId: m.leakTaskId });
 r.post('/:slug/meters/:id/read', A.requireCrew, F.need('w_meters'), async (req, res) => {
-  await MT.read(req.company, req.crew, Number(req.params.id), { reading: (req.body || {}).reading, notes: (req.body || {}).notes });
-  res.json({ ok: true });
+  const b = { ...(req.body || {}) }, now = MT.quarterOf(req.company);
+  // A reading saved offline at the end of a quarter can arrive just after: allow the quarter before, nothing older.
+  if (!/^[0-9]{4}-Q[1-4]$/.test(String(b.quarter || '')) || MT.quartersBetween(b.quarter, now) > 1) b.quarter = now;
+  await MT.read(req.company, req.crew, Number(req.params.id), { reading: b.reading, notes: b.notes, quarter: b.quarter });
+  const m = (await MT.route(req.company, b.quarter)).meters.find(x => x.id === Number(req.params.id));
+  res.json({ ok: true, meter: m ? crewMeter(m) : null });
 });
 
 // Members list: read-only search, only for people the boss has switched it on for.

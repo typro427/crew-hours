@@ -103,11 +103,21 @@ async function create(companyId, b) {
   if (n.n >= 500) V.bad('That is a lot of open tasks. Finish or delete some first.');
   const photos = (Array.isArray(b.photos) ? b.photos : []).map(photoBytes);
   if (photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos.`);
-  await db.tx(async t => {
+  const id = await db.tx(async t => {
     const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, kind, cost, address, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id', [companyId, v.title, v.details, v.due, v.assigned, kindOf(b.kind), v.cost, v.address, v.qty]);
     for (const p of photos) await t.q('INSERT INTO task_photos (task_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [r.id, companyId, p.mime, p.buf]);
+    return r.id;
   });
+  await fromMeter(companyId, b, id, b.quarter);
+  return id;
 }
+
+/** A leak report made from a high meter reading: remember which reading it came from. */
+async function fromMeter(companyId, b, taskId, quarter) {
+  if (!b.meterId || kindOf(b.kind) !== 'repair' || !/^[0-9]{4}-Q[1-4]$/.test(String(quarter || ''))) return;
+  await require('./meters').linkLeak(companyId, Number(b.meterId), quarter, taskId);
+}
+const cleanRef = v => { const s = String(v || '').trim(); return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null; };
 
 async function update(companyId, id, b) {
   const cur = await db.one('SELECT *, to_char(due, \'YYYY-MM-DD\') AS due FROM tasks WHERE id=$1 AND company_id=$2', [id, companyId]);
@@ -131,11 +141,15 @@ async function createByCrew(company, crew, b) {
   const kind = kindOf(b.kind);
   const photos = (Array.isArray(b.photos) ? b.photos : []).map(photoBytes);   // e.g. a picture of the part to order
   if (photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos.`);
-  await db.tx(async t => {
-    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind, cost, address, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
-      [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind, roughCost(b.cost), cleanAddress(b.address), cleanQty(b.qty)]);
+  const ref = cleanRef(b.clientRef);
+  if (ref && await db.one('SELECT 1 FROM tasks WHERE company_id=$1 AND client_ref=$2', [company.id, ref])) return;   // sent again from the phone's outbox
+  const id = await db.tx(async t => {
+    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind, cost, address, qty, client_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
+      [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind, roughCost(b.cost), cleanAddress(b.address), cleanQty(b.qty), ref]);
     for (const p of photos) await t.q('INSERT INTO task_photos (task_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [r.id, company.id, p.mime, p.buf]);
+    return r.id;
   });
+  await fromMeter(company.id, b, id, require('./meters').quarterOf(company));
   notifyNew(company, crew.name, title, details, !!b.forMe, kind, due, roughCost(b.cost), cleanQty(b.qty)).catch(() => {});   // logged in email.js
 }
 
@@ -151,13 +165,15 @@ async function progress(companyId, id, who, b) {
   const note = String((b && b.notes) || '').trim().slice(0, 2000);
   const photos = (Array.isArray(b && b.photos) ? b.photos : []).map(photoBytes);
   if (!note && !photos.length) V.bad('Add a photo or a few words.');
+  const ref = cleanRef(b && b.clientRef);
+  if (ref && await db.one('SELECT 1 FROM task_updates WHERE company_id=$1 AND client_ref=$2', [companyId, ref])) return;   // already got it
   const have = (await db.one('SELECT count(*)::int AS n FROM task_photos WHERE task_id=$1', [id])).n;
   if (have + photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos per job. This one has ${have}.`);
   const n = (await db.one('SELECT count(*)::int AS n FROM task_updates WHERE task_id=$1', [id])).n;
   if (n >= 50) V.bad('That job has a lot of updates already.');
   await db.tx(async q => {
-    const u = await q.one('INSERT INTO task_updates (task_id, company_id, crew_id, by_name, note) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [id, companyId, who.crew ? who.crew.id : null, who.crew ? who.crew.name : (who.boss || 'Boss'), note]);
+    const u = await q.one('INSERT INTO task_updates (task_id, company_id, crew_id, by_name, note, client_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [id, companyId, who.crew ? who.crew.id : null, who.crew ? who.crew.name : (who.boss || 'Boss'), note, ref]);
     for (const p of photos) await q.q('INSERT INTO task_photos (task_id, company_id, mime, data, update_id) VALUES ($1,$2,$3,$4,$5)', [id, companyId, p.mime, p.buf, u.id]);
   });
 }

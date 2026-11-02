@@ -20,17 +20,81 @@ async function route(company, quarter, opts = {}) {
   const rows = await db.q(`SELECT mt.id, mt.seq, mt.account, mt.meter_no AS "meterNo", mt.name, mt.address, mt.notes,
       mt.name_check AS "nameCheck", mt.old_name AS "oldName", mt.active, mt.qb_customer AS "qbCustomer",
       cur.reading AS current, cur.read_at AS "readAt", cur.notes AS "readNotes", cc.name AS "readBy", cur.id AS "readId",
-      COALESCE(prev.reading, mt.start_reading) AS previous, prev.month AS "previousQuarter"
+      COALESCE(prev.reading, mt.start_reading) AS previous, prev.month AS "previousQuarter",
+      cur.leak_task_id AS "leakTaskId", cur.flag_ok AS "flagOk", lt.status AS "leakStatus"
     FROM meters mt
     LEFT JOIN meter_reads cur ON cur.meter_id=mt.id AND cur.month=$2
     LEFT JOIN crew cc ON cc.id=cur.crew_id
+    LEFT JOIN tasks lt ON lt.id=cur.leak_task_id
     LEFT JOIN LATERAL (SELECT reading, month FROM meter_reads p WHERE p.meter_id=mt.id AND p.month<$2 ORDER BY p.month DESC LIMIT 1) prev ON TRUE
     WHERE mt.company_id=$1 ${opts.all ? '' : 'AND mt.active'} ORDER BY mt.seq, mt.id`, [company.id, m]);
   rows.forEach(r => { r.usage = r.current != null && r.previous != null ? Math.round((r.current - r.previous) * 100) / 100 : null; });
+  const { usual, typical } = await usageHistory(company.id, m, rows);
+  rows.forEach(r => {
+    r.gap = r.previousQuarter ? quartersBetween(r.previousQuarter, m) : 1;
+    r.usual = usual.has(r.id) ? usual.get(r.id) : null;
+    r.alert = r.flagOk ? null : alertFor(r, typical);
+  });
   const withMeter = rows.filter(r => r.meterNo && r.active);
-  return { quarter: m, label: label(m), thisQuarter: quarterOf(company), meters: rows,
+  return { quarter: m, label: label(m), thisQuarter: quarterOf(company), meters: rows, typical,
+           highUse: rows.filter(r => r.active && r.alert && r.alert.level === 'high').length,
            read: withMeter.filter(r => r.current != null).length, toRead: withMeter.length };
 }
+
+// ---- High-usage alerts ----
+const quartersBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 4 + Number(b.slice(6)) - Number(a.slice(6));
+const median = xs => { if (!xs.length) return null; const s = [...xs].sort((x, y) => x - y), h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+const r2 = n => Math.round(n * 100) / 100;
+
+/**
+ * Each meter's usual use per quarter (average of its last 4 quarters before this one), and the typical use
+ * across all meters (median, from at least 10 quarterly usages), so a big jump stands out.
+ */
+async function usageHistory(companyId, quarter, rows) {
+  const reads = await db.q('SELECT meter_id, month, reading::float AS reading FROM meter_reads WHERE company_id=$1 AND month<$2 ORDER BY meter_id, month', [companyId, quarter]);
+  const start = new Map((await db.q('SELECT id, start_reading::float AS s FROM meters WHERE company_id=$1', [companyId])).map(r => [r.id, r.s]));
+  const per = new Map();
+  let lastId = null, lastQ = null, lastV = null;
+  for (const r of reads) {
+    if (r.meter_id !== lastId) { lastId = r.meter_id; lastQ = null; lastV = start.get(r.meter_id); }
+    if (lastV != null && r.reading >= lastV) {
+      const u = (r.reading - lastV) / (lastQ ? Math.max(1, quartersBetween(lastQ, r.month)) : 1);
+      if (!per.has(r.meter_id)) per.set(r.meter_id, []);
+      per.get(r.meter_id).push(u);
+    }
+    lastQ = r.month; lastV = r.reading;
+  }
+  const usual = new Map(), all = [];
+  per.forEach((us, id) => { const last = us.slice(-4); usual.set(id, r2(last.reduce((a, b) => a + b, 0) / last.length)); all.push(...last.filter(x => x > 0)); });
+  rows.forEach(r => { if (r.usage > 0) all.push(r.usage / (r.previousQuarter ? Math.max(1, quartersBetween(r.previousQuarter, quarter)) : 1)); });
+  return { usual, typical: all.length >= 10 ? r2(median(all)) : null };
+}
+
+/**
+ * high: at least twice this meter's usual use (and up by at least a typical meter's quarter),
+ *       or, with no history yet, 4x what a typical meter uses. low: lower than the last reading.
+ */
+function alertFor(m, typical) {
+  if (m.usage == null) return null;
+  if (m.usage < 0) return { level: 'low' };
+  const perQ = m.usage / Math.max(1, m.gap || 1), jump = typical || 0;
+  if (m.usual != null) {
+    if (m.usual > 0 ? perQ >= 2 * m.usual && perQ - m.usual >= jump : jump > 0 && perQ >= jump)
+      return { level: 'high', basis: 'own', usual: m.usual, times: m.usual > 0 ? Math.round(perQ / m.usual * 10) / 10 : null };
+  } else if (typical && perQ >= 4 * typical) return { level: 'high', basis: 'typical', usual: typical, times: Math.round(perQ / typical * 10) / 10 };
+  return null;
+}
+
+/** The boss marks a high reading as not a leak (pool fill, irrigation...), or undoes that. */
+async function flagOk(company, meterId, quarter, ok) {
+  const q = validQuarter(quarter) ? quarter : quarterOf(company);
+  const r = await db.q('UPDATE meter_reads SET flag_ok=$1 WHERE company_id=$2 AND meter_id=$3 AND month=$4 RETURNING id', [!!ok, company.id, meterId, q]);
+  if (!r.length) V.bad('That meter has no reading for that quarter.');
+}
+
+/** Link the leak report made from a high reading to that reading. */
+const linkLeak = (companyId, meterId, quarter, taskId) =>
+  db.q('UPDATE meter_reads SET leak_task_id=$1 WHERE company_id=$2 AND meter_id=$3 AND month=$4', [taskId, companyId, meterId, quarter]);
 
 /** Save (or change) this quarter's reading for one meter. */
 async function read(company, crew, meterId, b) {
@@ -45,7 +109,8 @@ async function read(company, crew, meterId, b) {
   const n = Number(b.reading);
   if (!isFinite(n) || n < 0 || n > 1e10) V.bad('The reading must be a number.');
   await db.q(`INSERT INTO meter_reads (company_id, meter_id, reading, month, crew_id, notes) VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (meter_id, month) DO UPDATE SET reading=EXCLUDED.reading, crew_id=EXCLUDED.crew_id, notes=EXCLUDED.notes, read_at=now()`,
+    ON CONFLICT (meter_id, month) DO UPDATE SET reading=EXCLUDED.reading, crew_id=EXCLUDED.crew_id, notes=EXCLUDED.notes, read_at=now(),
+      flag_ok = meter_reads.flag_ok AND meter_reads.reading = EXCLUDED.reading`,
     [company.id, meterId, n, month, crew ? crew.id : null, String(b.notes || '').trim().slice(0, 500)]);
 }
 
@@ -238,4 +303,4 @@ async function skip(companyId, address, on) {
   else await db.q('DELETE FROM meter_skips WHERE company_id=$1 AND address=$2', [companyId, a]);
 }
 
-module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel, add, notOnRoute, skip, addrKey, sameProperty, streetOf };
+module.exports = { flagOk, linkLeak, alertFor, quartersBetween, route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel, add, notOnRoute, skip, addrKey, sameProperty, streetOf };

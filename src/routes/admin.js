@@ -195,6 +195,7 @@ r.post('/meters/import-xlsx', async (req, res) => {
 });
 r.put('/meters/:id', async (req, res) => { await MT.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await MT.route(req.company, (req.body || {}).quarter, { all: true })); });
 r.post('/meters/:id/read', async (req, res) => { await MT.read(req.company, null, Number(req.params.id), req.body || {}); res.json({ ok: true }); });
+r.post('/meters/:id/not-a-leak', async (req, res) => { const b = req.body || {}; await MT.flagOk(req.company, Number(req.params.id), b.quarter, b.ok !== false); res.json(await MT.route(req.company, b.quarter, { all: true })); });
 r.get('/meters.csv', async (req, res) => {
   const rt = await MT.route(req.company, req.query.quarter);
   const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };

@@ -100,7 +100,7 @@
         </div>
         <div class="mb-search">
           <input id="mr-q" type="search" placeholder="Find: name, address, meter #, act #, seq" autocomplete="off" aria-label="Find a meter">
-          <select id="mr-show" aria-label="Which meters"><option value="all">All meters</option><option value="unread">Not read yet</option><option value="read">Read</option><option value="low">Lower than last</option><option value="check">Names to check</option><option value="inactive">Removed</option></select>
+          <select id="mr-show" aria-label="Which meters"><option value="all">All meters</option><option value="unread">Not read yet</option><option value="read">Read</option><option value="high">High use (possible leak)</option><option value="low">Lower than last</option><option value="check">Names to check</option><option value="inactive">Removed</option></select>
         </div>
         <div class="tablebox"><table class="roads mr-table"><thead><tr><th>Seq</th><th>Act #</th><th>Customer</th><th>Service address</th><th>Meter ID</th><th class="num">Last</th><th class="num">Current</th><th class="num">Usage</th><th>Read by</th><th></th></tr></thead><tbody id="mr-body"></tbody></table></div>
         <p class="hint" id="mr-empty" hidden></p>

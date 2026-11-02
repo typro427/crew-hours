@@ -155,6 +155,9 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_phone TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_checked BOOLEAN NOT NULL DEFAULT FALSE;
+-- Offline: the phone gives each report an id, so sending it twice never makes two.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS client_ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_client_ref ON tasks (company_id, client_ref) WHERE client_ref IS NOT NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS qty TEXT NOT NULL DEFAULT '';   -- how many to order: "4", "2 boxes", "100 ft"
 -- Progress updates while a job is underway: a note and/or photos, before it's marked done.
 CREATE TABLE IF NOT EXISTS task_updates (
@@ -167,6 +170,8 @@ CREATE TABLE IF NOT EXISTS task_updates (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS task_updates_task ON task_updates (task_id);
+ALTER TABLE task_updates ADD COLUMN IF NOT EXISTS client_ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS task_updates_client_ref ON task_updates (company_id, client_ref) WHERE client_ref IS NOT NULL;
 ALTER TABLE task_photos ADD COLUMN IF NOT EXISTS update_id INTEGER REFERENCES task_updates(id) ON DELETE CASCADE;
 -- Which parts of the app each crew member can use (null = everything).
 ALTER TABLE crew ADD COLUMN IF NOT EXISTS features JSONB;
@@ -215,6 +220,9 @@ CREATE TABLE IF NOT EXISTS meter_reads (
   notes      TEXT NOT NULL DEFAULT '',
   UNIQUE (meter_id, month)
 );
+-- High-usage alerts: the leak report made from a read, or "not a leak" from the boss.
+ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS leak_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
+ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS flag_ok BOOLEAN NOT NULL DEFAULT FALSE;
 -- Meters are read quarterly: turn any monthly keys (YYYY-MM) into quarters (YYYY-Q#), keeping the latest read per quarter.
 DELETE FROM meter_reads a USING meter_reads b
   WHERE a.month ~ '^[0-9]{4}-[0-9]{2}$' AND b.month ~ '^[0-9]{4}-[0-9]{2}$' AND a.meter_id=b.meter_id

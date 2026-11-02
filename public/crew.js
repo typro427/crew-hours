@@ -44,7 +44,7 @@
     getRoads:        function(a){ return ["GET", "/roads?kind=" + (a[1]||"road")]; },
     getReadings:     function(){ return ["GET", "/readings"]; },
     getMeters:       function(){ return ["GET", "/meters"]; },
-    readMeter:       function(a){ return ["POST", "/meters/" + a[1] + "/read", { reading:a[2] }]; },
+    readMeter:       function(a){ return ["POST", "/meters/" + a[1] + "/read", { reading:a[2], quarter:a[3] }]; },
     searchMembers:   function(a){ return ["GET", "/members?q=" + encodeURIComponent(a[1]||"") + "&status=" + encodeURIComponent(a[2]||"")]; },
     logReadings:     function(a){ return ["POST", "/readings", a[1]]; },
     delReading:      function(a){ return ["DELETE", "/readings/" + a[1]]; },
@@ -876,7 +876,28 @@
     }
     if(m.readBy) info.appendChild(el("span","","by "+m.readBy));
     if(m.notes) info.appendChild(el("span","",m.notes));
+    if(m.alert && m.alert.level==="high") info.appendChild(highUse(m));
   }
+  // A reading far above this meter's usual use: maybe a leak on the owner's side.
+  function highUse(m){
+    var box=el("div","highuse"), a=m.alert;
+    box.appendChild(el("b","", "⚠ High use"+(a.times ? ": "+a.times+"× "+(a.basis==="own" ? "this meter's usual" : "a typical meter") : "")+". Possible leak."));
+    if(a.usual!=null) box.appendChild(el("span","", (a.basis==="own" ? "Usually about " : "Typical meter: about ")+fmtN(a.usual)+" a quarter."));
+    if(m.leakTaskId){ box.appendChild(el("span","ok","In Leaks & repairs.")); return box; }
+    if(!features.w_repairs) return box;
+    var b=el("button","ghost","Report possible leak"); b.type="button";
+    b.onclick=function(){
+      if(busy) return; busy=true; b.disabled=true;
+      call("newTask",[token,{ kind:"repair", meterId:m.id, address:m.address, forMe:false, clientRef:newRef(),
+        title:"High water use"+(m.address ? " at "+m.address : "")+(m.meterNo ? " (meter "+m.meterNo+")" : ""),
+        details:mtData.label+": used "+fmtN(m.usage)+(a.usual!=null ? ", usually about "+fmtN(a.usual)+" a quarter" : "")+". Possible leak on the owner's side." }],
+        function(){ busy=false; m.leakTaskId=true; box.replaceWith(highUse(m)); say($("mt-status"),"Added to Leaks & repairs. The boss got an email.","ok"); },
+        function(msg){ busy=false; b.disabled=false; say($("mt-status"),msg,"err"); });
+    };
+    box.appendChild(b);
+    return box;
+  }
+  function newRef(){ var s="r"+Date.now().toString(36); for(var i=0;i<10;i++) s+="abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]; return s; }
   function drawMeters(){
     mtProgress();
     var q=$("mt-q").value.trim().toLowerCase(), show=$("mt-show").value, list=$("mt-list"); list.innerHTML=""; mtRows={};
@@ -902,8 +923,9 @@
         if(v===saved) return;
         if(v!=="" && !/^\d+(\.\d+)?$/.test(v)){ say($("mt-status"),"Readings are numbers only.","err"); inp.focus(); return; }
         say($("mt-status"),"Saving "+(m.name||"")+"…");
-        call("readMeter",[token, m.id, v], function(){
+        call("readMeter",[token, m.id, v, mtData.quarter], function(res){
           saved=v; m.current = v==="" ? null : Number(v); m.readBy = v==="" ? null : $("who-name").textContent;
+          if(res && res.meter){ m.alert=res.meter.alert; m.usage=res.meter.usage; m.leakTaskId=res.meter.leakTaskId; }
           row.className="mrow"+(m.current!=null?" done":""); mtInfo(m, info); mtProgress();
           say($("mt-status"), v==="" ? "Cleared." : "Saved "+(m.name||"")+": "+fmtN(m.current)+".","ok");
         }, function(msg){ say($("mt-status"),msg,"err"); });

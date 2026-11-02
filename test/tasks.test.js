@@ -515,3 +515,54 @@ test('leaks & repairs: progress photos and notes while the job is open', async (
   assert.strictEqual((await sam('POST', `/tasks/${job.id}/progress`, { notes: 'x' })).status, 403);
   await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, w_repairs: true } });
 });
+
+test('high water use: flagged against the meter\'s usual use, report a leak from it, or mark not a leak', async () => {
+  const db2 = require('../src/db');
+  const c = await db2.one("SELECT id FROM companies WHERE name='Deerfield'");
+  await O('POST', '/api/admin/meters/import', { meters: Array.from({ length: 12 }, (_, i) => ({ seq: i + 1, account: 'A' + i, meterNo: 'M' + i, name: 'Owner ' + i, address: (100 + i) + ' Deer Meadow', startReading: 1000 })) });
+  const ms = (await O('GET', '/api/admin/meters')).body.meters;
+  // two past quarters of ~100 a quarter for every meter
+  const q = (await O('GET', '/api/admin/meters')).body.thisQuarter;
+  const back = (qq, n) => { let y = Number(qq.slice(0, 4)), k = Number(qq.slice(6)) - n; while (k < 1) { k += 4; y--; } return y + '-Q' + k; };
+  for (const m of ms) {
+    await db2.q('INSERT INTO meter_reads (company_id, meter_id, reading, month) VALUES ($1,$2,1100,$3),($1,$2,1200,$4)', [c.id, m.id, back(q, 2), back(q, 1)]);
+  }
+  // normal, high, lower
+  await O('POST', `/api/admin/meters/${ms[0].id}/read`, { reading: '1290', quarter: q });
+  let r = await jake('POST', `/meters/${ms[1].id}/read`, { reading: '1650' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.meter.alert.level, 'high'); assert.strictEqual(r.body.meter.alert.basis, 'own');
+  assert.ok(r.body.meter.alert.times >= 4, JSON.stringify(r.body.meter.alert));
+  await O('POST', `/api/admin/meters/${ms[2].id}/read`, { reading: '1100', quarter: q });
+  let d = (await O('GET', '/api/admin/meters')).body;
+  const by = id => d.meters.find(m => m.id === id);
+  assert.strictEqual(by(ms[0].id).alert, null);
+  assert.strictEqual(by(ms[2].id).alert.level, 'low');
+  assert.strictEqual(d.highUse, 1); assert.strictEqual(d.typical, 100);
+  // crew reports a leak from it: linked, owner looked up, no double report from a resend
+  const ref = 'test-ref-12345';
+  r = await jake('POST', '/tasks', { kind: 'repair', title: 'High water use at 101 Deer Meadow', address: '101 Deer Meadow', meterId: ms[1].id, clientRef: ref });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  await jake('POST', '/tasks', { kind: 'repair', title: 'High water use at 101 Deer Meadow', address: '101 Deer Meadow', meterId: ms[1].id, clientRef: ref });
+  const leaks = (await O('GET', '/api/admin/tasks?kind=repair')).body.tasks.filter(t => t.title === 'High water use at 101 Deer Meadow');
+  assert.strictEqual(leaks.length, 1, 'sent twice, saved once');
+  d = (await O('GET', '/api/admin/meters')).body;
+  assert.strictEqual(by(ms[1].id).leakTaskId, leaks[0].id);
+  assert.strictEqual((await jake('GET', '/meters')).body.meters.find(m => m.id === ms[1].id).leakTaskId, leaks[0].id);
+  // not a leak: the flag goes away, and comes back if the reading changes
+  r = await O('POST', `/api/admin/meters/${ms[1].id}/not-a-leak`, { quarter: q });
+  assert.strictEqual(r.body.meters.find(m => m.id === ms[1].id).alert, null);
+  assert.strictEqual(r.body.highUse, 0);
+  await O('POST', `/api/admin/meters/${ms[1].id}/read`, { reading: '1700', quarter: q });
+  d = (await O('GET', '/api/admin/meters')).body;
+  assert.strictEqual(by(ms[1].id).alert.level, 'high');
+  // a meter with no history: compared with a typical meter (4x)
+  const fresh = (await O('POST', '/api/admin/meters', { name: 'New, Nina', address: '500 Deer Meadow', meterNo: 'N1', startReading: '0' })).body.id;
+  await O('POST', `/api/admin/meters/${fresh}/read`, { reading: '900', quarter: q });
+  d = (await O('GET', '/api/admin/meters')).body;
+  assert.strictEqual(by(fresh).alert.basis, 'typical');
+  // old quarter not allowed from the crew app: falls back to this quarter
+  r = await jake('POST', `/meters/${ms[3].id}/read`, { reading: '1300', quarter: '2020-Q1' });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual((await db2.one('SELECT month FROM meter_reads WHERE meter_id=$1 ORDER BY month DESC LIMIT 1', [ms[3].id])).month, q);
+});
