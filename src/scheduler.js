@@ -40,6 +40,11 @@ async function tick(now = new Date()) {
       if (!paused && date === T.shift(ws, 6) && hour >= c.missing_hour) {
         if (await claim(c.id, 'missing', ws)) await sendOrRelease(c.id, 'missing', ws, () => R.sendMissing(c));
       }
+      // Address jobs: on the 1st, the month before broken out by client (only if there were jobs).
+      if (!paused && date.slice(8) === '01' && hour >= c.summary_hour) {
+        const JB = require('./jobbilling'), pm = JB.prevMonth(date);
+        if (await claim(c.id, 'jobs-month', pm + '-01')) await sendOrRelease(c.id, 'jobs-month', pm + '-01', () => JB.sendMonth(c, pm));
+      }
       // Nightly Google Drive backup. A failure is shown in the dashboard; it tries again the next night (or "Back up now").
       if (c.gdrive_token && GD.enabled() && hour >= BACKUP_HOUR && await claim(c.id, 'gdrive', date)) {
         GD.backupNow(c.id).catch(e => console.error(`[gdrive] company ${c.id}:`, e.message));

@@ -238,6 +238,25 @@ r.get('/receipts/:id', async (req, res) => {
   const p = await J.receipt(req.company.id, Number(req.params.id));
   p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
 });
+const JB = require('../jobbilling');
+const jbOut = async (req, m, crew) => { const b = await JB.month(req.company, m, crew); return b; };
+r.get('/jobs/month', async (req, res) => res.json(await jbOut(req, req.query.month, req.query.crew)));
+r.put('/job-billing', async (req, res) => { await JB.save(req.company.id, req.body || {}); res.json(await jbOut(req, (req.body || {}).month, (req.body || {}).crew)); });
+r.get('/jobs/month.csv', async (req, res) => {
+  const f = JB.breakdownCsv(await jbOut(req, req.query.month, req.query.crew));
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${f.name}"`, 'Cache-Control': 'no-store' }).send(f.body);
+});
+r.get('/jobs/invoices.csv', async (req, res) => {
+  const f = await JB.invoicesCsv(req.company, await jbOut(req, req.query.month, req.query.crew), req.query.part);
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${f.name}"`, 'Cache-Control': 'no-store' }).send(f.body);
+});
+r.post('/jobs/month/email', async (req, res) => {
+  if (A.limited('jobmail:' + req.company.id, 10, 60 * 60e3)) return res.status(429).json({ error: 'Too many emails. Try again in an hour.' });
+  A.fail('jobmail:' + req.company.id, 60 * 60e3);
+  const e = await JB.sendMonth(req.company, (req.body || {}).month);
+  if (!e) V.bad('No address jobs that month.');
+  res.json({ ok: true, to: await R.recipients(req.company) });
+});
 r.get('/jobs.csv', async (req, res) => {
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="address-jobs-${(req.query.from || 'this-month')}.csv"`, 'Cache-Control': 'no-store' })
     .send(J.csv(await J.forOwner(req.company.id, req.query)));

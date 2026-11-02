@@ -97,6 +97,28 @@
       <p class="hint" id="jb-empty" hidden>No jobs in these dates.</p>
       <p class="hint">One entry per visit, from the crew's <b>Addresses</b> tab. Times here are a job log only; they don't change anyone's hours. Turn it on for someone under <b>Crew &amp; PINs</b> → “Address jobs”. Untick “My hours” there for anyone who doesn't keep a time sheet.</p>
     </div>
+    <form class="card" id="ji-form" novalidate>
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><h3>Monthly invoices by client</h3><p class="hint" id="ji-sum" style="margin:0"></p></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><input type="month" id="ji-month" aria-label="Month"><button class="btn ghost small" type="button" id="ji-email">Email me this month</button><a class="btn ghost small" id="ji-csv">Download breakdown (CSV)</a></div>
+      </div>
+      <div class="mb-grid">
+        <div><label for="ji-rate">Labor rate ($ per hour on site)</label><input id="ji-rate" inputmode="decimal" placeholder="e.g. 65"></div>
+        <div><label for="ji-visit">Charge per visit ($) <span class="hint">(optional)</span></label><input id="ji-visit" inputmode="decimal" placeholder="e.g. 25"></div>
+        <div><label for="ji-chem">Markup on chemicals (%)</label><input id="ji-chem" inputmode="decimal" placeholder="0"></div>
+        <div><label for="ji-mat">Markup on materials (%)</label><input id="ji-mat" inputmode="decimal" placeholder="0"></div>
+        <div><label for="ji-due">Days until due</label><input id="ji-due" inputmode="numeric" placeholder="30"></div>
+        <div><label for="ji-prefix">Invoice # starts with</label><input id="ji-prefix" maxlength="8" placeholder="J"></div>
+        <div><label for="ji-litem">QuickBooks item: labor</label><input id="ji-litem" maxlength="100" placeholder="Labor"></div>
+        <div><label for="ji-citem">QuickBooks item: chemicals</label><input id="ji-citem" maxlength="100" placeholder="Chemicals"></div>
+        <div><label for="ji-mitem">QuickBooks item: materials</label><input id="ji-mitem" maxlength="100" placeholder="Materials"></div>
+        <div><label for="ji-vitem">QuickBooks item: visit charge</label><input id="ji-vitem" maxlength="100" placeholder="Service call"></div>
+      </div>
+      <div class="row"><button class="btn small" type="submit">Save rates</button><span class="status" id="ji-status" role="status"></span></div>
+      <div id="ji-files" class="row" style="flex-wrap:wrap;gap:8px"></div>
+      <div id="ji-clients"></div>
+      <p class="hint">Each property is one client and one invoice. The QuickBooks customer is the name on the meter at that address when it has one, otherwise the owner from the members list. Labor is hours on site × your rate; a visit with no time out has no labor. In QuickBooks: <b>Settings ⚙ → Import data → Invoices</b>. On the 1st of each month you get last month's breakdown by email.</p>
+    </form>
     <form class="card" id="jf-form" hidden novalidate>
       <div class="row" style="justify-content:space-between"><h3 id="jf-title">Add a job</h3><button class="btn ghost small" type="button" id="jf-cancel">Cancel</button></div>
       <div class="mb-grid">

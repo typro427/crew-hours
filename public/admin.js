@@ -562,7 +562,7 @@
     if (!$('jb-from').value) { var t = me_today() || new Date().toISOString().slice(0, 10); $('jb-from').value = t.slice(0, 8) + '01'; $('jb-to').value = t; }
     if (!jb.addrs) { jb.addrs = []; api('GET', '/api/admin/jobs/addresses').then(function (r) { jb.addrs = r.addresses; var dl = $('jf-addrs'); dl.innerHTML = ''; r.addresses.forEach(function (a) { var o = el('option'); o.value = a.address; o.label = a.owner; dl.appendChild(o); }); }).catch(function () { jb.addrs = null; }); }
     return Promise.all([api('GET', '/api/admin/jobs?' + jbQuery()), api('GET', '/api/admin/crew')]).then(function (r) {
-      jb.data = r[0]; jb.crew = r[1].crew; fillJobCrew(); drawJobs();
+      jb.data = r[0]; jb.crew = r[1].crew; fillJobCrew(); drawJobs(); loadJobMonth();
     }).catch(function (e) { status('jf-status', e.message, 'err'); });
   }
   function fillJobCrew() {
@@ -604,6 +604,50 @@
     status('jf-status', ''); $('jf-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('jf-address').focus();
   }
   $('jb-add').onclick = function () { editJob(null); };
+  // ---- monthly invoices by client ----
+  function jiMonth() { return $('ji-month').value || (me_today() || new Date().toISOString().slice(0, 10)).slice(0, 7); }
+  function loadJobMonth() { $('ji-month').value = jiMonth(); return api('GET', '/api/admin/jobs/month?month=' + jiMonth() + '&crew=' + encodeURIComponent($('jb-crew').value)).then(drawJobMonth).catch(function (e) { status('ji-status', e.message, 'err'); }); }
+  $('ji-month').onchange = loadJobMonth;
+  function drawJobMonth(b) {
+    var s = b.settings, set = function (id, v) { if (document.activeElement !== $(id)) $(id).value = v == null ? '' : v; };
+    set('ji-rate', s.laborRate); set('ji-visit', s.visitCharge); set('ji-chem', s.chemMarkup || ''); set('ji-mat', s.matMarkup || ''); set('ji-due', s.dueDays); set('ji-prefix', s.prefix);
+    set('ji-litem', s.laborItem); set('ji-citem', s.chemItem); set('ji-mitem', s.matItem); set('ji-vitem', s.visitItem);
+    var t = b.totals, crewQ = '&crew=' + encodeURIComponent($('jb-crew').value);
+    $('ji-sum').textContent = b.label + ': ' + money2(t.total) + ' to bill · ' + t.clients + ' client' + (t.clients === 1 ? '' : 's') + ' · ' + t.visits + ' visit' + (t.visits === 1 ? '' : 's') + ' · ' + t.hours + ' h' + (t.open ? ' · ' + t.open + ' with no time out' : '');
+    $('ji-csv').href = '/api/admin/jobs/month.csv?month=' + b.month + crewQ;
+    var files = $('ji-files'); files.innerHTML = '';
+    for (var p = 1; p <= b.parts; p++) { var a = el('a', 'btn ghost small', 'QuickBooks invoices' + (b.parts > 1 ? ' part ' + p + ' of ' + b.parts : '')); a.href = '/api/admin/jobs/invoices.csv?month=' + b.month + '&part=' + p + crewQ; files.appendChild(a); }
+    var box = $('ji-clients'); box.innerHTML = '';
+    b.clients.forEach(function (c) {
+      var d = el('details', 'ji-client'), sm = el('summary');
+      sm.appendChild(el('b', '', c.customer)); sm.appendChild(el('span', 'hint', ' ' + c.address + ' · ' + c.totals.visits + ' visit' + (c.totals.visits === 1 ? '' : 's') + ' · ' + c.totals.hours + ' h'));
+      sm.appendChild(el('span', 'ji-tot', money2(c.totals.total)));
+      d.appendChild(sm);
+      var tb = el('table', 'roads'), h = el('tr'); ['Date', 'Who', 'In', 'Out', 'Hours', 'Labor', 'Chemicals', 'Materials', 'Visit', 'Total'].forEach(function (x, i) { h.appendChild(el('th', i > 3 ? 'num' : '', x)); });
+      var th = el('thead'); th.appendChild(h); tb.appendChild(th); var bd = el('tbody'); tb.appendChild(bd);
+      c.visits.forEach(function (v) {
+        var tr = el('tr');
+        [v.day, v.crew, ampm(v.timeIn), v.open ? 'no time out' : ampm(v.timeOut)].forEach(function (x) { tr.appendChild(el('td', '', x)); });
+        [v.hours == null ? '' : String(v.hours), money2(v.labor), money2(v.chem), money2(v.mat), v.visit ? money2(v.visit) : '', money2(v.total)].forEach(function (x) { tr.appendChild(el('td', 'num', x)); });
+        bd.appendChild(tr);
+      });
+      var ft = el('tr', 'ji-sub'); ['Total', '', '', ''].forEach(function (x) { ft.appendChild(el('td', '', x)); });
+      [String(c.totals.hours), money2(c.totals.labor), money2(c.totals.chem), money2(c.totals.mat), c.totals.visit ? money2(c.totals.visit) : '', money2(c.totals.total)].forEach(function (x) { ft.appendChild(el('td', 'num', x)); });
+      bd.appendChild(ft);
+      var wrap = el('div', 'tablebox'); wrap.appendChild(tb); d.appendChild(wrap); box.appendChild(d);
+    });
+    if (!b.clients.length) box.appendChild(el('p', 'hint', 'No address jobs in ' + b.label + '.'));
+  }
+  $('ji-form').onsubmit = function (e) {
+    e.preventDefault();
+    api('PUT', '/api/admin/job-billing', { month: jiMonth(), crew: $('jb-crew').value, laborRate: $('ji-rate').value, visitCharge: $('ji-visit').value, chemMarkup: $('ji-chem').value, matMarkup: $('ji-mat').value,
+      dueDays: $('ji-due').value || 30, prefix: $('ji-prefix').value, laborItem: $('ji-litem').value, chemItem: $('ji-citem').value, matItem: $('ji-mitem').value, visitItem: $('ji-vitem').value })
+      .then(function (b) { drawJobMonth(b); status('ji-status', 'Saved.', 'ok'); }).catch(function (e2) { status('ji-status', e2.message, 'err'); });
+  };
+  $('ji-email').onclick = function () {
+    status('ji-status', 'Sending…');
+    api('POST', '/api/admin/jobs/month/email', { month: jiMonth() }).then(function (r) { status('ji-status', 'Sent to ' + [].concat(r.to).join(', ') + '.', 'ok'); }).catch(function (e2) { status('ji-status', e2.message, 'err'); });
+  };
   $('jf-cancel').onclick = function () { $('jf-form').hidden = true; jb.editing = null; };
   $('jf-rc').onchange = function () {
     var files = Array.prototype.slice.call($('jf-rc').files || [], 0, 10); $('jf-rc').value = '';

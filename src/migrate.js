@@ -155,6 +155,8 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_phone TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_checked BOOLEAN NOT NULL DEFAULT FALSE;
+-- Address jobs billing settings: labor rate, markups, visit charge, QuickBooks item names.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS job_billing JSONB;
 -- A crew member's own email: they get a weekly email of their hours and address jobs.
 ALTER TABLE crew ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '';
 -- Needs to order: ordered (status done) -> arrived, with the real cost.

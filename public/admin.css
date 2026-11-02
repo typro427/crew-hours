@@ -130,3 +130,8 @@ table.roads td.num{font-variant-numeric:tabular-nums}
 .jb-table tr.open td{background:color-mix(in srgb, var(--accent) 10%, transparent)}
 .jb-table tr.jb-note td{padding-top:0;border-top:0}
 .jb-table .t-thumbs img{width:44px;height:44px}
+#ji-month{width:auto}
+.ji-client{border-top:1px solid var(--line);padding:8px 0}
+.ji-client summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:4px 0}
+.ji-client .ji-tot{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.ji-client tr.ji-sub td{font-weight:700;border-top:2px solid var(--line)}

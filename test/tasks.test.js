@@ -698,3 +698,43 @@ test('crew weekly email: their own time sheet and address jobs, to the email on 
   assert.match(e.html, /Time sheet/); assert.ok(!/Address jobs/.test(e.html));
   await O('PUT', '/api/admin/crew/' + sam1.id, { email: '' });
 });
+
+test('address jobs invoices: monthly, one per client, everything broken out; QuickBooks file; monthly email', async () => {
+  const { send } = require('../src/email');
+  const db2 = require('../src/db'), H2 = require('../src/hours');
+  const c = await db2.one("SELECT * FROM companies WHERE name='Deerfield'");
+  const month = H2.today(c).slice(0, 7), day = H2.today(c);
+  const sam1 = (await O('GET', '/api/admin/crew')).body.crew.find(x => x.name === 'Sam');
+  await O('POST', '/api/admin/jobs', { crewId: sam1.id, address: '141 Deer Meadow Dr', day, timeIn: '08:00', timeOut: '09:30', chemCost: '20', materialCost: '10' });
+  await O('POST', '/api/admin/jobs', { crewId: sam1.id, address: '141 Deer Meadow Dr', day, timeIn: '13:00', timeOut: '14:00', chemCost: '5' });
+  let b = (await O('GET', '/api/admin/jobs/month?month=' + month)).body;
+  const pat = b.clients.find(x => x.address === '141 Deer Meadow Dr');
+  assert.ok(pat, JSON.stringify(b.clients.map(x => x.address)));
+  assert.strictEqual(pat.visits.length, 3, 'with the one from the weekly email test'); assert.strictEqual(pat.totals.hours, 3.5);
+  assert.strictEqual(pat.totals.labor, 0, 'no rate yet');
+  assert.strictEqual((await O('PUT', '/api/admin/job-billing', { laborRate: 'abc' })).status, 400);
+  b = (await O('PUT', '/api/admin/job-billing', { month, laborRate: '60', chemMarkup: '10', visitCharge: '15' })).body;
+  const p2 = b.clients.find(x => x.address === '141 Deer Meadow Dr');
+  assert.strictEqual(p2.totals.labor, 210); assert.strictEqual(p2.totals.chem, 40.7); assert.strictEqual(p2.totals.mat, 13); assert.strictEqual(p2.totals.visit, 45);
+  assert.strictEqual(p2.totals.total, 308.7);
+  assert.strictEqual(p2.customer, 'Pat Meadows', 'owner from the members list');
+  // breakdown CSV: each visit + client total + month total
+  const csv = (await O('GET', '/api/admin/jobs/month.csv?month=' + month)).body.toString();
+  assert.match(csv, /"Pat Meadows total","141 Deer Meadow Dr","3 visits",.*"308.7"/);
+  assert.match(csv, /total","\d+ clients"/);
+  // QuickBooks invoices: one invoice, lines for labor, chemicals, materials, visits
+  const inv = (await O('GET', '/api/admin/jobs/invoices.csv?month=' + month)).body.toString();
+  const lines = inv.split('\r\n').filter(l => l.includes('"Pat Meadows"'));
+  assert.strictEqual(lines.length, 4);
+  assert.ok(lines.every(l => l.startsWith(lines[0].slice(0, 14))), 'same invoice number');
+  assert.match(lines[0], /"Labor",".*","3.5","60","210.00"/);
+  assert.match(lines[3], /"Service call","3 visits: .*","3","15","45.00"/);
+  // email
+  send.outbox.length = 0;
+  const r = await O('POST', '/api/admin/jobs/month/email', { month });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const m = send.outbox.find(x => /^Address jobs, /.test(x.subject));
+  assert.ok(m); assert.match(m.html, /Pat Meadows · \$308.70/);
+  assert.strictEqual((await O('GET', '/api/admin/jobs/month?month=1999-01')).body.clients.length, 0);
+  assert.strictEqual((await O2('GET', '/api/admin/jobs/month?month=' + month)).body.clients.length, 0, 'other company');
+});
