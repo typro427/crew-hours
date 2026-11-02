@@ -64,7 +64,15 @@ app.get('/api/backup', async (req, res, next) => {
       entries: await db.q('SELECT * FROM entries ORDER BY company_id, day'),
       approvals: await db.q('SELECT * FROM approvals ORDER BY company_id, week_start'),
       tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id'),
-      members: await db.q('SELECT company_id, data FROM members ORDER BY company_id, position, id')   // photos stay in Render's own backups
+      members: await db.q('SELECT company_id, data FROM members ORDER BY company_id, position, id'),
+      roads: await db.q('SELECT id, company_id, kind, name, position, active, length_mi, p_road, p_ditch, p_trees, surface, notes, reading_ids FROM roads ORDER BY company_id, kind, position'),
+      roadChecks: await db.q("SELECT id, company_id, road_id, crew_id, to_char(day, 'YYYY-MM-DD') AS day, notes, created_at FROM road_mows ORDER BY company_id, id"),
+      readingTypes: await db.q('SELECT * FROM reading_types ORDER BY company_id, position'),
+      readings: await db.q('SELECT * FROM readings ORDER BY company_id, taken_at'),
+      meters: await db.q('SELECT * FROM meters ORDER BY company_id, seq'),
+      meterReads: await db.q('SELECT * FROM meter_reads ORDER BY company_id, meter_id, month'),
+      photoCounts: await db.one(`SELECT (SELECT count(*)::int FROM task_photos) AS tasks, (SELECT count(*)::int FROM day_photos) AS days, (SELECT count(*)::int FROM road_mow_photos) AS checks`)
+      // the photos themselves are too big for this file; they are in Render's own database backups
     };
     res.setHeader('Content-Disposition', `attachment; filename="crewhours-backup-${dump.exportedAt.slice(0, 10)}.json"`);
     res.json(dump);

@@ -64,3 +64,10 @@ test('thin events are accepted (no data block)', async () => {
   const r = await fetch(base + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': sig }, body });
   assert.strictEqual(r.status, 200);
 });
+
+test('backup includes every kind of record', async () => {
+  const r = await fetch(base + '/api/backup', { headers: { Authorization: 'Bearer ' + require('../src/config').backupToken } });
+  if (!require('../src/config').backupToken) return;   // no token configured in this test run
+  const d = await r.json();
+  for (const k of ['companies', 'crew', 'entries', 'tasks', 'members', 'roads', 'roadChecks', 'readingTypes', 'readings', 'meters', 'meterReads']) assert.ok(Array.isArray(d[k]), k);
+});
