@@ -137,9 +137,9 @@ r.get('/:slug/members', A.requireCrew, F.need('members'), async (req, res) => {
 
 // Water system readings.
 const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, 14, 30) });
-r.get('/:slug/readings', A.requireCrew, F.need('w_readings'), async (req, res) => res.json(await readingsOut(req)));
-r.post('/:slug/readings', A.requireCrew, F.need('w_readings'), async (req, res) => { await RG.log(req.company, req.crew, req.body || {}); res.json(await readingsOut(req)); });
-r.delete('/:slug/readings/:id', A.requireCrew, F.need('w_readings'), async (req, res) => { await RG.remove(req.company.id, Number(req.params.id), req.crew.id); res.json(await readingsOut(req)); });
+r.get('/:slug/readings', A.requireCrew, F.need('w_sites'), async (req, res) => res.json(await readingsOut(req)));
+r.post('/:slug/readings', A.requireCrew, F.need('w_sites'), async (req, res) => { await RG.log(req.company, req.crew, req.body || {}); res.json(await readingsOut(req)); });
+r.delete('/:slug/readings/:id', A.requireCrew, F.need('w_sites'), async (req, res) => { await RG.remove(req.company.id, Number(req.params.id), req.crew.id); res.json(await readingsOut(req)); });
 
 // Photos of the day's work, attached to a saved day.
 r.post('/:slug/day/:date/photos', A.requireCrew, async (req, res) =>

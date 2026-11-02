@@ -3,7 +3,6 @@
 const FEATURES = {
   tasks:      'Tasks',
   roads:      'Roads mowed',
-  w_readings: 'Water: readings',
   w_sites:    'Water: sites',
   w_repairs:  'Water: leaks & repairs',
   w_meters:   'Water: meter reading',

@@ -85,7 +85,6 @@
   <section data-panel="water" class="panel" hidden>
     <nav class="subtabs" role="tablist">
       <button type="button" role="tab" data-w="meters" aria-selected="false">Meters</button>
-      <button type="button" role="tab" data-w="readings" aria-selected="true">Readings</button>
       <button type="button" role="tab" data-w="sites" aria-selected="false">Sites</button>
       <button type="button" role="tab" data-w="repairs" aria-selected="false">Leaks &amp; repairs</button>
     </nav>
@@ -110,23 +109,23 @@
         <span class="status" id="mr-status" role="status"></span>
       </div>
     </div>
-    <div data-wp="readings">
+    <div data-wp="sites" hidden id="water-sites"></div>
+    <div data-wp="sites" hidden id="site-readings">
       <div class="card">
-        <div class="row" style="justify-content:space-between"><h3>Readings</h3>
+        <div class="row" style="justify-content:space-between"><h3>Site readings</h3>
           <div class="row"><select id="wr-days"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
           <a class="btn ghost small" id="wr-csv">Download CSV</a></div></div>
         <div class="tablebox"><table class="roads"><thead><tr id="wr-head"></tr></thead><tbody id="wr-body"></tbody></table></div>
         <p class="hint" id="wr-empty">No readings yet.</p>
       </div>
       <form class="card" id="wr-form" novalidate>
-        <h3>What the crew records</h3>
+        <h3>Readings taken at sites</h3>
         <label for="wr-lines">One per line. Put the unit after a | if it has one.</label>
         <textarea id="wr-lines" rows="7" placeholder="Chlorine | ppm&#10;Pressure | psi&#10;Tank level | ft&#10;Well 1 meter | gal"></textarea>
         <p class="hint">Taking one off the list hides it. Readings already logged are kept.</p>
         <div class="row"><button class="btn" type="submit">Save list</button><span class="status" id="wr-status" role="status"></span></div>
       </form>
     </div>
-    <div data-wp="sites" hidden id="water-sites"></div>
     <div data-wp="repairs" hidden id="water-repairs"></div>
   </section>
 

@@ -210,16 +210,15 @@ test('water system: sites are separate from roads, repairs separate from tasks, 
 
 test('per-person switches: the boss turns parts of the app off for one person', async () => {
   const crew = (await O('GET', '/api/admin/crew')).body;
-  assert.ok(crew.features.w_readings);
+  assert.ok(crew.features.w_meters);
   const samRow = crew.crew.find(c => c.name === 'Sam');
   assert.strictEqual(samRow.features.tasks, true);
-  let r = await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false, w_meters: true } });
+  let r = await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true } });
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
   const wk = (await sam('GET', '/week')).body;
-  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false, w_meters: true, members: false });
+  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false });
   assert.strictEqual((await sam('GET', '/roads')).status, 403);
-  assert.strictEqual((await sam('GET', '/readings')).status, 403);
   assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
   assert.strictEqual((await sam('GET', '/roads?kind=water')).status, 200);
   assert.strictEqual((await sam('GET', '/tasks')).status, 200);
@@ -227,7 +226,7 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.strictEqual((await sam('POST', `/roads/${roadId}/mows`, { day: wk.today })).status, 403, 'blocked by id too');
   assert.strictEqual((await jake('GET', '/roads')).status, 200, 'others unaffected');
   // turn everything back on
-  await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: true, w_readings: true, w_sites: true, w_repairs: true, w_meters: true } });
+  await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: true, w_sites: true, w_repairs: true, w_meters: true } });
   assert.strictEqual((await sam('GET', '/readings')).status, 200);
 });
 

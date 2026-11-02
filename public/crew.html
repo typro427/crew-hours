@@ -129,7 +129,7 @@
   <section id="water-screen" hidden style="display:flex;flex-direction:column;gap:14px">
     <nav class="subtabs" id="w-tabs" role="tablist">
       <button role="tab" id="wt-meters" aria-selected="false">Meters</button>
-      <button role="tab" id="wt-readings" aria-selected="true">Readings</button>
+      <button role="tab" id="wt-readings" aria-selected="false" hidden>Readings</button>
       <button role="tab" id="wt-sites" aria-selected="false">Sites</button>
       <button role="tab" id="wt-repairs" aria-selected="false">Leaks &amp; repairs</button>
     </nav>
@@ -145,7 +145,7 @@
       <div id="mt-list" class="mtlist"></div>
       <div class="status" id="mt-status" role="status"></div>
     </div>
-    <div id="wp-readings" style="display:flex;flex-direction:column;gap:14px">
+    <div id="wp-readings" hidden style="display:flex;flex-direction:column;gap:14px">
       <div class="task" id="rd-form-card">
         <h3>New readings</h3>
         <p class="hint" style="margin:0">Fill in what you checked. Leave the rest blank.</p>

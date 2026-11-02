@@ -574,8 +574,7 @@
     document.querySelectorAll('[data-w]').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-w') === which); });
     document.querySelectorAll('[data-wp]').forEach(function (p) { p.hidden = p.getAttribute('data-wp') !== which; });
     if (which === 'meters') loadMeterAdmin();
-    if (which === 'readings') loadReadings();
-    if (which === 'sites') sitePanel.load();
+    if (which === 'sites') { sitePanel.load(); loadReadings(); }
     if (which === 'repairs') repairPanel.load();
   }
   document.querySelectorAll('[data-w]').forEach(function (b) { b.onclick = function () { showWater(b.getAttribute('data-w')); }; });
@@ -606,7 +605,7 @@
       td.appendChild(del); tr.appendChild(td); body.appendChild(tr);
     });
     $('wr-empty').hidden = r.readings.length > 0;
-    $('wr-empty').textContent = wTypes.length ? 'No readings in this period.' : 'Add what the crew should record below, and a Readings section shows up in their app.';
+    $('wr-empty').textContent = wTypes.length ? 'No readings in this period.' : 'List the readings below (chlorine, pressure…). The crew fills them in when they check a site.';
   }
   $('wr-form').onsubmit = function (e) {
     e.preventDefault(); status('wr-status', 'Saving…');

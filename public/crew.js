@@ -835,7 +835,7 @@
     row.classList.add("focus"); setTimeout(function(){ row.querySelector("input").focus({preventScroll:true}); }, 350);
   };
   function waterParts(){
-    return { meters: features.w_meters && setup.meters>0, readings: features.w_readings && setup.readingTypes>0, sites: features.w_sites && setup.waterSites>0,
+    return { meters: features.w_meters && setup.meters>0, readings: false /* readings are taken inside a site check */, sites: features.w_sites && setup.waterSites>0,
              repairs: features.w_repairs && (setup.readingTypes>0 || setup.waterSites>0 || setup.meters>0) };
   }
   function showWater(which){
