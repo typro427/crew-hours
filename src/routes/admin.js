@@ -211,6 +211,23 @@ r.get('/meters.csv', async (req, res) => {
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="meter-readings-${rt.quarter}.csv"` }).send('\ufeff' + lines.join('\r\n'));
 });
 
+/* ------------------------------ address jobs -------------------------------- */
+const J = require('../jobs');
+r.get('/jobs', async (req, res) => res.json(await J.forOwner(req.company.id, req.query)));
+r.get('/jobs/addresses', async (req, res) => res.json({ addresses: await J.addresses(req.company.id) }));
+r.post('/jobs', async (req, res) => { await J.create(req.company, null, req.body || {}); res.json(await J.forOwner(req.company.id, req.body || {})); });
+r.put('/jobs/:id', async (req, res) => { await J.update(req.company, null, Number(req.params.id), req.body || {}); res.json(await J.forOwner(req.company.id, req.body || {})); });
+r.delete('/jobs/:id', async (req, res) => { await J.remove(req.company.id, Number(req.params.id)); res.json(await J.forOwner(req.company.id, req.query)); });
+r.delete('/receipts/:id', async (req, res) => { await J.removeReceipt(req.company.id, Number(req.params.id)); res.json(await J.forOwner(req.company.id, req.query)); });
+r.get('/receipts/:id', async (req, res) => {
+  const p = await J.receipt(req.company.id, Number(req.params.id));
+  p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
+});
+r.get('/jobs.csv', async (req, res) => {
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="address-jobs-${(req.query.from || 'this-month')}.csv"`, 'Cache-Control': 'no-store' })
+    .send(J.csv(await J.forOwner(req.company.id, req.query)));
+});
+
 /* -------------------------------- members ----------------------------------- */
 const MB = require('../members');
 r.get('/members', async (req, res) => res.json(await MB.search(req.company.id, req.query)));

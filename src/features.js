@@ -1,15 +1,17 @@
 // Parts of the app the boss can turn on or off for each crew member.
 // Most are on unless switched off; the members list holds private contact details, so it is off unless switched on.
 const FEATURES = {
+  hours:      'My hours (time sheet)',
   tasks:      'Tasks',
   roads:      'Roads mowed',
   w_sites:    'Water: sites',
   w_repairs:  'Water: leaks & repairs',
   w_meters:   'Water: meter reading',
   members:    'Members list (private contact info)',
-  orders:     'Needs to order'
+  orders:     'Needs to order',
+  jobs:       'Address jobs (time in/out, costs, receipts)'
 };
-const OFF_BY_DEFAULT = new Set(['members', 'orders']);
+const OFF_BY_DEFAULT = new Set(['members', 'orders', 'jobs']);
 const can = (crew, key) => OFF_BY_DEFAULT.has(key) ? !!(crew.features && crew.features[key] === true)
   : !crew.features || crew.features[key] !== false;
 const forCrew = crew => Object.fromEntries(Object.keys(FEATURES).map(k => [k, can(crew, k)]));

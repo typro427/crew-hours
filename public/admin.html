@@ -21,6 +21,7 @@
     <button role="tab" data-tab="roads" aria-selected="false">Roads mowed</button>
     <button role="tab" data-tab="water" aria-selected="false">Water System</button>
     <button role="tab" data-tab="orders" aria-selected="false">Needs to order</button>
+    <button role="tab" data-tab="jobs" aria-selected="false">Address jobs</button>
     <button role="tab" data-tab="members" aria-selected="false">Members</button>
     <button role="tab" data-tab="crew" aria-selected="false">Crew &amp; PINs</button>
     <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
@@ -78,6 +79,41 @@
 
   <!-- TASKS (drawn by admin.js) -->
   <section data-panel="tasks" class="panel" hidden id="tasks-panel"></section>
+
+  <!-- ADDRESS JOBS -->
+  <section data-panel="jobs" class="panel" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><h3>Address jobs</h3><p class="hint" id="jb-sum" style="margin:0"></p></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <label class="hint" for="jb-from">From</label><input type="date" id="jb-from">
+          <label class="hint" for="jb-to">To</label><input type="date" id="jb-to">
+          <select id="jb-crew" aria-label="Who"><option value="">Everyone</option></select>
+          <button class="btn small" type="button" id="jb-add">+ Add a job</button>
+          <a class="btn ghost small" id="jb-csv">Download CSV</a>
+        </div>
+      </div>
+      <div class="tablebox"><table class="roads jb-table"><thead><tr><th>Date</th><th>Who</th><th>Address</th><th>Owner</th><th>In</th><th>Out</th><th class="num">Hours</th><th class="num">Chemicals</th><th class="num">Materials</th><th class="num">Total</th><th>Receipts</th><th></th></tr></thead><tbody id="jb-body"></tbody></table></div>
+      <p class="hint" id="jb-empty" hidden>No jobs in these dates.</p>
+      <p class="hint">One entry per visit, from the crew's <b>Addresses</b> tab. Times here are a job log only; they don't change anyone's hours. Turn it on for someone under <b>Crew &amp; PINs</b> → “Address jobs”. Untick “My hours” there for anyone who doesn't keep a time sheet.</p>
+    </div>
+    <form class="card" id="jf-form" hidden novalidate>
+      <div class="row" style="justify-content:space-between"><h3 id="jf-title">Add a job</h3><button class="btn ghost small" type="button" id="jf-cancel">Cancel</button></div>
+      <div class="mb-grid">
+        <div><label for="jf-address">Address</label><input id="jf-address" maxlength="200" list="jf-addrs" autocomplete="off"><datalist id="jf-addrs"></datalist></div>
+        <div><label for="jf-crew">Who</label><select id="jf-crew"></select></div>
+        <div><label for="jf-day">Date</label><input type="date" id="jf-day"></div>
+        <div><label for="jf-in">Time in</label><input type="time" id="jf-in"></div>
+        <div><label for="jf-out">Time out</label><input type="time" id="jf-out"></div>
+        <div><label for="jf-chem">Chemical cost ($)</label><input id="jf-chem" inputmode="decimal"></div>
+        <div><label for="jf-mat">Material cost ($)</label><input id="jf-mat" inputmode="decimal"></div>
+        <div><label for="jf-rc">Add receipts</label><input type="file" id="jf-rc" accept="image/*" multiple></div>
+      </div>
+      <label for="jf-notes">Notes</label><textarea id="jf-notes" rows="2" maxlength="2000"></textarea>
+      <div class="t-thumbs" id="jf-thumbs"></div>
+      <div class="row"><button class="btn" type="submit">Save</button><span class="status" id="jf-status" role="status"></span></div>
+    </form>
+  </section>
 
   <!-- NEEDS TO ORDER (drawn by admin.js) -->
   <section data-panel="orders" class="panel" hidden id="orders-panel"></section>

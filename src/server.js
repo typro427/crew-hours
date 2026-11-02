@@ -37,8 +37,8 @@ app.use('/api/admin/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/members/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/meters/import', express.json({ limit: '5mb' }));
 app.use('/api/admin/meters/import-xlsx', express.raw({ type: () => true, limit: '15mb' }));
-app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
-app.use(/^\/api\/admin\/tasks(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
+app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
+app.use(/^\/api\/admin\/(tasks|jobs)(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
 app.use(express.json({ limit: '100kb' }));
 
 // Requests that change things must come from our own pages (blocks cross-site form tricks).
@@ -67,6 +67,7 @@ app.get('/api/backup', async (req, res, next) => {
       approvals: await db.q('SELECT * FROM approvals ORDER BY company_id, week_start'),
       tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id'),
       taskUpdates: await db.q('SELECT * FROM task_updates ORDER BY company_id, id'),
+      jobs: await db.q('SELECT * FROM jobs ORDER BY company_id, id'),
       members: await db.q('SELECT company_id, data FROM members ORDER BY company_id, position, id'),
       roads: await db.q('SELECT id, company_id, kind, name, position, active, length_mi, p_road, p_ditch, p_trees, surface, notes, reading_ids FROM roads ORDER BY company_id, kind, position'),
       roadChecks: await db.q("SELECT id, company_id, road_id, crew_id, to_char(day, 'YYYY-MM-DD') AS day, notes, created_at FROM road_mows ORDER BY company_id, id"),
@@ -74,7 +75,7 @@ app.get('/api/backup', async (req, res, next) => {
       readings: await db.q('SELECT * FROM readings ORDER BY company_id, taken_at'),
       meters: await db.q('SELECT * FROM meters ORDER BY company_id, seq'),
       meterReads: await db.q('SELECT * FROM meter_reads ORDER BY company_id, meter_id, month'),
-      photoCounts: await db.one(`SELECT (SELECT count(*)::int FROM task_photos) AS tasks, (SELECT count(*)::int FROM day_photos) AS days, (SELECT count(*)::int FROM road_mow_photos) AS checks`)
+      photoCounts: await db.one(`SELECT (SELECT count(*)::int FROM task_photos) AS tasks, (SELECT count(*)::int FROM day_photos) AS days, (SELECT count(*)::int FROM road_mow_photos) AS checks, (SELECT count(*)::int FROM job_receipts) AS receipts`)
       // the photos themselves are too big for this file; they are in Render's own database backups
     };
     res.setHeader('Content-Disposition', `attachment; filename="crewhours-backup-${dump.exportedAt.slice(0, 10)}.json"`);

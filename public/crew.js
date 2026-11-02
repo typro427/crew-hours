@@ -55,6 +55,12 @@
     delTask:         function(a){ return ["DELETE", "/tasks/" + a[1]]; },
     addDayPhotos:    function(a){ return ["POST", "/day/" + a[1] + "/photos", { photos:a[2] }]; },
     delDayPhoto:     function(a){ return ["DELETE", "/day-photo/" + a[1]]; },
+    getJobs:         function(){ return ["GET", "/jobs"]; },
+    jobAddresses:    function(){ return ["GET", "/jobs/addresses"]; },
+    newJob:          function(a){ return ["POST", "/jobs", a[1]]; },
+    saveJob:         function(a){ return ["PUT", "/jobs/" + a[1], a[2]]; },
+    delJob:          function(a){ return ["DELETE", "/jobs/" + a[1]]; },
+    delReceipt:      function(a){ return ["DELETE", "/receipts/" + a[1]]; },
     doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; },
     progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3] }]; },
     delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; }
@@ -105,16 +111,22 @@
   function submitPin(){
     busy = true; setStatus("pin-status","Checking…");
     call("login",[pin], function(res){
-      busy=false; token=res.token; today=res.today; isBoss=!!res.manager;
+      busy=false; token=res.token; today=res.today; isBoss=!!res.manager; if(res.features) features=res.features;
       try{ sessionStorage.setItem("crewToken:"+SLUG, token); }catch(e){}
       pin=""; drawDots();
       enterLog(res.name);
     }, function(msg){ busy=false; pin=""; drawDots(); setStatus("pin-status",msg,"err"); });
   }
 
+  // Where to land: the boss sees the crew week; someone without a time sheet lands on their first tab.
+  function homeScreen(){
+    if(isBoss) return "crew";
+    if(features.hours!==false) return "mine";
+    return features.jobs ? "jobs" : features.tasks ? "tasks" : features.orders ? "orders" : "water";
+  }
   function signOut(msg){
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -123,7 +135,7 @@
   // ---- log screen ----
   function enterLog(name){
     $("who-name").textContent = name; $("who").hidden=false;
-    $("pin-screen").hidden=true; showScreen(isBoss ? "crew" : "mine");
+    $("pin-screen").hidden=true; showScreen(homeScreen());
     loadWeek(weekStartOf(today || new Date().toISOString().slice(0,10)), today);
   }
   function setOptions(list){
@@ -143,6 +155,9 @@
     $("water-screen").hidden = which!=="water";
     $("tab-members").setAttribute("aria-selected", which==="members");
     $("member-screen").hidden = which!=="members";
+    $("tab-jobs").setAttribute("aria-selected", which==="jobs");
+    $("job-screen").hidden = which!=="jobs";
+    if(which==="jobs") jobBoard.load();
     $("tab-orders").setAttribute("aria-selected", which==="orders");
     $("order-screen").hidden = which!=="orders";
     $("tab-crew").setAttribute("aria-selected", which==="crew");
@@ -157,6 +172,7 @@
     if(which==="orders") orderBoard.load();
   }
   $("tab-orders").onclick = function(){ showScreen("orders"); };
+  $("tab-jobs").onclick = function(){ showScreen("jobs"); };
   $("tab-members").onclick = function(){ showScreen("members"); };
   $("tab-roads").onclick = function(){ roadBoard.reset(); showScreen("roads"); };
   $("tab-water").onclick = function(){ showScreen("water"); };
@@ -440,7 +456,7 @@
   function photoInto(img, id, kind){
     var key=(kind||"task")+id;
     if(photoUrls[key]){ img.src=photoUrls[key]; return; }
-    fetch(API+(kind==="day" ? "/day-photo/" : kind==="road" ? "/road-photo/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
+    fetch(API+(kind==="day" ? "/day-photo/" : kind==="road" ? "/road-photo/" : kind==="receipt" ? "/receipts/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
       .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
       .then(function(b){ photoUrls[key]=URL.createObjectURL(b); img.src=photoUrls[key]; }).catch(function(){});
   }
@@ -468,8 +484,8 @@
     ids.forEach(function(id){ var im=el("img"); im.alt=alt||"Photo"; photoInto(im,id,kind); im.onclick=function(){ if(im.src) viewer(im.src); }; th.appendChild(im); });
     return th;
   }
-  function photoPicker(max, statusEl){   // a "📷 Add photos" button with removable previews
-    var pics=[], box=el("div",""), th=el("div","thumbs"), pick=el("label","photo-btn","📷 Add photos"), inp=el("input");
+  function photoPicker(max, statusEl, label){   // a "📷 Add photos" button with removable previews
+    var pics=[], box=el("div",""), th=el("div","thumbs"), pick=el("label","photo-btn",label||"📷 Add photos"), inp=el("input");
     box.style.cssText="display:flex;flex-direction:column;gap:8px";
     inp.type="file"; inp.accept="image/*"; inp.multiple=true; pick.appendChild(inp);
     function draw(){
@@ -853,6 +869,117 @@
   // ---- water tab: sub-tabs ----
   var waterTab="meters";
 
+  // ---- Address jobs: one entry per visit. Separate from hours. ----
+  function JobBoard(root){
+    var me={ jobs:[], today:null, max:10, addrs:null, editing:null };
+    var top=el("div","row"), add=el("button","primary","+ New job"); add.type="button"; top.appendChild(add);
+    var formBox=el("div",""), list=el("div","tasklist"), empty=el("p","hint","No jobs yet. Tap + New job when you get to an address."), st=statusLine();
+    empty.style.cssText="margin:0;text-align:center";
+    [top,formBox,list,empty,st].forEach(function(n){ root.appendChild(n); });
+    function nowHM(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+    function ampm(t){ if(!t) return ""; var h=Number(t.slice(0,2)), m=t.slice(3,5); return (h%12||12)+":"+m+" "+(h<12?"AM":"PM"); }
+    function money(v){ return v==null ? "" : "$"+Number(v).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}); }
+    function loadAddrs(){ if(me.addrs) return; me.addrs=[]; call("jobAddresses",[token], function(r){ me.addrs=r.addresses||[]; }, function(){ me.addrs=null; }); }
+    me.load=function(){
+      if(!token) return; loadAddrs();
+      if(!me.jobs.length) say(st,"Loading…");
+      call("getJobs",[token], function(r){ me.jobs=r.jobs||[]; me.today=r.today; me.max=r.maxReceipts||10; say(st,""); draw(); }, function(msg){ say(st,msg,"err"); });
+    };
+    add.onclick=function(){ me.editing="new"; draw(); };
+    function form(j){
+      var f=el("div","task"); f.appendChild(el("h3","", j ? "Edit job" : "New job"));
+      var fst=statusLine();
+      // address, with suggestions from the members list
+      f.appendChild(el("label","","Address"));
+      var addr=el("input"); addr.type="search"; addr.autocomplete="off"; addr.placeholder="Start typing: 141 Deer Meadow"; addr.value=j ? j.address : "";
+      var sug=el("div","addrsug"), owner=el("div","owner", j && j.owner ? "Owner: "+j.owner : "");
+      f.appendChild(addr); f.appendChild(sug); f.appendChild(owner);
+      function suggest(){
+        sug.innerHTML=""; var q=addr.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if(!q.length || !me.addrs) return;
+        var hits=me.addrs.filter(function(a){ var t=(a.address+" "+a.owner).toLowerCase(); return q.every(function(w){ return t.indexOf(w)!==-1; }); }).slice(0,8);
+        hits.forEach(function(a){
+          var b=el("button","ghost"); b.type="button"; b.appendChild(el("b","",a.address)); if(a.owner) b.appendChild(el("span","",a.owner));
+          b.onclick=function(){ addr.value=a.address; owner.textContent=a.owner ? "Owner: "+a.owner : ""; sug.innerHTML=""; };
+          sug.appendChild(b);
+        });
+      }
+      addr.oninput=function(){ owner.textContent=""; suggest(); };
+      var day=el("input"); day.type="date"; day.value=j ? j.day : (me.today||""); if(me.today) day.max=me.today;
+      f.appendChild(el("label","","Date")); f.appendChild(day);
+      function timeRow(label, val){
+        f.appendChild(el("label","",label));
+        var r=el("div","row"), t=el("input"); t.type="time"; t.value=val||""; t.style.flex="1";
+        var n=el("button","ghost","Now"); n.type="button"; n.onclick=function(){ t.value=nowHM(); };
+        r.appendChild(t); r.appendChild(n); f.appendChild(r); return t;
+      }
+      var tin=timeRow("Time in", j ? j.timeIn : nowHM()), tout=timeRow("Time out", j ? j.timeOut : "");
+      function moneyIn(label, val){ f.appendChild(el("label","",label)); var i=el("input"); i.inputMode="decimal"; i.placeholder="0.00"; i.autocomplete="off"; i.value=val==null?"":val; f.appendChild(i); return i; }
+      var chem=moneyIn("Chemical cost ($)", j ? j.chemCost : null), mat=moneyIn("Material cost ($)", j ? j.materialCost : null);
+      f.appendChild(el("label","","Receipts"));
+      if(j && j.receipts.length) f.appendChild(thumbsFor(j.receipts,"receipt","Receipt"));
+      var pk=photoPicker(me.max-(j ? j.receipts.length : 0), fst, "🧾 Add receipt photo"); f.appendChild(pk.el);
+      f.appendChild(el("label","","Notes (optional)"));
+      var notes=el("textarea"); notes.maxLength=2000; notes.placeholder="What you did, chemicals used…"; notes.value=j ? j.notes||"" : ""; f.appendChild(notes);
+      var row=el("div","row"), sv=el("button","primary","Save"), cancel=el("button","ghost","Cancel"); sv.type=cancel.type="button";
+      row.appendChild(sv); row.appendChild(cancel); f.appendChild(row); f.appendChild(fst);
+      cancel.onclick=function(){ me.editing=null; draw(); };
+      sv.onclick=function(){
+        if(busy) return;
+        if(!addr.value.trim()) return say(fst,"Pick the address.","err");
+        var bad=[chem,mat].filter(function(i){ var v=i.value.replace(/[$,\s]/g,""); return v!=="" && !/^\d+(\.\d{1,2})?$/.test(v); });
+        if(bad.length) return say(fst,"Costs must be dollar amounts, like 42.50.","err");
+        var body={ address:addr.value.trim(), day:day.value, timeIn:tin.value||"", timeOut:tout.value||"", chemCost:chem.value.replace(/[$,\s]/g,""), materialCost:mat.value.replace(/[$,\s]/g,""), notes:notes.value, receipts:pk.get() };
+        if(!j) body.clientRef=newRef();
+        busy=true; sv.disabled=true; say(fst, body.receipts.length ? "Sending receipts…" : "Saving…");
+        call(j ? "saveJob" : "newJob", j ? [token,j.id,body] : [token,body], function(r){
+          busy=false; me.jobs=r.jobs||[]; me.editing=null; draw(); say(st,"Saved.","ok");
+        }, function(msg){ busy=false; sv.disabled=false; say(fst,msg,"err"); });
+      };
+      setTimeout(function(){ if(!j) addr.focus(); }, 50);
+      return f;
+    }
+    function draw(){
+      formBox.innerHTML=""; list.innerHTML="";
+      add.hidden = me.editing!=null;
+      if(me.editing==="new") formBox.appendChild(form(null));
+      empty.hidden = me.jobs.length>0 || me.editing!=null;
+      me.jobs.forEach(function(j){
+        if(me.editing===j.id){ list.appendChild(form(j)); return; }
+        var open=j.timeIn && !j.timeOut, c=el("div","task"+(open ? " open-job" : ""));
+        c.appendChild(el("h3","",j.address));
+        if(j.owner) c.appendChild(el("div","owner","Owner: "+j.owner));
+        var meta=el("div","meta");
+        meta.appendChild(el("span","",dayLabel(j.day)));
+        if(j.timeIn) meta.appendChild(el("span", open ? "late" : "", open ? "In since "+ampm(j.timeIn) : ampm(j.timeIn)+" – "+ampm(j.timeOut)+(j.hours!=null ? " ("+j.hours+" h)" : "")));
+        c.appendChild(meta);
+        var costs=el("div","meta");
+        if(j.chemCost!=null) costs.appendChild(el("span","cost","Chemicals "+money(j.chemCost)));
+        if(j.materialCost!=null) costs.appendChild(el("span","cost","Materials "+money(j.materialCost)));
+        if(j.total) costs.appendChild(el("span","","Total "+money(j.total)));
+        if(costs.childNodes.length) c.appendChild(costs);
+        if(j.notes) c.appendChild(el("p","details",j.notes));
+        if(j.receipts.length) c.appendChild(thumbsFor(j.receipts,"receipt","Receipt"));
+        var row=el("div","row");
+        if(open){
+          var out=el("button","primary","Time out now"); out.type="button";
+          out.onclick=function(){
+            if(busy) return; busy=true; out.disabled=true;
+            call("saveJob",[token,j.id,{ timeOut:nowHM() }], function(r){ busy=false; me.jobs=r.jobs||[]; draw(); say(st,"Timed out at "+ampm(nowHM())+".","ok"); },
+              function(msg){ busy=false; out.disabled=false; say(st,msg,"err"); });
+          };
+          row.appendChild(out);
+        }
+        var ed=el("button","ghost", open ? "Edit / add receipts" : "Edit / add receipts"); ed.type="button";
+        ed.onclick=function(){ me.editing=j.id; draw(); }; row.appendChild(ed);
+        c.appendChild(row);
+        list.appendChild(c);
+      });
+    }
+    return me;
+  }
+  var jobBoard=JobBoard($("job-screen"));
+
   // ---- meter reading route ----
   var mtData=null, mtRows={};
   function fmtN(v){ return v==null ? "—" : Number(v).toLocaleString(); }
@@ -1023,6 +1150,8 @@
     $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
     $("tab-orders").hidden=!features.orders;
+    $("tab-jobs").hidden=!features.jobs;
+    $("tab-mine").hidden=features.hours===false;
     if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);
     accessLoaded=true;
@@ -1036,7 +1165,7 @@
   if(token){
     $("pin-screen").hidden=true; $("log-screen").hidden=false;
     call("getMyWeek",[token, ""],
-      function(res){ applyWeek(res, res.today); showScreen(isBoss ? "crew" : "mine"); },
+      function(res){ applyWeek(res, res.today); showScreen(homeScreen()); },
       function(msg){ signOut(msg); });
   }
 })();

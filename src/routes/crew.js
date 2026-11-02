@@ -44,8 +44,8 @@ const setupOf = async companyId => db.one(`SELECT
   (SELECT count(*)::int FROM meters WHERE company_id=$1 AND active) AS meters`, [companyId]);
 r.get('/:slug/week', A.requireCrew, async (req, res) => res.json({ ...(await H.myWeek(req.company, req.crew, req.query.start)),
   features: require('../features').forCrew(req.crew), setup: await setupOf(req.company.id) }));
-r.post('/:slug/day', A.requireCrew, async (req, res) => res.json(await H.saveDay(req.company, req.crew, req.body || {})));
-r.delete('/:slug/day/:date', A.requireCrew, async (req, res) => res.json(await H.clearDay(req.company, req.crew, req.params.date)));
+r.post('/:slug/day', A.requireCrew, require('../features').need('hours'), async (req, res) => res.json(await H.saveDay(req.company, req.crew, req.body || {})));
+r.delete('/:slug/day/:date', A.requireCrew, require('../features').need('hours'), async (req, res) => res.json(await H.clearDay(req.company, req.crew, req.params.date)));
 
 // Tasks (kind=task) and water leaks & repairs (kind=repair): same rules, separate lists, separate switches.
 const K = require('../tasks');
@@ -149,6 +149,20 @@ r.post('/:slug/meters/:id/read', A.requireCrew, F.need('w_meters'), async (req, 
   res.json({ ok: true, meter: m ? crewMeter(m) : null });
 });
 
+// Address jobs (time in/out, costs, receipts): a separate log, for people the boss switches it on for.
+const J = require('../jobs');
+const jobsOut = async req => ({ jobs: await J.forCrew(req.company.id, req.crew.id), today: require('../time').localNow(req.company.timezone).date, maxReceipts: J.MAX_RECEIPTS });
+r.get('/:slug/jobs', A.requireCrew, F.need('jobs'), async (req, res) => res.json(await jobsOut(req)));
+r.get('/:slug/jobs/addresses', A.requireCrew, F.need('jobs'), async (req, res) => { res.set('Cache-Control', 'private, max-age=600'); res.json({ addresses: await J.addresses(req.company.id) }); });
+r.post('/:slug/jobs', A.requireCrew, F.need('jobs'), async (req, res) => { await J.create(req.company, req.crew, req.body || {}); res.json(await jobsOut(req)); });
+r.put('/:slug/jobs/:id', A.requireCrew, F.need('jobs'), async (req, res) => { await J.update(req.company, req.crew, Number(req.params.id), req.body || {}); res.json(await jobsOut(req)); });
+r.delete('/:slug/jobs/:id', A.requireCrew, F.need('jobs'), async (req, res) => { await J.remove(req.company.id, Number(req.params.id), req.crew); res.json(await jobsOut(req)); });
+r.delete('/:slug/receipts/:id', A.requireCrew, F.need('jobs'), async (req, res) => { await J.removeReceipt(req.company.id, Number(req.params.id), req.crew); res.json(await jobsOut(req)); });
+r.get('/:slug/receipts/:id', A.requireCrew, F.need('jobs'), async (req, res) => {
+  const p = await J.receipt(req.company.id, Number(req.params.id), req.crew.id);
+  p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
+});
+
 // Members list: read-only search, only for people the boss has switched it on for.
 const MB = require('../members');
 r.get('/:slug/members', A.requireCrew, F.need('members'), async (req, res) => {
@@ -163,7 +177,7 @@ r.post('/:slug/readings', A.requireCrew, F.need('w_sites'), async (req, res) => 
 r.delete('/:slug/readings/:id', A.requireCrew, F.need('w_sites'), async (req, res) => { await RG.remove(req.company.id, Number(req.params.id), req.crew.id); res.json(await readingsOut(req)); });
 
 // Photos of the day's work, attached to a saved day.
-r.post('/:slug/day/:date/photos', A.requireCrew, async (req, res) =>
+r.post('/:slug/day/:date/photos', A.requireCrew, F.need('hours'), async (req, res) =>
   res.json(await H.addDayPhotos(req.company, req.crew, req.params.date, (req.body || {}).photos, K.photoBytes)));
 r.delete('/:slug/day-photo/:id', A.requireCrew, async (req, res) => res.json(await H.removeDayPhoto(req.company, req.crew, Number(req.params.id))));
 r.get('/:slug/day-photo/:id', A.requireCrew, async (req, res) => {

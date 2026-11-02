@@ -227,3 +227,9 @@ tfoot td{font-weight:700;border-bottom:0}
 .placesearch{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-height:44px;position:sticky;top:0;z-index:5}
 
 .task .meta .cost{color:var(--ink);font-weight:600}
+/* Address jobs */
+.addrsug{display:flex;flex-direction:column;gap:6px}
+.addrsug:empty{display:none}
+.addrsug button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;min-height:44px;padding:8px 12px}
+.addrsug button span{font-size:13px;color:var(--muted)}
+.task.open-job{border:2px solid var(--accent)}

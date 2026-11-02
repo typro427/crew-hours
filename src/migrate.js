@@ -225,6 +225,33 @@ ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS leak_task_id INTEGER REFERENCES
 ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS flag_ok BOOLEAN NOT NULL DEFAULT FALSE;
 -- QuickBooks billing settings: rate, item names, base charge, days until due.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing JSONB;
+-- Address jobs: one entry per visit (time in/out, chemical and material cost, receipts). Separate from hours.
+CREATE TABLE IF NOT EXISTS jobs (
+  id            SERIAL PRIMARY KEY,
+  company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id       INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  day           DATE NOT NULL,
+  address       TEXT NOT NULL DEFAULT '',
+  owner         TEXT NOT NULL DEFAULT '',
+  time_in       TEXT,
+  time_out      TEXT,
+  chem_cost     NUMERIC,
+  material_cost NUMERIC,
+  notes         TEXT NOT NULL DEFAULT '',
+  client_ref    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS jobs_company ON jobs (company_id, day);
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_client_ref ON jobs (company_id, client_ref) WHERE client_ref IS NOT NULL;
+CREATE TABLE IF NOT EXISTS job_receipts (
+  id         SERIAL PRIMARY KEY,
+  job_id     INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  mime       TEXT NOT NULL,
+  data       BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS job_receipts_job ON job_receipts (job_id);
 -- Meters are read quarterly: turn any monthly keys (YYYY-MM) into quarters (YYYY-Q#), keeping the latest read per quarter.
 DELETE FROM meter_reads a USING meter_reads b
   WHERE a.month ~ '^[0-9]{4}-[0-9]{2}$' AND b.month ~ '^[0-9]{4}-[0-9]{2}$' AND a.meter_id=b.meter_id

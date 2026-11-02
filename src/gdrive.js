@@ -118,6 +118,7 @@ async function companyDump(id) {
     approvals: await one('SELECT * FROM approvals WHERE company_id=$1 ORDER BY week_start'),
     tasks: await one('SELECT * FROM tasks WHERE company_id=$1 ORDER BY id'),
     taskUpdates: await one('SELECT * FROM task_updates WHERE company_id=$1 ORDER BY id'),
+    jobs: await one('SELECT * FROM jobs WHERE company_id=$1 ORDER BY id'),
     members: await one('SELECT data FROM members WHERE company_id=$1 ORDER BY position, id'),
     roads: await one('SELECT id, kind, name, position, active, length_mi, p_road, p_ditch, p_trees, surface, notes, reading_ids FROM roads WHERE company_id=$1 ORDER BY kind, position'),
     roadChecks: await one("SELECT id, road_id, crew_id, to_char(day, 'YYYY-MM-DD') AS day, notes, created_at FROM road_mows WHERE company_id=$1 ORDER BY id"),
@@ -135,10 +136,11 @@ const ext = m => (m === 'image/png' ? 'png' : m === 'image/webp' ? 'webp' : 'jpg
 const newPhotos = id => db.q(`SELECT * FROM (
     SELECT 'task' AS kind, p.id, p.mime, t.id || '-' || t.title AS label, p.created_at FROM task_photos p JOIN tasks t ON t.id=p.task_id WHERE p.company_id=$1
     UNION ALL SELECT 'day', p.id, p.mime, to_char(p.day, 'YYYY-MM-DD') || '-' || c.name, p.created_at FROM day_photos p JOIN crew c ON c.id=p.crew_id WHERE p.company_id=$1
+    UNION ALL SELECT 'receipt', p.id, p.mime, to_char(j.day, 'YYYY-MM-DD') || '-' || j.address, p.created_at FROM job_receipts p JOIN jobs j ON j.id=p.job_id WHERE p.company_id=$1
     UNION ALL SELECT 'check', p.id, p.mime, to_char(m.day, 'YYYY-MM-DD') || '-' || r.name, m.created_at FROM road_mow_photos p JOIN road_mows m ON m.id=p.mow_id JOIN roads r ON r.id=m.road_id WHERE p.company_id=$1
   ) x WHERE NOT EXISTS (SELECT 1 FROM gdrive_uploaded u WHERE u.company_id=$1 AND u.kind=x.kind AND u.photo_id=x.id)
   ORDER BY created_at LIMIT ${PHOTOS_PER_RUN}`, [id]);
-const photoData = (kind, id) => db.one(`SELECT data FROM ${kind === 'task' ? 'task_photos' : kind === 'day' ? 'day_photos' : 'road_mow_photos'} WHERE id=$1`, [id]);
+const photoData = (kind, id) => db.one(`SELECT data FROM ${kind === 'task' ? 'task_photos' : kind === 'day' ? 'day_photos' : kind === 'receipt' ? 'job_receipts' : 'road_mow_photos'} WHERE id=$1`, [id]);
 
 /** Run one backup for a company. Returns what was copied. */
 async function backupNow(companyId) {

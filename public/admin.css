@@ -124,3 +124,9 @@ table.roads td.num{font-variant-numeric:tabular-nums}
 #nr-body td:first-child{min-width:180px;font-weight:600}
 #nr-body td:nth-child(4){max-width:260px}
 #nr-body td:last-child{white-space:nowrap;text-align:right}
+/* Address jobs */
+#jb-from,#jb-to,#jb-crew{width:auto;min-width:0}
+.jb-table td{vertical-align:top}
+.jb-table tr.open td{background:color-mix(in srgb, var(--accent) 10%, transparent)}
+.jb-table tr.jb-note td{padding-top:0;border-top:0}
+.jb-table .t-thumbs img{width:44px;height:44px}

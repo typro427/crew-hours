@@ -24,6 +24,7 @@
 
   <nav class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" id="tab-mine" aria-selected="true">My hours</button>
+    <button role="tab" id="tab-jobs" aria-selected="false" hidden>Addresses</button>
     <button role="tab" id="tab-tasks" aria-selected="false" hidden>Tasks <span class="badge" id="task-count" hidden></span></button>
     <button role="tab" id="tab-roads" aria-selected="false" hidden>Roads mowed</button>
     <button role="tab" id="tab-water" aria-selected="false" hidden>Water System</button>
@@ -124,6 +125,8 @@
   <section id="task-screen" hidden style="display:flex;flex-direction:column;gap:14px"></section>
 
   <!-- Needs to order (drawn by crew.js) -->
+  <section id="job-screen" hidden style="display:flex;flex-direction:column;gap:14px"></section>
+
   <section id="order-screen" hidden style="display:flex;flex-direction:column;gap:14px"></section>
 
   <!-- Roads mowed (drawn by crew.js) -->

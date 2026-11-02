@@ -219,7 +219,7 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
   const wk = (await sam('GET', '/week')).body;
-  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false, orders: false });
+  assert.deepStrictEqual(wk.features, { hours: true, tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false, orders: false, jobs: false });
   assert.strictEqual((await sam('GET', '/roads')).status, 403);
   assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
   assert.strictEqual((await sam('GET', '/roads?kind=water')).status, 200);
@@ -587,4 +587,43 @@ test('QuickBooks billing: invoices per read meter, split 100 per file, settings 
   assert.match(text, /"Owner 0",".{10}",".{10}",.*"Water usage",.*"90","0.5","45.00"/);
   assert.match(text, /"Water base charge",.*"1","10","10.00"/);
   assert.strictEqual((await O2('GET', '/api/admin/billing')).body.invoices.length, 0, 'other company');
+});
+
+test('address jobs: off by default, time in/out, costs, receipts, owner from the members list; hours can be switched off', async () => {
+  assert.strictEqual((await sam('GET', '/jobs')).status, 403, 'off until switched on');
+  const row = (await O('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Sam');
+  assert.strictEqual(row.features.jobs, false); assert.strictEqual(row.features.hours, true);
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, jobs: true, hours: false } });
+  const wk = (await sam('GET', '/week')).body;
+  assert.strictEqual(wk.features.jobs, true); assert.strictEqual(wk.features.hours, false);
+  assert.strictEqual((await sam('POST', '/day', { day: wk.today, in1: '08:00', out1: '12:00' })).status, 403, 'no time sheet');
+  // addresses come from the members list, with owners
+  const ad = (await sam('GET', '/jobs/addresses')).body.addresses;
+  assert.ok(ad.some(a => a.address === '141 Deer Meadow Dr' && a.owner === 'Pat Meadows'));
+  // add a job: in now, out later
+  assert.strictEqual((await sam('POST', '/jobs', { address: '' })).status, 400);
+  assert.strictEqual((await sam('POST', '/jobs', { address: '141 Deer Meadow Dr', day: wk.today, chemCost: 'abc' })).status, 400);
+  let r = await sam('POST', '/jobs', { address: '141 Deer Meadow Dr', day: wk.today, timeIn: '08:30', chemCost: '$42.50', receipts: [JPEG], clientRef: 'job-ref-123456' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  await sam('POST', '/jobs', { address: '141 Deer Meadow Dr', day: wk.today, timeIn: '08:30', clientRef: 'job-ref-123456' });
+  assert.strictEqual(r.body.jobs.length, 1);
+  let j = r.body.jobs[0];
+  assert.strictEqual(j.owner, 'Pat Meadows'); assert.strictEqual(j.chemCost, 42.5); assert.strictEqual(j.receipts.length, 1); assert.strictEqual(j.timeOut, null);
+  assert.strictEqual((await sam('GET', '/jobs')).body.jobs.length, 1, 'resend made no second job');
+  r = await sam('PUT', '/jobs/' + j.id, { timeOut: '10:45', materialCost: '18', receipts: [JPEG] });
+  j = r.body.jobs[0];
+  assert.strictEqual(j.hours, 2.3); assert.strictEqual(j.total, 60.5); assert.strictEqual(j.receipts.length, 2);
+  assert.strictEqual((await sam('GET', '/receipts/' + j.receipts[0])).status, 200);
+  // other crew can't see or change it
+  assert.strictEqual((await jake('PUT', '/jobs/' + j.id, { notes: 'x' })).status, 403, 'Jake has jobs off');
+  // the boss: totals, CSV, edit, receipts
+  let b = (await O('GET', '/api/admin/jobs')).body;
+  assert.strictEqual(b.totals.jobs, 1); assert.strictEqual(b.totals.total, 60.5); assert.strictEqual(b.jobs[0].crewName, 'Sam');
+  assert.strictEqual((await O('GET', '/api/admin/receipts/' + j.receipts[0])).status, 200);
+  assert.match((await O('GET', '/api/admin/jobs.csv')).body.toString(), /"141 Deer Meadow Dr","Pat Meadows","08:30","10:45","2.3","42.5","18","60.5","2"/);
+  r = await O('PUT', '/api/admin/jobs/' + j.id, { address: '305 Whitetail Lane' });
+  assert.strictEqual(r.body.jobs[0].owner, 'Wendy Tail');
+  assert.strictEqual((await O2('GET', '/api/admin/jobs')).body.jobs.length, 0, 'other company');
+  assert.strictEqual((await O2('GET', '/api/admin/receipts/' + j.receipts[0])).status, 404);
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, jobs: false, hours: true } });
 });

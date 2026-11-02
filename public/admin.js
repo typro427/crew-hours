@@ -33,6 +33,7 @@
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
     if (name === 'orders') orderPanel.load();
+    if (name === 'jobs') loadJobs();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -508,6 +509,74 @@
     return me;
   }
   function me_today() { return me.today; }
+
+  /* --------------------------- address jobs --------------------------- */
+  var jb = { data: null, editing: null, pics: [], crew: [], addrs: null };
+  function jbQuery() { return 'from=' + encodeURIComponent($('jb-from').value) + '&to=' + encodeURIComponent($('jb-to').value) + '&crew=' + encodeURIComponent($('jb-crew').value); }
+  function money2(v) { return v == null ? '' : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function ampm(t) { if (!t) return ''; var h = Number(t.slice(0, 2)); return (h % 12 || 12) + ':' + t.slice(3, 5) + ' ' + (h < 12 ? 'AM' : 'PM'); }
+  function loadJobs() {
+    if (!$('jb-from').value) { var t = me_today() || new Date().toISOString().slice(0, 10); $('jb-from').value = t.slice(0, 8) + '01'; $('jb-to').value = t; }
+    if (!jb.addrs) { jb.addrs = []; api('GET', '/api/admin/jobs/addresses').then(function (r) { jb.addrs = r.addresses; var dl = $('jf-addrs'); dl.innerHTML = ''; r.addresses.forEach(function (a) { var o = el('option'); o.value = a.address; o.label = a.owner; dl.appendChild(o); }); }).catch(function () { jb.addrs = null; }); }
+    return Promise.all([api('GET', '/api/admin/jobs?' + jbQuery()), api('GET', '/api/admin/crew')]).then(function (r) {
+      jb.data = r[0]; jb.crew = r[1].crew; fillJobCrew(); drawJobs();
+    }).catch(function (e) { status('jf-status', e.message, 'err'); });
+  }
+  function fillJobCrew() {
+    [['jb-crew', 'Everyone'], ['jf-crew', 'Nobody']].forEach(function (x) {
+      var s = $(x[0]), keep = s.value; s.innerHTML = ''; var o = el('option', '', x[1]); o.value = ''; s.appendChild(o);
+      jb.crew.forEach(function (c) { if (!c.active && x[0] === 'jf-crew') return; var y = el('option', '', c.name); y.value = c.id; s.appendChild(y); });
+      s.value = keep;
+    });
+  }
+  ['jb-from', 'jb-to', 'jb-crew'].forEach(function (id) { $(id).onchange = loadJobs; });
+  function drawJobs() {
+    var d = jb.data, body = $('jb-body'); body.innerHTML = '';
+    var t = d.totals;
+    $('jb-sum').textContent = t.jobs + ' job' + (t.jobs === 1 ? '' : 's') + ' · ' + t.hours + ' h on site · chemicals ' + money2(t.chemCost) + ' · materials ' + money2(t.materialCost) + ' · total ' + money2(t.total);
+    $('jb-csv').href = '/api/admin/jobs.csv?' + jbQuery();
+    d.jobs.forEach(function (j) {
+      var tr = el('tr', j.timeIn && !j.timeOut ? 'open' : '');
+      [j.day, j.crewName || '', j.address, j.owner, ampm(j.timeIn), j.timeIn && !j.timeOut ? 'still there' : ampm(j.timeOut)].forEach(function (v) { tr.appendChild(el('td', '', v)); });
+      [j.hours == null ? '' : String(j.hours), money2(j.chemCost), money2(j.materialCost), j.total ? money2(j.total) : ''].forEach(function (v) { tr.appendChild(el('td', 'num', v)); });
+      var rc = el('td'); rc.appendChild(photoLinks(j.receipts, '/api/admin/receipts/', 'Receipt')); tr.appendChild(rc);
+      var act = el('td'), ed = el('button', 'btn ghost small', 'Edit'), del = el('button', 'btn ghost small', 'Delete'); ed.type = del.type = 'button';
+      ed.onclick = function () { editJob(j); };
+      del.onclick = function () {
+        if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+        api('DELETE', '/api/admin/jobs/' + j.id + '?' + jbQuery()).then(function (r) { jb.data = r; drawJobs(); }).catch(function (e) { status('jf-status', e.message, 'err'); });
+      };
+      act.appendChild(ed); act.appendChild(del); tr.appendChild(act);
+      body.appendChild(tr);
+      if (j.notes) { var nr = el('tr', 'jb-note'), nd = el('td', 'hint', j.notes); nd.colSpan = 12; nr.appendChild(nd); body.appendChild(nr); }
+    });
+    $('jb-empty').hidden = d.jobs.length > 0;
+  }
+  function editJob(j) {
+    jb.editing = j ? j.id : null; jb.pics = []; $('jf-thumbs').innerHTML = ''; $('jf-form').hidden = false;
+    $('jf-title').textContent = j ? 'Edit job' : 'Add a job';
+    $('jf-address').value = j ? j.address : ''; $('jf-crew').value = j && j.crewId ? j.crewId : ''; $('jf-day').value = j ? j.day : (me_today() || '');
+    $('jf-in').value = j ? j.timeIn || '' : ''; $('jf-out').value = j ? j.timeOut || '' : '';
+    $('jf-chem').value = j && j.chemCost != null ? j.chemCost : ''; $('jf-mat').value = j && j.materialCost != null ? j.materialCost : ''; $('jf-notes').value = j ? j.notes || '' : '';
+    status('jf-status', ''); $('jf-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('jf-address').focus();
+  }
+  $('jb-add').onclick = function () { editJob(null); };
+  $('jf-cancel').onclick = function () { $('jf-form').hidden = true; jb.editing = null; };
+  $('jf-rc').onchange = function () {
+    var files = Array.prototype.slice.call($('jf-rc').files || [], 0, 10); $('jf-rc').value = '';
+    files.reduce(function (p, f) { return p.then(function () { return shrinkImage(f).then(function (d) { jb.pics.push(d); }); }); }, Promise.resolve()).then(function () {
+      $('jf-thumbs').innerHTML = ''; jb.pics.forEach(function (src) { var im = el('img'); im.src = src; im.alt = 'New receipt'; im.style.cssText = 'width:90px;height:90px;object-fit:cover;border-radius:8px'; $('jf-thumbs').appendChild(im); });
+    }).catch(function (e) { status('jf-status', e.message, 'err'); });
+  };
+  $('jf-form').onsubmit = function (e) {
+    e.preventDefault();
+    var b = { address: $('jf-address').value, crewId: $('jf-crew').value ? Number($('jf-crew').value) : null, day: $('jf-day').value, timeIn: $('jf-in').value, timeOut: $('jf-out').value,
+      chemCost: $('jf-chem').value, materialCost: $('jf-mat').value, notes: $('jf-notes').value, receipts: jb.pics.slice(), from: $('jb-from').value, to: $('jb-to').value, crew: $('jb-crew').value };
+    status('jf-status', b.receipts.length ? 'Sending receipts…' : 'Saving…');
+    api(jb.editing ? 'PUT' : 'POST', '/api/admin/jobs' + (jb.editing ? '/' + jb.editing : ''), b).then(function (r) {
+      jb.data = r; drawJobs(); $('jf-form').hidden = true; jb.editing = null; status('jf-status', '');
+    }).catch(function (err) { status('jf-status', err.message, 'err'); });
+  };
   function photoLinks(ids, base, alt) {
     var th = el('div', 't-thumbs');
     ids.forEach(function (id) { var a = el('a'); a.href = base + id; a.target = '_blank'; a.rel = 'noopener';
