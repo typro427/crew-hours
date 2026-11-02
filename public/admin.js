@@ -831,10 +831,31 @@
     var q = $('mr-month').value;
     return api('GET', '/api/admin/meters?all=1' + (q ? '&quarter=' + q : '')).then(function (r) {
       mr.data = r; fillQuarters(r.thisQuarter); $('mr-month').value = r.quarter;
-      $('mr-csv').href = '/api/admin/meters.csv?quarter=' + r.quarter; drawMeterAdmin(); loadNotOnRoute();
+      $('mr-csv').href = '/api/admin/meters.csv?quarter=' + r.quarter; drawMeterAdmin(); loadNotOnRoute(); loadBilling(r.quarter);
     }).catch(function (e) { status('mr-status', e.message, 'err'); });
   }
   $('mr-month').onchange = loadMeterAdmin;
+  // ---- QuickBooks billing ----
+  function loadBilling(q) { return api('GET', '/api/admin/billing?quarter=' + encodeURIComponent(q || '')).then(drawBilling).catch(function (e) { status('bl-status', e.message, 'err'); }); }
+  function drawBilling(b) {
+    var s = b.settings, set = function (id, v) { if (document.activeElement !== $(id)) $(id).value = v == null ? '' : v; };
+    set('bl-rate', s.rate); set('bl-item', s.item); set('bl-base', s.base); set('bl-baseitem', s.baseItem); set('bl-due', s.dueDays); set('bl-prefix', s.prefix);
+    var files = $('bl-files'); files.innerHTML = '';
+    if (!b.ready) { $('bl-sum').textContent = 'Set the rate (or a base charge) to make invoices for ' + b.label + '.'; $('bl-skipped').textContent = ''; return; }
+    $('bl-sum').textContent = b.label + ': ' + b.count + ' invoice' + (b.count === 1 ? '' : 's') + ' · total $' + b.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      (b.notMatched ? ' · ' + b.notMatched + ' without a QuickBooks customer name' : '');
+    for (var p = 1; p <= b.parts; p++) {
+      var a = el('a', 'btn ghost small', 'Download part ' + p + ' of ' + b.parts + ' (invoices ' + ((p - 1) * 100 + 1) + '–' + Math.min(p * 100, b.count) + ')');
+      a.href = '/api/admin/billing.csv?quarter=' + b.quarter + '&part=' + p; files.appendChild(a);
+    }
+    var why = {}; b.skipped.forEach(function (x) { why[x.why] = (why[x.why] || 0) + 1; });
+    $('bl-skipped').textContent = b.skipped.length ? 'Left out: ' + Object.keys(why).map(function (k) { return why[k] + ' ' + k.toLowerCase(); }).join(', ') + '.' : '';
+  }
+  $('bl-form').onsubmit = function (e) {
+    e.preventDefault();
+    api('PUT', '/api/admin/billing', { quarter: mr.data && mr.data.quarter, rate: $('bl-rate').value, item: $('bl-item').value, base: $('bl-base').value, baseItem: $('bl-baseitem').value, dueDays: $('bl-due').value || 30, prefix: $('bl-prefix').value })
+      .then(function (b) { drawBilling(b); status('bl-status', 'Saved.', 'ok'); }).catch(function (e2) { status('bl-status', e2.message, 'err'); });
+  };
   $('mr-q').oninput = function () { if (mr.data) drawMeterAdmin(); };
   $('mr-show').onchange = function () { if (mr.data) drawMeterAdmin(); };
   function drawMeterAdmin() {

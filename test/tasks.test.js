@@ -566,3 +566,25 @@ test('high water use: flagged against the meter\'s usual use, report a leak from
   assert.strictEqual(r.status, 200);
   assert.strictEqual((await db2.one('SELECT month FROM meter_reads WHERE meter_id=$1 ORDER BY month DESC LIMIT 1', [ms[3].id])).month, q);
 });
+
+test('QuickBooks billing: invoices per read meter, split 100 per file, settings saved', async () => {
+  let b = (await O('GET', '/api/admin/billing')).body;
+  assert.strictEqual(b.ready, false);
+  assert.strictEqual((await O('GET', '/api/admin/billing.csv')).status, 400);
+  assert.strictEqual((await O('PUT', '/api/admin/billing', { rate: 'abc' })).status, 400);
+  b = (await O('PUT', '/api/admin/billing', { rate: '0.5', base: '$10', dueDays: 15, prefix: 'W' })).body;
+  assert.strictEqual(b.ready, true); assert.strictEqual(b.settings.rate, 0.5);
+  // from the high-use test: meter 0 used 90, meter 2 was lower (left out), unread meters left out
+  const inv = b.invoices.find(i => i.customer === 'Owner 0');
+  assert.strictEqual(inv.total, 55); assert.strictEqual(inv.lines.length, 2);
+  assert.ok(b.skipped.some(s => s.name === 'Owner 2' && /Lower/.test(s.why)));
+  assert.ok(b.skipped.some(s => s.why === 'Not read'));
+  assert.strictEqual(b.parts, 1);
+  const f = await O('GET', '/api/admin/billing.csv?part=1');
+  assert.strictEqual(f.status, 200);
+  const text = f.body.toString();
+  assert.match(text, /^"Invoice no","Customer","Invoice date","Due date"/);
+  assert.match(text, /"Owner 0",".{10}",".{10}",.*"Water usage",.*"90","0.5","45.00"/);
+  assert.match(text, /"Water base charge",.*"1","10","10.00"/);
+  assert.strictEqual((await O2('GET', '/api/admin/billing')).body.invoices.length, 0, 'other company');
+});

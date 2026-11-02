@@ -223,6 +223,8 @@ CREATE TABLE IF NOT EXISTS meter_reads (
 -- High-usage alerts: the leak report made from a read, or "not a leak" from the boss.
 ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS leak_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
 ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS flag_ok BOOLEAN NOT NULL DEFAULT FALSE;
+-- QuickBooks billing settings: rate, item names, base charge, days until due.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS billing JSONB;
 -- Meters are read quarterly: turn any monthly keys (YYYY-MM) into quarters (YYYY-Q#), keeping the latest read per quarter.
 DELETE FROM meter_reads a USING meter_reads b
   WHERE a.month ~ '^[0-9]{4}-[0-9]{2}$' AND b.month ~ '^[0-9]{4}-[0-9]{2}$' AND a.meter_id=b.meter_id
