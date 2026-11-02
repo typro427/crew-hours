@@ -443,6 +443,8 @@
     var me = { roads: [], pick: null };
     var tableC = el('div', 'card'), head = el('div', 'row'); head.style.justifyContent = 'space-between';
     head.appendChild(el('h3', '', L.title)); var count = el('span', 'hint'); head.appendChild(count); tableC.appendChild(head);
+    var find = el('input'); find.type = 'search'; find.placeholder = L.searchPh; find.autocomplete = 'off'; find.setAttribute('aria-label', L.searchPh); find.style.margin = '10px 0';
+    tableC.appendChild(find); find.oninput = function () { draw(); };
     var tb = el('div', 'tablebox'), table = el('table', 'roads'), thead = el('thead'), htr = el('tr'), body = el('tbody');
     L.cols.forEach(function (c) { htr.appendChild(el('th', '', c)); }); thead.appendChild(htr); table.appendChild(thead); table.appendChild(body); tb.appendChild(table); tableC.appendChild(tb);
     var empty = el('p', 'hint', L.empty); tableC.appendChild(empty); tableC.appendChild(el('p', 'hint', L.clickHint));
@@ -463,7 +465,9 @@
     };
     function draw() {
       body.innerHTML = '';
-      me.roads.forEach(function (x) {
+      var q = find.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      var shown = me.roads.filter(function (x) { var t = [x.name, x.surface, x.notes, x.lastBy].join(' ').toLowerCase(); return q.every(function (w) { return t.indexOf(w) !== -1; }); });
+      shown.forEach(function (x) {
         var tr = el('tr');
         tr.appendChild(el('td', '', x.name));
         if (L.showLength) tr.appendChild(el('td', '', x.lengthMi != null ? x.lengthMi + ' mi' : ''));
@@ -474,7 +478,8 @@
         tr.onclick = function () { show(x.id); };
         body.appendChild(tr);
       });
-      empty.hidden = me.roads.length > 0;
+      empty.hidden = shown.length > 0;
+      empty.textContent = me.roads.length ? 'Nothing matches “' + find.value.trim() + '”.' : L.empty;
       var stale = me.roads.filter(function (x) { return !x.lastDay || daysAgo(x.lastDay) > L.oldDays; }).length;
       count.textContent = me.roads.length ? me.roads.length + ' ' + L.noun + (stale ? ' · ' + stale + ' ' + L.staleText : '') : '';
     }
@@ -568,11 +573,11 @@
     detailsPh: 'What needs doing, parts needed', addBtn: 'Add', needTitle: 'Say what the problem is and where.', addedOk: 'Added. The crew will see it under Water System.',
     formHint: 'The crew can also report problems from their app. When they fix one, they add notes and photos and you get an email.',
     openTitle: 'Open leaks & repairs', openEmpty: 'Nothing open.', doneTitle: 'Fixed', doneEmpty: 'Nothing fixed yet.', byWord: 'Reported by', doneWord: 'Fixed' });
-  var roadPanel = PlacePanel('road', $('roads-panel'), { title: 'Roads mowed', cols: ['Road', 'Length', 'Last mowed', 'By', 'Times this year'], showLength: true, showPriorities: true,
+  var roadPanel = PlacePanel('road', $('roads-panel'), { searchPh: 'Search roads', title: 'Roads mowed', cols: ['Road', 'Length', 'Last mowed', 'By', 'Times this year'], showLength: true, showPriorities: true,
     empty: 'No roads yet. Add your list below and the Roads mowed tab shows up in the crew app.', clickHint: 'Click a road to see every time it was mowed, with photos.',
     listTitle: 'Road list', listPh: 'Deerfield Way\nSkyline Knoll', noun: 'roads', staleText: 'not mowed in 2 weeks', oldDays: 14, never: 'Not mowed yet',
     editDetails: 'Edit road details', surfaceLabel: 'Surface / other', surfacePh: 'Paved, Gravel…', historyTitle: 'Mowing history' });
-  var sitePanel = PlacePanel('water', $('water-sites'), { title: 'Water system sites', cols: ['Site', 'Last checked', 'By', 'Times this year'], showLength: false, showPriorities: false,
+  var sitePanel = PlacePanel('water', $('water-sites'), { searchPh: 'Search sites', title: 'Water system sites', cols: ['Site', 'Last checked', 'By', 'Times this year'], showLength: false, showPriorities: false,
     empty: 'No sites yet. Add wells, tanks, pump houses and so on below.', clickHint: 'Click a site to see every check, with photos.',
     listTitle: 'Site list', listPh: 'Well 1\nWell 2\nStorage tank\nPump house\nChlorinator', noun: 'sites', staleText: 'not checked in a week', oldDays: 7, never: 'Not checked yet',
     editDetails: 'Edit site details', surfaceLabel: 'Type', surfacePh: 'Well, Tank, Pump house…', historyTitle: 'Check history' });

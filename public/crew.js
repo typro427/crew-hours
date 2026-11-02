@@ -591,9 +591,12 @@
     var me={ roads:[], open:null, road:null, max:4 };
     root.classList.add("board");
     var listView=el("div",""); listView.style.cssText="display:flex;flex-direction:column;gap:10px";
+    var find=el("input"); find.type="search"; find.placeholder=L.searchPh; find.autocomplete="off"; find.setAttribute("aria-label",L.searchPh); find.className="placesearch";
+    listView.appendChild(find);
     listView.appendChild(el("p","hint",L.hint)).style.margin="0";
     var list=el("div","roadlist"), empty=el("p","hint",L.empty); empty.style.cssText="margin:0;text-align:center";
     listView.appendChild(list); listView.appendChild(empty);
+    find.oninput=function(){ draw(); };
     var view=el("div",""); view.style.cssText="display:flex;flex-direction:column;gap:14px"; view.hidden=true;
     var back=el("button","ghost",L.back); back.type="button"; back.style.alignSelf="flex-start"; view.appendChild(back);
     var card=el("div","task"), name=el("h3",""), last=el("div","meta"), info=el("div","roadinfo");
@@ -619,8 +622,11 @@
     };
     me.reset=function(){ me.open=null; view.hidden=true; listView.hidden=false; };
     function draw(){
-      list.innerHTML=""; empty.hidden=me.roads.length>0; list.hidden=!me.roads.length;
-      me.roads.forEach(function(r){
+      var q=find.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      var shown=me.roads.filter(function(r){ var t=[r.name, r.surface, r.notes, r.lastBy].join(" ").toLowerCase(); return q.every(function(w){ return t.indexOf(w)!==-1; }); });
+      list.innerHTML=""; list.hidden=!shown.length;
+      empty.hidden=shown.length>0; empty.textContent = me.roads.length ? "Nothing matches \u201c"+find.value.trim()+"\u201d." : L.empty;
+      shown.forEach(function(r){
         var b=el("button","roadrow"); b.type="button";
         var nm=el("span","rname"); nm.appendChild(el("b","",r.name));
         var sub=[r.lengthMi!=null ? r.lengthMi+" mi" : "", r.surface||""].filter(Boolean).join(" · ");
@@ -702,9 +708,9 @@
     detailsLabel:"Details (optional)", detailsPh:"How bad, what you saw, what's needed", forLabel:"Who's fixing it", forMe:"I'll fix it", forAnyone:"Needs someone", addSave:"Report it", needTitle:"Say what the problem is and where.",
     addedOk:"Reported. The boss got an email.", empty:"No open leaks or repairs.", doneTag:"Fixed ✓", byYou:"Reported by you", byOther:"Reported by",
     markDone:"Mark fixed", del:"Delete this report", donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
-  var roadBoard=PlaceBoard("road", $("road-screen"), { hint:"Tap a road to log that you mowed it.", empty:"No roads yet.", back:"‹ All roads", dateLabel:"Date you mowed it", save:"Save: mowed",
+  var roadBoard=PlaceBoard("road", $("road-screen"), { searchPh:"Search roads", hint:"Tap a road to log that you mowed it.", empty:"No roads yet.", back:"‹ All roads", dateLabel:"Date you mowed it", save:"Save: mowed",
     never:"Not mowed yet", lastWord:"Last mowed", oldDays:14, savedMsg:function(n,d){ return "Saved. "+n+" marked mowed "+d+"."; } });
-  var siteBoard=PlaceBoard("water", $("wp-sites"), { hint:"Tap a site to log a check and its readings.", empty:"The boss hasn't added any sites yet.", back:"‹ All sites", dateLabel:"Date you checked it", save:"Save: checked",
+  var siteBoard=PlaceBoard("water", $("wp-sites"), { searchPh:"Search sites", hint:"Tap a site to log a check and its readings.", empty:"The boss hasn't added any sites yet.", back:"‹ All sites", dateLabel:"Date you checked it", save:"Save: checked",
     never:"Not checked yet", lastWord:"Last checked", oldDays:7, savedMsg:function(n,d){ return "Saved. "+n+" checked "+d+"."; } });
 
   // ---- water readings ----
