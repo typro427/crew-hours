@@ -79,6 +79,18 @@ r.post('/:slug/tasks/:id/done', A.requireCrew, async (req, res) => {
   await K.complete(req.company, req.crew, Number(req.params.id), req.body || {});
   res.json(await taskList(req, kind));
 });
+r.post('/:slug/tasks/:id/progress', A.requireCrew, async (req, res) => {
+  const kind = await K.kindOfTask(req.company.id, Number(req.params.id));
+  if (!kind || !F.can(req.crew, featTask(kind))) return off(res);
+  await K.progress(req.company.id, Number(req.params.id), { crew: req.crew }, req.body || {});
+  res.json(await taskList(req, kind));
+});
+r.delete('/:slug/tasks/updates/:id', A.requireCrew, async (req, res) => {
+  const kind = await K.kindOfUpdate(req.company.id, Number(req.params.id));
+  if (!kind || !F.can(req.crew, featTask(kind))) return off(res);
+  await K.removeProgress(req.company.id, Number(req.params.id), req.crew.id);
+  res.json(await taskList(req, kind));
+});
 r.delete('/:slug/tasks/:id', A.requireCrew, async (req, res) => {
   const kind = await K.kindOfTask(req.company.id, Number(req.params.id));
   if (kind && !F.can(req.crew, featTask(kind))) return off(res);

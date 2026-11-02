@@ -62,6 +62,9 @@ tfoot td{font-weight:700;border-bottom:0}
 .trow .late{color:var(--err);font-weight:600}
 .trow .t-text{white-space:pre-wrap;margin:0}
 .trow .t-notes{white-space:pre-wrap;margin:0;border-left:3px solid var(--accent);padding-left:10px}
+.trow .t-upd{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);padding-left:10px}
+.trow .t-upd .t-meta{display:flex;gap:10px;align-items:center}
+.trow .t-prog{display:flex;flex-direction:column;gap:8px;padding-top:6px}
 .trow .t-acts{display:flex;gap:6px}
 .t-thumbs{display:flex;flex-wrap:wrap;gap:8px}
 .t-thumbs a img{width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}

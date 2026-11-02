@@ -155,6 +155,18 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_phone TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_checked BOOLEAN NOT NULL DEFAULT FALSE;
+-- Progress updates while a job is underway: a note and/or photos, before it's marked done.
+CREATE TABLE IF NOT EXISTS task_updates (
+  id         SERIAL PRIMARY KEY,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id    INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  by_name    TEXT NOT NULL DEFAULT '',
+  note       TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS task_updates_task ON task_updates (task_id);
+ALTER TABLE task_photos ADD COLUMN IF NOT EXISTS update_id INTEGER REFERENCES task_updates(id) ON DELETE CASCADE;
 -- Which parts of the app each crew member can use (null = everything).
 ALTER TABLE crew ADD COLUMN IF NOT EXISTS features JSONB;
 -- Members list (searchable database): rows are {column: value}; the column list is kept on the company.

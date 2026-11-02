@@ -426,6 +426,7 @@
         left.appendChild(meta); top.appendChild(left);
         var acts = el('div', 't-acts');
         function btn(label, fn) { var b = el('button', 'btn ghost small', label); b.type = 'button'; b.onclick = fn; acts.appendChild(b); return b; }
+        if (t.status === 'open' && L.progress) btn('+ Progress', function () { progressForm(t, r); });
         if (t.status === 'open') btn('Edit', function () { edit(t); });
         else btn('Reopen', function () { api('PUT', '/api/admin/tasks/' + t.id, { reopen: true }).then(function (x) { me.tasks = x.tasks; draw(); }).catch(function (e) { say(e.message, 'err'); }); });
         var del = btn('Delete', function () {
@@ -441,6 +442,19 @@
           r.appendChild(ow);
         }
         if (t.details) r.appendChild(el('p', 't-text', t.details));
+        (t.updates || []).forEach(function (u) {
+          var w = el('div', 't-upd'), when = new Date(u.at), h = el('div', 't-meta');
+          h.appendChild(el('span', '', 'Progress · ' + when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · ' + (u.by || 'crew')));
+          var x = el('button', 'btn ghost small', 'Remove'); x.type = 'button';
+          x.onclick = function () {
+            if (x.textContent !== 'Tap again') { x.textContent = 'Tap again'; setTimeout(function () { x.textContent = 'Remove'; }, 3000); return; }
+            api('DELETE', '/api/admin/tasks/updates/' + u.id).then(function (q) { me.tasks = q.tasks; draw(); }).catch(function (e) { say(e.message, 'err'); });
+          };
+          h.appendChild(x); w.appendChild(h);
+          if (u.note) w.appendChild(el('p', 't-text', u.note));
+          if (u.photos.length) w.appendChild(photoLinks(u.photos, '/api/admin/tasks/photo/', 'Progress photo'));
+          r.appendChild(w);
+        });
         if (t.status === 'done' && t.doneNotes) r.appendChild(el('p', 't-notes', t.doneNotes));
         if (t.photos && t.photos.length) r.appendChild(photoLinks(t.photos, '/api/admin/tasks/photo/', 'Photo from ' + (t.doneByName || 'crew')));
         if (t.status === 'open') { openL.appendChild(r); no++; } else { doneL.appendChild(r); nd++; }
@@ -450,6 +464,27 @@
         var openT = me.tasks.filter(function (t) { return t.status === 'open'; }), tot = openT.reduce(function (a, t) { return a + (Number(t.cost) || 0); }, 0);
         openC.firstChild.textContent = L.openTitle + (openT.length ? ' · about $' + Math.round(tot).toLocaleString() : '');
       }
+    }
+    function progressForm(t, r) {
+      if (r.querySelector('.t-prog')) return;
+      var f = el('div', 't-prog'), pics = [], inp = el('input'), th = el('div', 't-thumbs'), note = el('textarea'), ps = el('span', 'status');
+      inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true; note.rows = 2; note.maxLength = 2000; note.placeholder = 'Note (optional)';
+      f.appendChild(el('label', '', 'Progress photos')); f.appendChild(inp); f.appendChild(th); f.appendChild(note);
+      function drawP() { th.innerHTML = ''; pics.forEach(function (src) { var im = el('img'); im.src = src; im.alt = 'New photo'; im.style.cssText = 'width:90px;height:90px;object-fit:cover;border-radius:8px'; th.appendChild(im); }); }
+      inp.onchange = function () {
+        var files = Array.prototype.slice.call(inp.files || [], 0, 12); inp.value = '';
+        files.reduce(function (p, file) { return p.then(function () { return shrinkImage(file).then(function (d) { pics.push(d); }); }); }, Promise.resolve())
+          .then(drawP).catch(function (e) { ps.textContent = e.message; ps.className = 'status err'; });
+      };
+      var row = el('div', 'row'), save = el('button', 'btn', 'Save progress'), no = el('button', 'btn ghost', 'Cancel');
+      save.type = no.type = 'button'; no.onclick = function () { f.remove(); };
+      save.onclick = function () {
+        if (!pics.length && !note.value.trim()) { ps.textContent = 'Add a photo or a few words.'; ps.className = 'status err'; return; }
+        save.disabled = true; ps.textContent = pics.length ? 'Sending photos…' : 'Saving…'; ps.className = 'status';
+        api('POST', '/api/admin/tasks/' + t.id + '/progress', { notes: note.value.trim(), photos: pics }).then(function (q) { me.tasks = q.tasks; draw(); say('Progress saved.', 'ok'); })
+          .catch(function (e) { save.disabled = false; ps.textContent = e.message; ps.className = 'status err'; });
+      };
+      row.appendChild(save); row.appendChild(no); row.appendChild(ps); f.appendChild(row); r.appendChild(f);
     }
     function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
     function reset() { me.editing = null; form.reset(); fPics = []; drawPics(); sv.textContent = L.addBtn; cancel.hidden = true; }
@@ -612,7 +647,7 @@
     formHint: 'Crew you switch on (Crew & PINs → Needs to order) can add items from their app too, with a picture. You get an email when they do.',
     openTitle: 'Needs to order', openEmpty: 'Nothing to order.', doneTitle: 'Ordered', doneEmpty: 'Nothing ordered yet.', byWord: 'Added by', doneWord: 'Ordered',
     hideFor: true, costField: true, photosOnCreate: true, detailsLabel: 'Description', dueLabel: 'Due by', dueWord: 'Due by ', overdueWord: 'Past due: ' });
-  var repairPanel = TaskPanel('repair', $('water-repairs'), { addressField: true, formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
+  var repairPanel = TaskPanel('repair', $('water-repairs'), { addressField: true, progress: true, photosOnCreate: true, formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
     detailsPh: 'What needs doing, parts needed', addBtn: 'Add', needTitle: 'Say what the problem is and where.', addedOk: 'Added. The crew will see it under Water System.',
     formHint: 'The crew can also report problems from their app. When they fix one, they add notes and photos and you get an email.',
     openTitle: 'Open leaks & repairs', openEmpty: 'Nothing open.', doneTitle: 'Fixed', doneEmpty: 'Nothing fixed yet.', byWord: 'Reported by', doneWord: 'Fixed' });

@@ -55,7 +55,9 @@
     delTask:         function(a){ return ["DELETE", "/tasks/" + a[1]]; },
     addDayPhotos:    function(a){ return ["POST", "/day/" + a[1] + "/photos", { photos:a[2] }]; },
     delDayPhoto:     function(a){ return ["DELETE", "/day-photo/" + a[1]]; },
-    doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; }
+    doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; },
+    progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3] }]; },
+    delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; }
   };
   function call(fn, args, ok, fail){
     var r = ROUTES[fn](args), opts = { method: r[0], headers: { "x-ch": "1" } };
@@ -496,7 +498,7 @@
 
   // ---- a list of tasks: used for Tasks and for Water leaks & repairs ----
   function TaskBoard(kind, root, L){
-    var me={ tasks:[], maxPhotos:6, openForm:null, onCount:null };
+    var me={ tasks:[], maxPhotos:6, openForm:null, progForm:null, onCount:null };
     root.classList.add("board");
     var top=el("div","row"), addBtn=el("button","ghost",L.add); addBtn.type="button"; top.appendChild(addBtn);
     var form=el("div","task"); form.hidden=true;
@@ -567,13 +569,22 @@
         if(t.createdByName) card.appendChild(el("div","by", isMe(t.createdByName) ? L.byYou : L.byOther+" "+t.createdByName));
         if(t.details) card.appendChild(el("p","details",t.details));
         if(done && t.doneNotes) card.appendChild(el("p","notes",t.doneNotes));
-        if(t.photos && t.photos.length) card.appendChild(thumbsFor(t.photos,"task"));
-        var room=me.maxPhotos-(t.photos||[]).length;
+        var ups=t.updates||[], used=(t.photos||[]).length+ups.reduce(function(a,u){ return a+u.photos.length; },0);
+        if(ups.length) card.appendChild(updatesFor(t, ups));
+        if(t.photos && t.photos.length){ if(ups.length) card.appendChild(el("div","by", done ? (L.donePhotos||"Photos") : "Photos")); card.appendChild(thumbsFor(t.photos,"task")); }
+        var room=me.maxPhotos-used;
         if(me.openForm===t.id) card.appendChild(doneForm(t, room));
+        else if(me.progForm===t.id) card.appendChild(progressForm(t, room));
         else if(!done || room>0){
           var b=el("button", done ? "ghost" : "primary", done ? "Add more photos" : L.markDone); b.type="button";
-          b.onclick=function(){ me.openForm=t.id; draw(); };
-          var row=el("div","row"); row.appendChild(b); card.appendChild(row);
+          b.onclick=function(){ me.openForm=t.id; me.progForm=null; draw(); };
+          var row=el("div","row"); row.appendChild(b);
+          if(!done && L.progress && room>0){
+            var pb=el("button","ghost","📷 Progress photos"); pb.type="button";
+            pb.onclick=function(){ me.progForm=t.id; me.openForm=null; draw(); };
+            row.appendChild(pb);
+          }
+          card.appendChild(row);
         }
         if(!done && isMe(t.createdByName) && me.openForm!==t.id){
           var dl=el("button","linkdel",L.del); dl.type="button";
@@ -585,6 +596,46 @@
         }
         list.appendChild(card);
       });
+    }
+    function updatesFor(t, ups){
+      var box=el("div","updates");
+      box.appendChild(el("div","by","Progress"));
+      ups.forEach(function(u){
+        var it=el("div","upd"), when=new Date(u.at);
+        it.appendChild(el("div","meta", when.toLocaleDateString([], {month:"short", day:"numeric"})+" "+when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})+" · "+(isMe(u.by) ? "you" : u.by)));
+        if(u.note) it.appendChild(el("p","details",u.note));
+        if(u.photos.length) it.appendChild(thumbsFor(u.photos,"task"));
+        if(t.status==="open" && isMe(u.by) && Date.now()-when.getTime() < 864e5){
+          var dl=el("button","linkdel","Remove this update"); dl.type="button";
+          dl.onclick=function(){
+            if(dl.textContent!=="Tap again to remove"){ dl.textContent="Tap again to remove"; setTimeout(function(){ dl.textContent="Remove this update"; },3000); return; }
+            call("delUpdate",[token,u.id], function(res){ me.tasks=res.tasks||[]; draw(); say(st,"Removed.","ok"); }, function(msg){ say(st,msg,"err"); });
+          };
+          it.appendChild(dl);
+        }
+        box.appendChild(it);
+      });
+      return box;
+    }
+    function progressForm(t, room){
+      var f=el("div",""); f.style.cssText="display:flex;flex-direction:column;gap:10px";
+      var fst=statusLine(), notes=el("textarea"); notes.placeholder="How's it going? e.g. Dug down to the line, waiting on a coupling (optional)"; notes.maxLength=2000;
+      f.appendChild(el("label","","Progress photos")); var pk=photoPicker(room, fst); f.appendChild(pk.el);
+      f.appendChild(el("label","","Note (optional)")); f.appendChild(notes);
+      var row=el("div","row"), send=el("button","primary","Save progress"), cancel=el("button","ghost","Cancel");
+      send.type=cancel.type="button";
+      cancel.onclick=function(){ me.progForm=null; draw(); };
+      send.onclick=function(){
+        if(busy) return;
+        var pics=pk.get();
+        if(!notes.value.trim() && !pics.length) return say(fst,"Add a photo or a few words.","err");
+        busy=true; send.disabled=true; say(fst, pics.length ? "Sending photos…" : "Saving…");
+        call("progressTask",[token,t.id,notes.value.trim(),pics], function(res){
+          busy=false; me.progForm=null; me.tasks=res.tasks||[]; draw(); say(st,"Progress saved. Still open until you mark it fixed.","ok");
+        }, function(msg){ busy=false; send.disabled=false; say(fst,msg,"err"); });
+      };
+      row.appendChild(send); row.appendChild(cancel); f.appendChild(row); f.appendChild(fst);
+      return f;
     }
     function doneForm(t, room){
       var f=el("div",""); f.style.cssText="display:flex;flex-direction:column;gap:10px";
@@ -732,7 +783,7 @@
   var repairBoard=TaskBoard("repair", $("wp-repairs"), { add:"+ Report a leak or repair", newTitle:"Report a problem", titleLabel:"What and where", titlePh:"e.g. Leak at the meter by 141 Deer Meadow",
     detailsLabel:"Details (optional)", detailsPh:"How bad, what you saw, what's needed", forLabel:"Who's fixing it", forMe:"I'll fix it", forAnyone:"Needs someone", addSave:"Report it", needTitle:"Say what the problem is and where.",
     addedOk:"Reported. The boss got an email.", empty:"No open leaks or repairs.", doneTag:"Fixed ✓", byYou:"Reported by you", byOther:"Reported by",
-    markDone:"Mark fixed", del:"Delete this report", addressField:true, donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
+    markDone:"Mark fixed", del:"Delete this report", addressField:true, progress:true, photosOnCreate:true, photoLabel:"Photo of the problem (optional)", donePhotos:"Photos", donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
   var orderBoard=TaskBoard("order", $("order-screen"), { add:"+ Add something to order", newTitle:"Needs to order", titleLabel:"What", titlePh:"e.g. 2\" PVC ball valve x4",
     detailsLabel:"Description (optional)", detailsPh:"Size, brand, where it's for, where to buy", forLabel:"For", forMe:"Me", forAnyone:"Anyone", hideFor:true, costField:true, photosOnCreate:true,
     photoLabel:"Picture (optional)", dueLabel:"Due by (optional)", dueWord:"Due by ", overdueWord:"Past due: ",

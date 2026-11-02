@@ -6,14 +6,17 @@ const config = require('./config');
 const { send, esc, layout } = require('./email');
 const R = require('./reports');
 
-const MAX_PHOTOS = 6;                 // per task
+const MAX_PHOTOS = 12;                // per task, progress photos included
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/webp': [0x52, 0x49, 0x46, 0x46] };
 
 const COLS = `t.id, t.title, t.details, t.assigned_to AS "assignedTo", a.name AS "assignedName", to_char(t.due, 'YYYY-MM-DD') AS due,
   t.status, t.cost, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
   t.address, t.owner, t.owner_phone AS "ownerPhone",
-  COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id), '[]') AS photos`;
+  COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id AND p.update_id IS NULL), '[]') AS photos,
+  COALESCE((SELECT json_agg(json_build_object('id', u.id, 'at', u.created_at, 'by', u.by_name, 'crewId', u.crew_id, 'note', u.note,
+      'photos', COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.update_id=u.id), '[]')) ORDER BY u.id)
+    FROM task_updates u WHERE u.task_id=t.id), '[]') AS updates`;
 const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by LEFT JOIN crew cb ON cb.id=t.created_by';
 
 /** The boss's list: everything open, plus what was finished in the last 60 days. */
@@ -134,6 +137,38 @@ async function createByCrew(company, crew, b) {
   notifyNew(company, crew.name, title, details, !!b.forMe, kind, due, roughCost(b.cost)).catch(() => {});   // logged in email.js
 }
 
+/**
+ * A progress update on an open job: a note and/or photos, without marking it done.
+ * who = { crew } for a crew member (must be able to see the task), or { boss: name } for the dashboard.
+ */
+async function progress(companyId, id, who, b) {
+  const t = await db.one(`SELECT * FROM tasks WHERE id=$1 AND company_id=$2 ${who.crew ? 'AND (assigned_to IS NULL OR assigned_to=$3)' : ''}`,
+    who.crew ? [id, companyId, who.crew.id] : [id, companyId]);
+  if (!t) V.bad('That job was not found. Pull down to refresh.');
+  if (t.status !== 'open') V.bad('That job is already marked done.');
+  const note = String((b && b.notes) || '').trim().slice(0, 2000);
+  const photos = (Array.isArray(b && b.photos) ? b.photos : []).map(photoBytes);
+  if (!note && !photos.length) V.bad('Add a photo or a few words.');
+  const have = (await db.one('SELECT count(*)::int AS n FROM task_photos WHERE task_id=$1', [id])).n;
+  if (have + photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos per job. This one has ${have}.`);
+  const n = (await db.one('SELECT count(*)::int AS n FROM task_updates WHERE task_id=$1', [id])).n;
+  if (n >= 50) V.bad('That job has a lot of updates already.');
+  await db.tx(async q => {
+    const u = await q.one('INSERT INTO task_updates (task_id, company_id, crew_id, by_name, note) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [id, companyId, who.crew ? who.crew.id : null, who.crew ? who.crew.name : (who.boss || 'Boss'), note]);
+    for (const p of photos) await q.q('INSERT INTO task_photos (task_id, company_id, mime, data, update_id) VALUES ($1,$2,$3,$4,$5)', [id, companyId, p.mime, p.buf, u.id]);
+  });
+}
+
+/** Remove a progress update: the crew member who posted it (same day), or the boss. */
+async function removeProgress(companyId, updateId, crewId) {
+  const u = await db.one(`SELECT 1 FROM task_updates WHERE id=$1 AND company_id=$2 ${crewId ? "AND crew_id=$3 AND created_at > now() - interval '24 hours'" : ''}`,
+    crewId ? [updateId, companyId, crewId] : [updateId, companyId]);
+  if (!u) V.bad(crewId ? 'You can only remove your own updates from the last 24 hours.' : 'That update was not found.');
+  await db.q('DELETE FROM task_updates WHERE id=$1', [updateId]);
+}
+const kindOfUpdate = async (companyId, id) => { const r = await db.one('SELECT t.kind FROM task_updates u JOIN tasks t ON t.id=u.task_id WHERE u.id=$1 AND u.company_id=$2', [id, companyId]); return r && r.kind; };
+
 /** Crew can delete a task they added, while it's still open. */
 async function removeByCrew(company, crew, id) {
   const t = await db.one("SELECT 1 FROM tasks WHERE id=$1 AND company_id=$2 AND created_by=$3 AND status='open'", [id, company.id, crew.id]);
@@ -197,4 +232,4 @@ const kindOfTaskPhoto = async (companyId, id) => { const r = await db.one('SELEC
 /** One photo, only for someone in the same company. */
 const photo = (companyId, photoId) => db.one('SELECT mime, data FROM task_photos WHERE id=$1 AND company_id=$2', [photoId, companyId]);
 
-module.exports = { fillOwners, recheckOwners, ownerAt, activeMembers, kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };
+module.exports = { progress, removeProgress, kindOfUpdate, fillOwners, recheckOwners, ownerAt, activeMembers, kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };

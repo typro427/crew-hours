@@ -117,6 +117,7 @@ async function companyDump(id) {
     entries: await one('SELECT * FROM entries WHERE company_id=$1 ORDER BY day, crew_id'),
     approvals: await one('SELECT * FROM approvals WHERE company_id=$1 ORDER BY week_start'),
     tasks: await one('SELECT * FROM tasks WHERE company_id=$1 ORDER BY id'),
+    taskUpdates: await one('SELECT * FROM task_updates WHERE company_id=$1 ORDER BY id'),
     members: await one('SELECT data FROM members WHERE company_id=$1 ORDER BY position, id'),
     roads: await one('SELECT id, kind, name, position, active, length_mi, p_road, p_ditch, p_trees, surface, notes, reading_ids FROM roads WHERE company_id=$1 ORDER BY kind, position'),
     roadChecks: await one("SELECT id, road_id, crew_id, to_char(day, 'YYYY-MM-DD') AS day, notes, created_at FROM road_mows WHERE company_id=$1 ORDER BY id"),

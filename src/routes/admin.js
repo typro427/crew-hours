@@ -157,6 +157,8 @@ const tasksOut = async (req, kind) => ({ tasks: await K.forOwner(req.company.id,
 r.get('/tasks', async (req, res) => res.json(await tasksOut(req, req.query.kind)));
 r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json(await tasksOut(req, (req.body || {}).kind)); });
 r.put('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await tasksOut(req, k)); });
+r.post('/tasks/:id/progress', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.progress(req.company.id, Number(req.params.id), { boss: req.owner.name || 'Boss' }, req.body || {}); res.json(await tasksOut(req, k)); });
+r.delete('/tasks/updates/:id', async (req, res) => { const k = await K.kindOfUpdate(req.company.id, Number(req.params.id)); await K.removeProgress(req.company.id, Number(req.params.id)); res.json(await tasksOut(req, k)); });
 r.delete('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.remove(req.company.id, Number(req.params.id)); res.json(await tasksOut(req, k)); });
 /* --------------------------------- roads ----------------------------------- */
 const RD = require('../roads');

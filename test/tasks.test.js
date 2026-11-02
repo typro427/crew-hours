@@ -68,8 +68,8 @@ test('crew marks a task done with notes and a photo; boss sees it and the photo'
   assert.strictEqual(mine.doneByName, 'Jake'); assert.strictEqual(mine.doneNotes, 'Replaced the fitting, no more leak.');
   const img = await O('GET', '/api/admin/tasks/photo/' + mine.photos[0]);
   assert.strictEqual(img.status, 200); assert.strictEqual(img.type, 'image/jpeg'); assert.strictEqual(img.body[0], 0xff);
-  // Jake can add more photos later, up to 6.
-  assert.strictEqual((await jake('POST', `/tasks/${t.id}/done`, { photos: [JPEG, JPEG, JPEG, JPEG, JPEG] })).status, 400);
+  // Jake can add more photos later, up to 12.
+  assert.strictEqual((await jake('POST', `/tasks/${t.id}/done`, { photos: Array(11).fill(JPEG) })).status, 400);
   assert.strictEqual((await jake('POST', `/tasks/${t.id}/done`, { photos: [JPEG] })).status, 200);
 });
 
@@ -474,4 +474,36 @@ test('leaks & repairs: the owner at that address comes from the members list', a
   // ordinary tasks are never looked up
   r = await O('POST', '/api/admin/tasks', { title: 'Fix 141 Deer Meadow mailbox' });
   assert.strictEqual(r.body.tasks.find(x => x.title === 'Fix 141 Deer Meadow mailbox').owner, '');
+});
+
+test('leaks & repairs: progress photos and notes while the job is open', async () => {
+  let r = await jake('POST', '/tasks', { kind: 'repair', title: 'Main break on Deerfield Way', forMe: true, photos: [JPEG] });
+  const job = r.body.tasks.find(x => x.title === 'Main break on Deerfield Way');
+  assert.strictEqual(job.photos.length, 1, 'photo when reporting');
+  assert.strictEqual((await jake('POST', `/tasks/${job.id}/progress`, {})).status, 400, 'needs a photo or a note');
+  r = await jake('POST', `/tasks/${job.id}/progress`, { notes: 'Dug down to the line', photos: [JPEG, JPEG] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  let t = r.body.tasks.find(x => x.id === job.id);
+  assert.strictEqual(t.status, 'open', 'still open');
+  assert.strictEqual(t.updates.length, 1); assert.strictEqual(t.updates[0].note, 'Dug down to the line'); assert.strictEqual(t.updates[0].by, 'Jake');
+  assert.strictEqual(t.updates[0].photos.length, 2); assert.strictEqual(t.photos.length, 1, 'progress photos kept apart');
+  assert.strictEqual((await jake('GET', '/tasks/photo/' + t.updates[0].photos[0])).status, 200);
+  // the boss sees it and adds one too
+  r = await O('POST', `/api/admin/tasks/${job.id}/progress`, { notes: 'Coupling ordered' });
+  t = r.body.tasks.find(x => x.id === job.id);
+  assert.strictEqual(t.updates.length, 2); assert.strictEqual(t.updates[1].by, 'Tyler');
+  // Sam can't remove Jake's update; Jake can
+  assert.strictEqual((await sam('DELETE', '/tasks/updates/' + t.updates[0].id)).status, 400);
+  assert.strictEqual((await O2('DELETE', '/api/admin/tasks/updates/' + t.updates[0].id)).status, 400, 'other company');
+  r = await jake('DELETE', '/tasks/updates/' + t.updates[0].id);
+  assert.strictEqual(r.body.tasks.find(x => x.id === job.id).updates.length, 1);
+  // photo limit counts everything; done jobs take no more progress
+  assert.strictEqual((await jake('POST', `/tasks/${job.id}/progress`, { photos: Array(12).fill(JPEG) })).status, 400);
+  await jake('POST', `/tasks/${job.id}/done`, { notes: 'Fixed' });
+  assert.strictEqual((await jake('POST', `/tasks/${job.id}/progress`, { notes: 'x' })).status, 400);
+  // switched off = blocked
+  const row = (await O('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Sam');
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, w_repairs: false } });
+  assert.strictEqual((await sam('POST', `/tasks/${job.id}/progress`, { notes: 'x' })).status, 403);
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, w_repairs: true } });
 });
