@@ -1185,7 +1185,7 @@
     info.appendChild(el("span","","Last "+fmtN(m.previous)));
     if(m.current!=null && m.previous!=null){
       var u=m.current-m.previous;
-      info.appendChild(el("span", u<0 ? "warn" : "ok", u<0 ? "Lower than last reading. Check it." : "Used "+fmtN(Math.round(u*100)/100)));
+      info.appendChild(el("span", u<0 || (m.alert && m.alert.level==="high") ? "warn" : "ok", u<0 ? "Lower than last reading. Check it." : "Used "+fmtN(Math.round(u*100)/100)));
     }
     if(m.readBy) info.appendChild(el("span","","by "+m.readBy));
     if(m.queued) info.appendChild(el("span","pending","⏳ waiting to send"));
