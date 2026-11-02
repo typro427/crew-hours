@@ -162,7 +162,7 @@ async function sendMonthly(company, month) {
       <td style="${td}">${esc(i.fromName)}</td><td style="${td};text-align:right;white-space:nowrap"><b>${money(i.total)}</b><br><span style="color:#666">${i.visits} visit${i.visits === 1 ? '' : 's'}</span></td>
       <td style="${td}"><a href="${i.link}" style="display:inline-block;background:#e3a008;color:#1f2328;padding:8px 12px;border-radius:6px;text-decoration:none;font-weight:bold;white-space:nowrap">Review &amp; send</a></td></tr>`;
   });
-  html += `</table><p style="margin-top:16px"><a href="${config.appUrl}/admin#jobs">Open Address jobs in your dashboard</a> to see every invoice, change an email, or download the breakdown.</p>`;
+  html += `</table><p style="margin-top:16px"><a href="${config.appUrl}/admin#jobs">Open Bill’s Billables in your dashboard</a> to see every invoice, change an email, or download the breakdown.</p>`;
   const e = { subject: `${t.drafts} invoice${t.drafts === 1 ? '' : 's'} ready to approve: ${L.label} (${money(t.toSend)})`, html: layout(`Invoices to approve: ${L.label}`, html) };
   await send({ to: await R.recipients(company), ...e });
   return e;

@@ -1379,8 +1379,6 @@
     $("tab-members").hidden=!features.members;
     $("tab-orders").hidden=!features.orders;
     $("tab-jobs").hidden=!(features.jobs || isBoss);   // managers can look at anyone's address jobs
-    var first=String($("who-name").textContent||"").trim().split(/\s+/)[0];
-    $("tab-jobs").textContent = features.jobs && first ? first+"\u2019s Billables" : "Billables";
     $("tab-mine").hidden=features.hours===false;
     if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);

@@ -49,7 +49,7 @@ async function operations(company, from, to) {
   if (od.open || od.waiting || od.arrived) out.push(`<li><b>Needs to order:</b> ${od.open} to order${od.est ? ' (about ' + money(od.est) + ')' : ''} · ${od.waiting} ordered, waiting to arrive${od.arrived ? ` · ${od.arrived} arrived this week, ${money(od.spent)} spent` : ''}</li>`);
   const jb = await db.q(`SELECT c.name, count(*)::int AS n, COALESCE(sum(j.chem_cost),0)::float AS chem, COALESCE(sum(j.material_cost),0)::float AS mat
     FROM jobs j LEFT JOIN crew c ON c.id=j.crew_id WHERE j.company_id=$1 AND j.day BETWEEN $2 AND $3 GROUP BY c.name ORDER BY c.name`, [id, from, to]);
-  jb.forEach(j => out.push(`<li><b>Address jobs${j.name ? ' (' + esc(j.name) + ')' : ''}:</b> ${j.n} job${j.n === 1 ? '' : 's'} · chemicals ${money(j.chem)} · materials ${money(j.mat)}</li>`));
+  jb.forEach(j => out.push(`<li><b>Bill’s Billables${j.name ? ' (' + esc(j.name) + ')' : ''}:</b> ${j.n} job${j.n === 1 ? '' : 's'} · chemicals ${money(j.chem)} · materials ${money(j.mat)}</li>`));
   return out.length ? `<h3 style="margin:20px 0 6px">This week at a glance</h3><ul style="margin:0;padding-left:18px">${out.join('')}</ul>` : '';
 }
 
@@ -146,7 +146,7 @@ async function personalWeekly(company, person, weekStart) {
   if (F.can(person, 'jobs')) {
     const { jobs, totals: t } = await J.forOwner(company.id, { from: dates[0], to: dates[6], crew: person.id });
     summary.push(`${t.jobs} address job${t.jobs === 1 ? '' : 's'}, ${t.hours} h on site`);
-    html += `<h3 style="margin:${html ? '20px' : '0'} 0 6px">Address jobs</h3>`;
+    html += `<h3 style="margin:${html ? '20px' : '0'} 0 6px">Bill’s Billables</h3>`;
     if (!jobs.length) html += '<p style="color:#555">No address jobs logged this week.</p>';
     else {
       html += `<div style="overflow-x:auto"><table style="border-collapse:collapse"><tr>${['Date', 'Address', 'In', 'Out', 'Hours', 'Chemicals', 'Materials', 'Receipts'].map(x => `<th style="${th}">${x}</th>`).join('')}</tr>`;

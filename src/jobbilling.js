@@ -139,7 +139,7 @@ function emailHtml(company, b) {
   const t = b.totals;
   let html = `<p style="margin:0 0 12px"><b>${money(t.total)}</b> to bill · ${t.clients} client${t.clients === 1 ? '' : 's'} · ${t.visits} visit${t.visits === 1 ? '' : 's'} · ${t.hours} h on site</p>
   <p style="margin:0 0 16px;color:#555">Labor ${money(t.labor)} · chemicals ${money(t.chem)} (cost ${money(t.chemCost)}) · materials ${money(t.mat)} (cost ${money(t.materialCost)})${t.visit ? ' · visit charges ' + money(t.visit) : ''}</p>`;
-  if (t.open) html += `<p style="color:#b42318"><b>${t.open} visit${t.open === 1 ? ' has' : 's have'} no time out</b>, so no labor is counted for ${t.open === 1 ? 'it' : 'them'}. Fix ${t.open === 1 ? 'it' : 'them'} in Address jobs.</p>`;
+  if (t.open) html += `<p style="color:#b42318"><b>${t.open} visit${t.open === 1 ? ' has' : 's have'} no time out</b>, so no labor is counted for ${t.open === 1 ? 'it' : 'them'}. Fix ${t.open === 1 ? 'it' : 'them'} in Bill’s Billables.</p>`;
   b.clients.forEach(c => {
     html += `<h3 style="margin:18px 0 4px">${esc(c.customer)} · ${money(c.totals.total)}</h3><p style="margin:0 0 6px;color:#555">${esc(c.address)}${c.owner && c.owner !== c.customer ? ' · ' + esc(c.owner) : ''}</p>
     <div style="overflow-x:auto"><table style="border-collapse:collapse"><tr>${['Date', 'Who', 'In–out', 'Hours', 'Labor', 'Chemicals', 'Materials', c.totals.visit ? 'Visit' : '', 'Total'].filter(Boolean).map(x => `<th style="${th}">${x}</th>`).join('')}</tr>`;
@@ -150,8 +150,8 @@ function emailHtml(company, b) {
     });
     html += '</table></div>';
   });
-  html += `<p style="margin-top:18px">Download the breakdown or the QuickBooks invoices: dashboard → <b>Address jobs</b> → Monthly invoices.</p>`;
-  return { subject: `Address jobs, ${b.label}: ${money(t.total)} to bill (${t.clients} clients)`, html: layout(`Address jobs: ${b.label}`, html) };
+  html += `<p style="margin-top:18px">Download the breakdown or the QuickBooks invoices: dashboard → <b>Bill’s Billables</b> → Monthly invoices.</p>`;
+  return { subject: `Bill’s Billables, ${b.label}: ${money(t.total)} to bill (${t.clients} clients)`, html: layout(`Bill’s Billables: ${b.label}`, html) };
 }
 
 async function sendMonth(company, m) {

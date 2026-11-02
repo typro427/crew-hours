@@ -668,7 +668,7 @@ test('weekly email: adds roads, leaks, meters, orders and address jobs; leaves o
   assert.match(r.html, /Meters \(Q\d \d{4}/);
   assert.match(r.html, /high use \(possible leak\)/);
   assert.match(r.html, /Needs to order:/);
-  assert.match(r.html, /Address jobs \(Sam\):<\/b> \d+ jobs? · chemicals \$\d/);
+  assert.match(r.html, /Bill’s Billables \(Sam\):<\/b> \d+ jobs? · chemicals \$\d/);
   assert.ok(!/Sam: no hours logged/.test(r.html), 'Sam has no time sheet');
   await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, hours: true, jobs: false } });
 });
@@ -689,13 +689,13 @@ test('crew weekly email: their own time sheet and address jobs, to the email on 
   const m = send.outbox.find(x => x.to.includes('sam@example.com'));
   assert.ok(m, 'sent to Sam');
   assert.match(m.subject, /^Your week: .* address jobs?, [0-9.]+ h on site/);
-  assert.match(m.html, /Address jobs/); assert.match(m.html, /141 Deer Meadow Dr/); assert.match(m.html, /Chemicals \+ materials: \$/);
+  assert.match(m.html, /Bill’s Billables/); assert.match(m.html, /141 Deer Meadow Dr/); assert.match(m.html, /Chemicals \+ materials: \$/);
   assert.ok(!/Time sheet/.test(m.html), 'no time sheet section when hours are off');
   // with the time sheet on, it's in there too
   await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, hours: true, jobs: false } });
   const p = await db2.one('SELECT * FROM crew WHERE id=$1', [sam1.id]);
   const e = await R.personalWeekly(c, p, ws);
-  assert.match(e.html, /Time sheet/); assert.ok(!/Address jobs/.test(e.html));
+  assert.match(e.html, /Time sheet/); assert.ok(!/Bill’s Billables/.test(e.html));
   await O('PUT', '/api/admin/crew/' + sam1.id, { email: '' });
 });
 
