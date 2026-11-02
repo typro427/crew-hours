@@ -56,7 +56,11 @@ const featTask = k => (k === 'repair' ? 'w_repairs' : k === 'order' ? 'orders' :
 const featPlace = k => (k === 'water' ? 'w_sites' : 'roads');
 const off = res => res.status(403).json({ error: "The boss hasn't turned this on for you." });
 const sendPhoto = (res, p) => p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
-const taskList = async (req, kind) => ({ tasks: await K.forCrew(req.company.id, req.crew.id, kind), maxPhotos: K.MAX_PHOTOS, kind: K.kindOf(kind) });
+const taskList = async (req, kind) => {
+  const seeContacts = F.can(req.crew, 'members');   // owner phone numbers are private: only for people with the Members list
+  const tasks = (await K.forCrew(req.company.id, req.crew.id, kind)).map(t => (seeContacts ? t : { ...t, ownerPhone: '' }));
+  return { tasks, maxPhotos: K.MAX_PHOTOS, kind: K.kindOf(kind) };
+};
 
 r.get('/:slug/tasks', A.requireCrew, async (req, res) => {
   const kind = K.kindOf(req.query.kind);

@@ -366,6 +366,8 @@
     function field(label, node, hint) { var l = el('label', '', label); if (hint) l.appendChild(el('span', 'hint', ' ' + hint)); form.appendChild(l); form.appendChild(node); return node; }
     var fT = field(L.titleLabel, el('input')); fT.maxLength = 120; fT.placeholder = L.titlePh; fT.autocomplete = 'off';
     var fD = field(L.detailsLabel || 'Details', el('textarea'), '(optional)'); fD.maxLength = 2000; fD.rows = 3; fD.placeholder = L.detailsPh;
+    var fA = el('input'); fA.maxLength = 200; fA.placeholder = 'e.g. 141 Deer Meadow'; fA.autocomplete = 'off';
+    if (L.addressField) field('Address', fA, '(finds the owner on the members list)');
     var g = el('div', 'grid2'), w1 = el('div'), w2 = el('div');
     var fW = el('select'), fDue = el('input'); fDue.type = 'date';
     w1.appendChild(el('label', '', 'For')); w1.appendChild(fW); w2.appendChild(el('label', '', L.dueLabel || 'Due')); w2.lastChild.appendChild(el('span', 'hint', ' (optional)')); w2.appendChild(fDue);
@@ -431,6 +433,13 @@
           api('DELETE', '/api/admin/tasks/' + t.id).then(function (x) { me.tasks = x.tasks; draw(); }).catch(function (e) { say(e.message, 'err'); });
         });
         top.appendChild(acts); r.appendChild(top);
+        if (t.address || t.owner) {
+          var ow = el('p', 't-text');
+          if (t.address) ow.appendChild(el('span', '', '📍 ' + t.address + (t.owner ? ' · ' : '')));
+          if (t.owner) ow.appendChild(el('b', '', 'Owner: ' + t.owner));
+          if (t.ownerPhone) { ow.appendChild(document.createTextNode(' · ')); var tel = el('a', '', t.ownerPhone); tel.href = 'tel:' + t.ownerPhone.replace(/[^0-9+]/g, ''); ow.appendChild(tel); }
+          r.appendChild(ow);
+        }
         if (t.details) r.appendChild(el('p', 't-text', t.details));
         if (t.status === 'done' && t.doneNotes) r.appendChild(el('p', 't-notes', t.doneNotes));
         if (t.photos && t.photos.length) r.appendChild(photoLinks(t.photos, '/api/admin/tasks/photo/', 'Photo from ' + (t.doneByName || 'crew')));
@@ -442,13 +451,14 @@
         openC.firstChild.textContent = L.openTitle + (openT.length ? ' · about $' + Math.round(tot).toLocaleString() : '');
       }
     }
-    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
+    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
     function reset() { me.editing = null; form.reset(); fPics = []; drawPics(); sv.textContent = L.addBtn; cancel.hidden = true; }
     cancel.onclick = reset;
     form.onsubmit = function (e) {
       e.preventDefault();
       var body = { kind: kind, title: fT.value.trim(), details: fD.value, assignedTo: L.hideFor ? null : (fW.value ? Number(fW.value) : null), due: fDue.value || null };
       if (L.costField) body.cost = fCost.value.replace(/[$,\s]/g, '');
+      if (L.addressField) body.address = fA.value.trim();
       if (!me.editing && fPics.length) body.photos = fPics.slice();
       if (!body.title) return say(L.needTitle, 'err');
       var id = me.editing;
@@ -602,7 +612,7 @@
     formHint: 'Crew you switch on (Crew & PINs → Needs to order) can add items from their app too, with a picture. You get an email when they do.',
     openTitle: 'Needs to order', openEmpty: 'Nothing to order.', doneTitle: 'Ordered', doneEmpty: 'Nothing ordered yet.', byWord: 'Added by', doneWord: 'Ordered',
     hideFor: true, costField: true, photosOnCreate: true, detailsLabel: 'Description', dueLabel: 'Due by', dueWord: 'Due by ', overdueWord: 'Past due: ' });
-  var repairPanel = TaskPanel('repair', $('water-repairs'), { formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
+  var repairPanel = TaskPanel('repair', $('water-repairs'), { addressField: true, formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
     detailsPh: 'What needs doing, parts needed', addBtn: 'Add', needTitle: 'Say what the problem is and where.', addedOk: 'Added. The crew will see it under Water System.',
     formHint: 'The crew can also report problems from their app. When they fix one, they add notes and photos and you get an email.',
     openTitle: 'Open leaks & repairs', openEmpty: 'Nothing open.', doneTitle: 'Fixed', doneEmpty: 'Nothing fixed yet.', byWord: 'Reported by', doneWord: 'Fixed' });

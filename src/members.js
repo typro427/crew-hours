@@ -3,6 +3,8 @@ const db = require('./db');
 const V = require('./validate');
 
 const MAX_ROWS = 10000, MAX_COLS = 60, MAX_CELL = 1000;
+// When the list changes, leaks & repairs look their owner up again.
+const recheck = companyId => db.q("UPDATE tasks SET owner_checked=FALSE WHERE company_id=$1 AND kind='repair'", [companyId]);
 const searchText = data => Object.values(data).join(' ').toLowerCase().replace(/\s+/g, ' ').slice(0, 8000);
 
 async function columns(companyId) {
@@ -50,6 +52,7 @@ async function replaceAll(companyId, b) {
       await t.q(`INSERT INTO members (company_id, data, search, position) VALUES ${vals.join(',')}`, args);
     }
   });
+  await recheck(companyId);
   return { columns: cols.length, rows: rows.length };
 }
 
@@ -61,15 +64,18 @@ async function save(companyId, id, data) {
   if (id) {
     const r = await db.q('UPDATE members SET data=$1, search=$2, updated_at=now() WHERE id=$3 AND company_id=$4 RETURNING id', [JSON.stringify(row), searchText(row), id, companyId]);
     if (!r.length) V.bad('That member was not found.');
+    await recheck(companyId);
     return id;
   }
   const n = (await db.one('SELECT count(*)::int AS n FROM members WHERE company_id=$1', [companyId])).n;
   if (n >= MAX_ROWS) V.bad(`Up to ${MAX_ROWS} rows.`);
-  return (await db.one('INSERT INTO members (company_id, data, search, position) VALUES ($1,$2,$3,(SELECT COALESCE(max(position),0)+1 FROM members WHERE company_id=$1)) RETURNING id',
-    [companyId, JSON.stringify(row), searchText(row)])).id;
+  const r = await db.one('INSERT INTO members (company_id, data, search, position) VALUES ($1,$2,$3,(SELECT COALESCE(max(position),0)+1 FROM members WHERE company_id=$1)) RETURNING id',
+    [companyId, JSON.stringify(row), searchText(row)]);
+  await recheck(companyId);
+  return r.id;
 }
 
-const remove = (companyId, id) => db.q('DELETE FROM members WHERE id=$1 AND company_id=$2', [id, companyId]);
+const remove = async (companyId, id) => { await db.q('DELETE FROM members WHERE id=$1 AND company_id=$2', [id, companyId]); await recheck(companyId); };
 const all = companyId => db.q('SELECT data FROM members WHERE company_id=$1 ORDER BY position, id', [companyId]);
 
 module.exports = { search, replaceAll, save, remove, all, columns };

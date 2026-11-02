@@ -165,7 +165,7 @@ async function add(companyId, b) {
 }
 
 // Address matching that copes with "2c 470 Deerfield Landing" = "470 Deerfield Landing #2", "131A" = "131 ... Unit A".
-const ABBR = { ln: 'lane', dr: 'drive', rd: 'road', ct: 'court', cir: 'circle', pt: 'point', pl: 'place', e: 'east', w: 'west', n: 'north', s: 'south' };
+const ABBR = { ln: 'lane', dr: 'drive', rd: 'road', ct: 'court', cir: 'circle', pt: 'point', pl: 'place', vue: 'view', e: 'east', w: 'west', n: 'north', s: 'south' };
 const GEN = new Set(['lane', 'drive', 'road', 'way', 'unit', 'condo', 'lot', 'the', 'of']);
 function addrKey(a) {
   const t = String(a || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(x => ABBR[x] || x);
@@ -185,6 +185,9 @@ function addrKey(a) {
   for (let i = 0; i + 1 < plain.length; i++) words.add(plain[i] + plain[i + 1]);   // "White Tail" = "Whitetail", "Deer Hill" = "Deerhill"
   return { house, letter, nums, words };
 }
+/** Just the street name, squashed: "141 Deer Run Pt" -> "deerrunpoint". */
+const streetOf = a => String(a || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(x => ABBR[x] || x)
+  .filter(x => !/[0-9]/.test(x) && !GEN.has(x) && x.length > 1).join('');
 function sameProperty(a, b) {
   if (!a.house || a.house !== b.house) return false;
   if (![...a.words].some(w => b.words.has(w))) return false;
@@ -235,4 +238,4 @@ async function skip(companyId, address, on) {
   else await db.q('DELETE FROM meter_skips WHERE company_id=$1 AND address=$2', [companyId, a]);
 }
 
-module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel, add, notOnRoute, skip, addrKey, sameProperty };
+module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label, fromExcel, importExcel, add, notOnRoute, skip, addrKey, sameProperty, streetOf };

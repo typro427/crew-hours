@@ -441,3 +441,37 @@ test('needs to order: off by default, rough cost and picture when adding, mark o
   r = await jake('POST', `/tasks/${item.id}/done`, { notes: 'Ordered from Ferguson, arrives Friday' });
   assert.strictEqual(r.body.tasks.find(t => t.id === item.id).status, 'done');
 });
+
+test('leaks & repairs: the owner at that address comes from the members list', async () => {
+  await O('POST', '/api/admin/members/import', { columns: ['Status', 'Last name', 'First name(s)', 'Deerfield address', 'Cell phone 1', 'Home phone'], rows: [
+    { Status: 'Active', 'Last name': 'Meadows', 'First name(s)': 'Pat', 'Deerfield address': '141 Deer Meadow Dr', 'Cell phone 1': '(603) 555-0141' },
+    { Status: 'Active', 'Last name': 'Wrong', 'First name(s)': 'Ron', 'Deerfield address': '141 Deer Run Point', 'Home phone': '603-555-9999' },
+    { Status: 'Active', 'Last name': 'Tail', 'First name(s)': 'Wendy', 'Deerfield address': '305 Whitetail Lane' },
+    { Status: 'Inactive', 'Last name': 'Gone', 'First name(s)': 'Old', 'Deerfield address': '77 Old Mill Rd' }
+  ] });
+  // the repair logged earlier ("Leak at meter by 141 Deer Meadow") is matched from its title
+  let b = (await O('GET', '/api/admin/tasks?kind=repair')).body.tasks;
+  const old = b.find(t => /141 Deer Meadow/.test(t.title));
+  assert.strictEqual(old.owner, 'Pat Meadows'); assert.strictEqual(old.ownerPhone, '(603) 555-0141');
+  // crew: phone only for people with the Members list on
+  const row = (await O('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Jake');
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, members: false } });
+  let r = await jake('POST', '/tasks', { kind: 'repair', title: 'Curb stop leaking', address: '305 White Tail Ln', forMe: true });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  let t = r.body.tasks.find(x => x.title === 'Curb stop leaking');
+  assert.strictEqual(t.address, '305 White Tail Ln'); assert.strictEqual(t.owner, 'Wendy Tail');
+  assert.strictEqual(r.body.tasks.find(x => x.id === old.id) ? r.body.tasks.find(x => x.id === old.id).ownerPhone : '', '');
+  await O('PUT', '/api/admin/crew/' + row.id, { features: { ...row.features, members: true } });
+  r = await jake('POST', '/tasks', { kind: 'repair', title: 'Wet spot', address: '141 Deer Run Pt', forMe: true });
+  t = r.body.tasks.find(x => x.title === 'Wet spot');
+  assert.strictEqual(t.owner, 'Ron Wrong'); assert.strictEqual(t.ownerPhone, '603-555-9999');
+  // no match, inactive, and a changed address looks it up again
+  r = await O('POST', '/api/admin/tasks', { kind: 'repair', title: 'Hydrant drip', address: '77 Old Mill Rd' });
+  t = r.body.tasks.find(x => x.title === 'Hydrant drip');
+  assert.strictEqual(t.owner, '');
+  r = await O('PUT', '/api/admin/tasks/' + t.id, { address: '141 Deer Meadow' });
+  assert.strictEqual(r.body.tasks.find(x => x.id === t.id).owner, 'Pat Meadows');
+  // ordinary tasks are never looked up
+  r = await O('POST', '/api/admin/tasks', { title: 'Fix 141 Deer Meadow mailbox' });
+  assert.strictEqual(r.body.tasks.find(x => x.title === 'Fix 141 Deer Meadow mailbox').owner, '');
+});

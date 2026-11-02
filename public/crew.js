@@ -505,11 +505,13 @@
     var fD=el("textarea"); fD.maxLength=2000; fD.placeholder=L.detailsPh;
     var fF=el("select"); [["me",L.forMe],["anyone",L.forAnyone]].forEach(function(o){ var x=el("option","",o[1]); x.value=o[0]; fF.appendChild(x); });
     var fDue=el("input"); fDue.type="date";
+    var fAddr=el("input"); fAddr.maxLength=200; fAddr.placeholder="e.g. 141 Deer Meadow"; fAddr.autocomplete="off";
     var fCost=el("input"); fCost.inputMode="decimal"; fCost.placeholder="e.g. 250"; fCost.autocomplete="off";
     var fPst=statusLine(), fPk=L.photosOnCreate ? photoPicker(6, fPst) : null;
     [[L.titleLabel,fT],[L.detailsLabel,fD],["",fF],[L.dueLabel||"Due (optional)",fDue]].forEach(function(x){ if(x[0]){ form.appendChild(el("label","",x[0])); } else { form.appendChild(el("label","",L.forLabel)); } form.appendChild(x[1]); });
     if(L.hideDue){ fDue.hidden=true; fDue.previousSibling.hidden=true; }
     if(L.hideFor){ fF.hidden=true; fF.previousSibling.hidden=true; }
+    if(L.addressField){ form.appendChild(el("label","","Address (finds the owner)")); form.appendChild(fAddr); }
     if(L.costField){ form.appendChild(el("label","","Rough cost ($, optional)")); form.appendChild(fCost); }
     if(fPk){ form.appendChild(el("label","",L.photoLabel||"Photo (optional)")); form.appendChild(fPk.el); form.appendChild(fPst); }
     var fRow=el("div","row"), fSave=el("button","primary",L.addSave), fCancel=el("button","ghost","Cancel"); fSave.type=fCancel.type="button";
@@ -528,8 +530,8 @@
       if(L.costField && cost!=="" && !/^\d+(\.\d{1,2})?$/.test(cost)) return say(fSt,"The rough cost must be a dollar amount, like 250.","err");
       var pics=fPk ? fPk.get() : [];
       busy=true; fSave.disabled=true; say(fSt, pics.length ? "Sending photos…" : "Saving…");
-      call("newTask",[token,{ kind:kind, title:fT.value.trim(), details:fD.value, forMe:!L.hideFor && fF.value==="me", due:fDue.value||null, cost:L.costField ? cost : undefined, photos:pics }], function(res){
-        busy=false; fSave.disabled=false; me.tasks=res.tasks||[]; fT.value=""; fD.value=""; fDue.value=""; fCost.value=""; if(fPk) fPk.clear(); showForm(false); draw(); say(st,L.addedOk,"ok");
+      call("newTask",[token,{ kind:kind, title:fT.value.trim(), details:fD.value, forMe:!L.hideFor && fF.value==="me", due:fDue.value||null, cost:L.costField ? cost : undefined, address:L.addressField ? fAddr.value.trim() : undefined, photos:pics }], function(res){
+        busy=false; fSave.disabled=false; me.tasks=res.tasks||[]; fT.value=""; fD.value=""; fDue.value=""; fCost.value=""; fAddr.value=""; if(fPk) fPk.clear(); showForm(false); draw(); say(st,L.addedOk,"ok");
       }, function(msg){ busy=false; fSave.disabled=false; say(fSt,msg,"err"); });
     };
     me.load=function(quiet){
@@ -556,6 +558,12 @@
         if(t.cost!=null) meta.appendChild(el("span","cost","≈ $"+Number(t.cost).toLocaleString()));
         if(!L.hideFor) meta.appendChild(el("span","", t.assignedTo ? (t.assignedName && !isMe(t.assignedName) ? "For "+t.assignedName : "For you") : "For anyone on the crew"));
         card.appendChild(meta);
+        if(t.address) card.appendChild(el("div","by","📍 "+t.address));
+        if(t.owner){
+          var ow=el("div","owner"); ow.appendChild(el("span","","Owner: "+t.owner));
+          if(t.ownerPhone){ var tel=el("a","", t.ownerPhone); tel.href="tel:"+t.ownerPhone.replace(/[^0-9+]/g,""); ow.appendChild(document.createTextNode(" · ")); ow.appendChild(tel); }
+          card.appendChild(ow);
+        }
         if(t.createdByName) card.appendChild(el("div","by", isMe(t.createdByName) ? L.byYou : L.byOther+" "+t.createdByName));
         if(t.details) card.appendChild(el("p","details",t.details));
         if(done && t.doneNotes) card.appendChild(el("p","notes",t.doneNotes));
@@ -724,7 +732,7 @@
   var repairBoard=TaskBoard("repair", $("wp-repairs"), { add:"+ Report a leak or repair", newTitle:"Report a problem", titleLabel:"What and where", titlePh:"e.g. Leak at the meter by 141 Deer Meadow",
     detailsLabel:"Details (optional)", detailsPh:"How bad, what you saw, what's needed", forLabel:"Who's fixing it", forMe:"I'll fix it", forAnyone:"Needs someone", addSave:"Report it", needTitle:"Say what the problem is and where.",
     addedOk:"Reported. The boss got an email.", empty:"No open leaks or repairs.", doneTag:"Fixed ✓", byYou:"Reported by you", byOther:"Reported by",
-    markDone:"Mark fixed", del:"Delete this report", donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
+    markDone:"Mark fixed", del:"Delete this report", addressField:true, donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
   var orderBoard=TaskBoard("order", $("order-screen"), { add:"+ Add something to order", newTitle:"Needs to order", titleLabel:"What", titlePh:"e.g. 2\" PVC ball valve x4",
     detailsLabel:"Description (optional)", detailsPh:"Size, brand, where it's for, where to buy", forLabel:"For", forMe:"Me", forAnyone:"Anyone", hideFor:true, costField:true, photosOnCreate:true,
     photoLabel:"Picture (optional)", dueLabel:"Due by (optional)", dueWord:"Due by ", overdueWord:"Past due: ",

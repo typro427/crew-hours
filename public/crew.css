@@ -145,6 +145,8 @@ tfoot td{font-weight:700;border-bottom:0}
 #nt-form label{font-weight:600;font-size:15px}
 #nt-form input,#nt-form select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px}
 .task .by{font-size:14px;color:var(--muted)}
+.task .owner{font-size:15px;font-weight:600}
+.task .owner a{color:inherit;text-decoration:underline}
 .task .linkdel{background:none;border:0;padding:0;color:var(--err);text-decoration:underline;font:inherit;font-size:14px;cursor:pointer;align-self:flex-start}
 .d .thumbs img{width:64px;height:64px}
 
