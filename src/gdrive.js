@@ -110,7 +110,9 @@ async function companyDump(id) {
   const one = (sql) => db.q(sql, [id]);
   return {
     exportedAt: new Date().toISOString(), app: config.productName,
-    company: (await one('SELECT id, name, slug, timezone, week_start, main_label, other_label, other_options, overtime_after, created_at FROM companies WHERE id=$1'))[0],
+    // every company setting, minus the Google sign-in itself
+    company: (({ gdrive_token, ...rest }) => rest)((await one('SELECT * FROM companies WHERE id=$1'))[0]),
+    slugRedirects: await one('SELECT old_slug FROM slug_redirects WHERE company_id=$1'),
     crew: await one('SELECT id, name, active, is_manager, features, created_at FROM crew WHERE company_id=$1 ORDER BY id'),
     entries: await one('SELECT * FROM entries WHERE company_id=$1 ORDER BY day, crew_id'),
     approvals: await one('SELECT * FROM approvals WHERE company_id=$1 ORDER BY week_start'),

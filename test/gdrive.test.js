@@ -73,7 +73,8 @@ test('connect, back up records and photos, only new photos next time, disconnect
   assert.strictEqual(r.status, 200, JSON.stringify(r.body)); assert.strictEqual(r.body.photos, 1);
   assert.ok(uploads().some(c => /^task-\d+-Fix-leak-\d+\.jpg$/.test(uploadName(c))));
   const dump = uploads().find(c => /\.json$/.test(uploadName(c))).body.toString();
-  assert.match(dump, /"tasks":\[/); assert.match(dump, /Fix leak/); assert.doesNotMatch(dump, /password_hash|pin_hmac|gdrive_token/, 'no secrets in the backup file');
+  assert.match(dump, /"tasks":\[/); assert.match(dump, /Fix leak/);
+  for (const k of ['"report_emails"', '"workdays"', '"other_enabled"', '"summary_hour"', '"member_columns"', '"meterReads"', '"roadChecks"', '"readings"']) assert.ok(dump.includes(k), k); assert.doesNotMatch(dump, /password_hash|pin_hmac|gdrive_token/, 'no secrets in the backup file');
   calls.length = 0;
   r = await call('POST', '/api/admin/google/backup');
   assert.strictEqual(r.body.photos, 0, 'photos are only copied once');
