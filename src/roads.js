@@ -3,6 +3,7 @@ const db = require('./db');
 const T = require('./time');
 const V = require('./validate');
 const H = require('./hours');
+const RG = require('./readings');
 
 const MAX_PHOTOS = 4;      // per mowing
 const MAX_DAYS_BACK = 60;  // how far back the crew can log a mowing
@@ -24,9 +25,29 @@ async function history(companyId, roadId, limit) {
   const road = await db.one(`SELECT r.id, r.name, r.kind, ${INFO} FROM roads r WHERE r.id=$1 AND r.company_id=$2`, [roadId, companyId]);
   if (!road) V.bad('That road was not found.');
   road.mows = await db.q(`SELECT m.id, to_char(m.day, 'YYYY-MM-DD') AS day, m.notes, m.crew_id AS "crewId", c.name AS "byName",
-      COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM road_mow_photos p WHERE p.mow_id=m.id), '[]') AS photos
+      COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM road_mow_photos p WHERE p.mow_id=m.id), '[]') AS photos,
+      (SELECT x.vals FROM readings x WHERE x.mow_id=m.id ORDER BY x.id LIMIT 1) AS vals
     FROM road_mows m LEFT JOIN crew c ON c.id=m.crew_id WHERE m.road_id=$1 ORDER BY m.day DESC, m.id DESC LIMIT $2`, [roadId, limit || 50]);
+  if (road.kind === 'water') {
+    const ids = (await db.one('SELECT reading_ids FROM roads WHERE id=$1', [roadId])).reading_ids;
+    const all = await RG.types(companyId);
+    road.readingIds = ids;   // null = all
+    road.readingTypes = ids ? all.filter(t => ids.includes(t.id)) : all;
+    road.allReadingTypes = all;
+  }
   return road;
+}
+
+/** The boss picks which readings are taken at a water site (null or all = every reading). */
+async function setReadingIds(companyId, roadId, ids) {
+  let v = null;
+  if (Array.isArray(ids)) {
+    const valid = new Set((await RG.types(companyId)).map(t => t.id));
+    v = [...new Set(ids.map(Number).filter(x => valid.has(x)))];
+    if (v.length === valid.size) v = null;
+  }
+  const r = await db.q("UPDATE roads SET reading_ids=$1 WHERE id=$2 AND company_id=$3 AND kind='water' RETURNING id", [v ? JSON.stringify(v) : null, roadId, companyId]);
+  if (!r.length) V.bad('That site was not found.');
 }
 
 /** The boss sets the list: one name per line. Roads taken off the list are hidden, and their history is kept. */
@@ -91,10 +112,18 @@ async function logMow(company, crew, roadId, b, photoBytes) {
   const photos = (Array.isArray(b.photos) ? b.photos : []).map(photoBytes);
   if (photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos each time.`);
   if (road.kind === 'road' && await db.one('SELECT 1 FROM road_mows WHERE road_id=$1 AND day=$2 AND crew_id=$3', [roadId, day, crew.id])) V.bad('You already logged this road for that day.');
+  // Readings taken at a water site, saved with the check.
+  const vals = road.kind === 'water' ? await RG.cleanVals(company.id, b.vals) : {};
   await db.tx(async t => {
     const m = await t.one('INSERT INTO road_mows (company_id, road_id, crew_id, day, notes) VALUES ($1,$2,$3,$4,$5) RETURNING id',
       [company.id, roadId, crew.id, day, String(b.notes || '').trim().slice(0, 1000)]);
     for (const p of photos) await t.q('INSERT INTO road_mow_photos (mow_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [m.id, company.id, p.mime, p.buf]);
+    if (Object.keys(vals).length) {
+      // Logged today: use now; logged for an earlier day: noon that day, so it sorts in the right place.
+      await t.q(`INSERT INTO readings (company_id, crew_id, vals, notes, site_id, mow_id, taken_at)
+        VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::date = $8::date THEN now() ELSE ($7::date + time '12:00') AT TIME ZONE $9 END)`,
+        [company.id, crew.id, JSON.stringify(vals), '', roadId, m.id, day, today, company.timezone]);
+    }
   });
 }
 
@@ -113,4 +142,4 @@ async function removeMow(companyId, mowId, crewId) {
 
 const photo = (companyId, id) => db.one('SELECT mime, data FROM road_mow_photos WHERE id=$1 AND company_id=$2', [id, companyId]);
 
-module.exports = { list, history, setList, setInfo, importRoads, logMow, removeMow, photo, kindOf, kindOfPlace, kindOfMow, kindOfPhoto, MAX_PHOTOS };
+module.exports = { setReadingIds, list, history, setList, setInfo, importRoads, logMow, removeMow, photo, kindOf, kindOfPlace, kindOfMow, kindOfPhoto, MAX_PHOTOS };

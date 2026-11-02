@@ -594,7 +594,9 @@
     var notes=el("textarea"); notes.maxLength=1000; notes.placeholder="Anything the boss should know";
     var fst=statusLine(), pk=photoPicker(4, fst);
     var save=el("button","primary",L.save); save.type="button";
-    [name,last,info,el("label","",L.dateLabel),dayIn,pk.el,el("label","","Notes (optional)"),notes].forEach(function(n){ card.appendChild(n); });
+    var rBox=el("div",""), rGrid=el("div","readgrid"); rBox.style.cssText="display:flex;flex-direction:column;gap:6px";
+    rBox.appendChild(el("label","","Readings")); rBox.appendChild(el("span","hint","Fill in what you checked. Leave the rest blank.")); rBox.appendChild(rGrid); rBox.hidden=true;
+    [name,last,info,el("label","",L.dateLabel),dayIn,rBox,pk.el,el("label","","Notes (optional)"),notes].forEach(function(n){ card.appendChild(n); });
     var srow=el("div","row"); srow.appendChild(save); card.appendChild(srow); card.appendChild(fst);
     var hcard=el("div","task"), hist=el("div","history"); hcard.appendChild(el("h3","","History")); hcard.appendChild(hist);
     view.appendChild(card); view.appendChild(hcard);
@@ -630,6 +632,10 @@
     }
     function drawPlace(){
       var road=me.road; name.textContent=road.name;
+      // Reading boxes for this site (water sites only).
+      rGrid.innerHTML=""; var rt=road.readingTypes||[];
+      rBox.hidden=!rt.length;
+      rt.forEach(function(t){ var l=el("label","",t.name+(t.unit ? " ("+t.unit+")" : "")), i=el("input"); i.type="number"; i.step="any"; i.inputMode="decimal"; i.dataset.id=t.id; l.appendChild(i); rGrid.appendChild(l); });
       var l=road.mows[0];
       last.textContent = l ? L.lastWord+" "+dayLabel(l.day)+" ("+ago(l.day)+")"+(l.byName ? " by "+l.byName : "") : L.never;
       info.innerHTML="";
@@ -645,6 +651,11 @@
         var row=el("div","hrow"), k=el("div","hk");
         k.appendChild(el("b","",dayLabel(m.day))); k.appendChild(el("span","muted",m.byName||""));
         row.appendChild(k);
+        if(m.vals && road.allReadingTypes){
+          var v=el("div","vals");
+          road.allReadingTypes.forEach(function(t){ if(m.vals[t.id]==null) return; var sp=el("span","",t.name+": "); sp.appendChild(el("b","",String(m.vals[t.id])+(t.unit ? " "+t.unit : ""))); v.appendChild(sp); });
+          if(v.children.length) row.appendChild(v);
+        }
         if(m.notes) row.appendChild(el("p","notes",m.notes));
         if(m.photos.length) row.appendChild(thumbsFor(m.photos,"road","Photo of "+road.name));
         if(isMe(m.byName)){
@@ -662,9 +673,10 @@
     save.onclick=function(){
       if(busy || !me.road) return;
       if(!dayIn.value) return say(fst,"Pick the date.","err");
-      var pics=pk.get(), day=dayIn.value;
+      var pics=pk.get(), day=dayIn.value, vals={};
+      Array.prototype.forEach.call(rGrid.querySelectorAll("input"), function(i){ if(i.value!=="") vals[i.dataset.id]=i.value; });
       busy=true; save.disabled=true; say(fst, pics.length ? "Sending photos…" : "Saving…");
-      call("logMow",[token,me.road.id,{ day:day, notes:notes.value, photos:pics }], function(res){
+      call("logMow",[token,me.road.id,{ day:day, notes:notes.value, photos:pics, vals:vals }], function(res){
         busy=false; save.disabled=false; me.road=res.road; me.roads=res.roads||me.roads; pk.clear(); notes.value="";
         drawPlace(); draw(); say(fst,L.savedMsg(me.road.name, short(day)),"ok");
       }, function(msg){ busy=false; save.disabled=false; say(fst,msg,"err"); });
@@ -685,7 +697,7 @@
     markDone:"Mark fixed", del:"Delete this report", donePh:"What did you fix? Parts used?", whatYouDid:"What you did", doneSend:"Fixed, send to boss", doneOk:"Marked fixed. Nice work.", hideDue:true });
   var roadBoard=PlaceBoard("road", $("road-screen"), { hint:"Tap a road to log that you mowed it.", empty:"No roads yet.", back:"‹ All roads", dateLabel:"Date you mowed it", save:"Save: mowed",
     never:"Not mowed yet", lastWord:"Last mowed", oldDays:14, savedMsg:function(n,d){ return "Saved. "+n+" marked mowed "+d+"."; } });
-  var siteBoard=PlaceBoard("water", $("wp-sites"), { hint:"Tap a site to log a check.", empty:"The boss hasn't added any sites yet.", back:"‹ All sites", dateLabel:"Date you checked it", save:"Save: checked",
+  var siteBoard=PlaceBoard("water", $("wp-sites"), { hint:"Tap a site to log a check and its readings.", empty:"The boss hasn't added any sites yet.", back:"‹ All sites", dateLabel:"Date you checked it", save:"Save: checked",
     never:"Not checked yet", lastWord:"Last checked", oldDays:7, savedMsg:function(n,d){ return "Saved. "+n+" checked "+d+"."; } });
 
   // ---- water readings ----
@@ -710,11 +722,12 @@
       var row=el("div","hrow"), k=el("div","hk"), d=new Date(r.takenAt);
       k.appendChild(el("b","",d.toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"})+" "+d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})));
       k.appendChild(el("span","muted",r.byName||"")); row.appendChild(k);
+      if(r.siteName) row.appendChild(el("div","by","At "+r.siteName));
       var v=el("div","vals");
       Object.keys(r.vals||{}).forEach(function(id){ var t=byId[id]; if(!t) return; var sp=el("span","",t.name+": "); sp.appendChild(el("b","",String(r.vals[id])+(t.unit ? " "+t.unit : ""))); v.appendChild(sp); });
       if(v.children.length) row.appendChild(v);
       if(r.notes) row.appendChild(el("p","notes",r.notes));
-      if(isMe(r.byName) && Date.now()-d < 864e5){
+      if(isMe(r.byName) && Date.now()-d < 864e5 && !r.checkId){
         var del=el("button","linkdel","Remove"); del.type="button";
         del.onclick=function(){
           if(del.textContent!=="Tap again to remove"){ del.textContent="Tap again to remove"; setTimeout(function(){ del.textContent="Remove"; },3000); return; }

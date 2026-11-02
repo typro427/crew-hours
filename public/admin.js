@@ -492,6 +492,27 @@
           .catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
       };
       r2.appendChild(sv); r2.appendChild(st); ed.appendChild(r2); detail.appendChild(ed);
+      // Water sites: which readings the crew takes here.
+      if (road.allReadingTypes) {
+        var rd = el('details'); rd.appendChild(el('summary', '', 'Readings at this site (' + road.readingTypes.length + ' of ' + road.allReadingTypes.length + ')'));
+        if (!road.allReadingTypes.length) rd.appendChild(el('p', 'hint', 'Add readings under Water System → Readings first.'));
+        var fsx = el('div', 'feats'), bx = {};
+        road.allReadingTypes.forEach(function (t) {
+          var l = el('label', 'check'), cb = el('input'); cb.type = 'checkbox';
+          cb.checked = road.readingTypes.some(function (x) { return x.id === t.id; }); bx[t.id] = cb;
+          l.appendChild(cb); l.appendChild(document.createTextNode(' ' + t.name + (t.unit ? ' (' + t.unit + ')' : ''))); fsx.appendChild(l);
+        });
+        rd.appendChild(fsx);
+        var r3 = el('div', 'row'), sv3 = el('button', 'btn small', 'Save readings for this site'), st3 = el('span', 'status'); sv3.type = 'button';
+        sv3.onclick = function () {
+          var ids = Object.keys(bx).filter(function (k) { return bx[k].checked; }).map(Number);
+          api('PUT', '/api/admin/roads/' + road.id + '/readings', { ids: ids })
+            .then(function (r) { me.roads = r.roads; draw(); drawOne(r.road); say('Saved readings for ' + r.road.name + '.', 'ok'); })
+            .catch(function (e) { st3.textContent = e.message; st3.className = 'status err'; });
+        };
+        if (road.allReadingTypes.length) { r3.appendChild(sv3); r3.appendChild(st3); rd.appendChild(r3); }
+        detail.appendChild(rd);
+      }
       detail.appendChild(el('h3', '', L.historyTitle));
       if (!road.mows.length) detail.appendChild(el('p', 'muted', 'Nothing logged yet.'));
       road.mows.forEach(function (m) {
@@ -503,6 +524,10 @@
           api('DELETE', '/api/admin/mows/' + m.id).then(function (r) { me.roads = r.roads; draw(); drawOne(r.road); }).catch(function (e) { say(e.message, 'err'); });
         };
         t.appendChild(del); row.appendChild(t);
+        if (m.vals && road.allReadingTypes) {
+          var vv = road.allReadingTypes.filter(function (x) { return m.vals[x.id] != null; }).map(function (x) { return x.name + ': ' + m.vals[x.id] + (x.unit ? ' ' + x.unit : ''); });
+          if (vv.length) row.appendChild(el('p', 't-meta', vv.join(' · ')));
+        }
         if (m.notes) row.appendChild(el('p', 't-text', m.notes));
         if (m.photos.length) row.appendChild(photoLinks(m.photos, '/api/admin/road-photo/', 'Photo of ' + road.name));
         detail.appendChild(row);
@@ -556,11 +581,12 @@
     wTypes = r.types;
     if (document.activeElement !== $('wr-lines')) $('wr-lines').value = wTypes.map(function (t) { return t.name + (t.unit ? ' | ' + t.unit : ''); }).join('\n');
     var head = $('wr-head'); head.innerHTML = '';
-    ['When', 'By'].concat(wTypes.map(function (t) { return t.name + (t.unit ? ' (' + t.unit + ')' : ''); })).concat(['Notes', '']).forEach(function (h) { head.appendChild(el('th', '', h)); });
+    ['When', 'Site', 'By'].concat(wTypes.map(function (t) { return t.name + (t.unit ? ' (' + t.unit + ')' : ''); })).concat(['Notes', '']).forEach(function (h) { head.appendChild(el('th', '', h)); });
     var body = $('wr-body'); body.innerHTML = '';
     r.readings.forEach(function (x) {
       var tr = el('tr'), d = new Date(x.takenAt);
       tr.appendChild(el('td', '', d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+      tr.appendChild(el('td', '', x.siteName || ''));
       tr.appendChild(el('td', '', x.byName || ''));
       wTypes.forEach(function (t) { tr.appendChild(el('td', 'num', x.vals[t.id] != null ? String(x.vals[t.id]) : '')); });
       tr.appendChild(el('td', '', x.notes || ''));

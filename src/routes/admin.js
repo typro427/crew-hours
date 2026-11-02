@@ -142,6 +142,11 @@ const RD = require('../roads');
 // kind=road (Roads mowed) or kind=water (water system sites).
 r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id, req.query.kind) }));
 r.put('/roads', async (req, res) => { const b = req.body || {}; await RD.setList(req.company.id, b.names, b.kind); res.json({ roads: await RD.list(req.company.id, b.kind) }); });
+r.put('/roads/:id/readings', async (req, res) => {
+  await RD.setReadingIds(req.company.id, Number(req.params.id), (req.body || {}).ids);
+  const road = await RD.history(req.company.id, Number(req.params.id), 200);
+  res.json({ road, roads: await RD.list(req.company.id, road.kind) });
+});
 r.put('/roads/:id/info', async (req, res) => {
   await RD.setInfo(req.company.id, Number(req.params.id), req.body || {});
   const road = await RD.history(req.company.id, Number(req.params.id), 200);
@@ -165,8 +170,8 @@ r.get('/readings.csv', async (req, res) => {
   const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
   const tz = req.company.timezone;
   const when = d => new Date(d).toLocaleString('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-  const lines = [['Date and time', 'By', ...types.map(t => t.name + (t.unit ? ' (' + t.unit + ')' : '')), 'Notes'].map(q).join(',')];
-  rows.slice().reverse().forEach(r => lines.push([when(r.takenAt), r.byName || '', ...types.map(t => r.vals[t.id] != null ? r.vals[t.id] : ''), r.notes].map(q).join(',')));
+  const lines = [['Date and time', 'Site', 'By', ...types.map(t => t.name + (t.unit ? ' (' + t.unit + ')' : '')), 'Notes'].map(q).join(',')];
+  rows.slice().reverse().forEach(r => lines.push([when(r.takenAt), r.siteName || '', r.byName || '', ...types.map(t => r.vals[t.id] != null ? r.vals[t.id] : ''), r.notes].map(q).join(',')));
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="water-readings.csv"' }).send(lines.join('\r\n'));
 });
 r.get('/road-photo/:id', async (req, res) => {

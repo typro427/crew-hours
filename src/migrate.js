@@ -188,6 +188,11 @@ CREATE TABLE IF NOT EXISTS road_mow_photos (
   data       BYTEA NOT NULL
 );
 CREATE INDEX IF NOT EXISTS road_mow_photos_mow ON road_mow_photos (mow_id);
+-- Readings taken at a water site, as part of a site check.
+ALTER TABLE readings ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES roads(id) ON DELETE SET NULL;
+ALTER TABLE readings ADD COLUMN IF NOT EXISTS mow_id INTEGER REFERENCES road_mows(id) ON DELETE CASCADE;
+-- Which readings apply at each site (null = all of them).
+ALTER TABLE roads ADD COLUMN IF NOT EXISTS reading_ids JSONB;
 -- Photos the crew adds to a day's hours.
 CREATE TABLE IF NOT EXISTS day_photos (
   id         SERIAL PRIMARY KEY,

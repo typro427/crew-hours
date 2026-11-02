@@ -230,3 +230,31 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: true, w_readings: true, w_sites: true, w_repairs: true } });
   assert.strictEqual((await sam('GET', '/readings')).status, 200);
 });
+
+test('readings inside a site: saved with the check, show in the readings list with the site, per-site choice', async () => {
+  const types = (await O('GET', '/api/admin/readings')).body.types;
+  const [cl, pr] = types;
+  const well = (await O('GET', '/api/admin/roads?kind=water')).body.roads.find(x => x.name === 'Well 1');
+  let r = await O('PUT', `/api/admin/roads/${well.id}/readings`, { ids: [cl.id] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.deepStrictEqual(r.body.road.readingTypes.map(t => t.id), [cl.id]);
+  const view = (await jake('GET', '/roads/' + well.id)).body.road;
+  assert.deepStrictEqual(view.readingTypes.map(t => t.name), ['Chlorine']);
+  const today = (await jake('GET', '/week')).body.today;
+  assert.strictEqual((await jake('POST', `/roads/${well.id}/mows`, { day: today, vals: { [cl.id]: 'x' } })).status, 400);
+  r = await jake('POST', `/roads/${well.id}/mows`, { day: today, notes: 'Site check', vals: { [cl.id]: '0.9' } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.deepStrictEqual(r.body.road.mows[0].vals, { [cl.id]: 0.9 });
+  const list = (await O('GET', '/api/admin/readings')).body.readings;
+  const mine = list.find(x => x.siteName === 'Well 1');
+  assert.ok(mine && mine.vals[cl.id] === 0.9);
+  assert.match((await O('GET', '/api/admin/readings.csv')).body.toString(), /"Well 1"/);
+  // removing the check removes its readings
+  await jake('DELETE', '/mows/' + r.body.road.mows[0].id);
+  assert.ok(!(await O('GET', '/api/admin/readings')).body.readings.some(x => x.id === mine.id));
+  // all ticked = back to "every reading"
+  r = await O('PUT', `/api/admin/roads/${well.id}/readings`, { ids: types.map(t => t.id) });
+  assert.strictEqual(r.body.road.readingIds, null);
+  // roads never get reading boxes
+  assert.strictEqual((await jake('GET', '/roads/' + (await O('GET', '/api/admin/roads')).body.roads[0].id)).body.road.readingTypes, undefined);
+});
