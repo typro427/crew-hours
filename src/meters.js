@@ -18,7 +18,7 @@ const label = q => { const [y, n] = [q.slice(0, 4), Number(q.slice(6))]; return 
 async function route(company, quarter, opts = {}) {
   const m = validQuarter(quarter) ? quarter : quarterOf(company);
   const rows = await db.q(`SELECT mt.id, mt.seq, mt.account, mt.meter_no AS "meterNo", mt.name, mt.address, mt.notes,
-      mt.name_check AS "nameCheck", mt.old_name AS "oldName", mt.active,
+      mt.name_check AS "nameCheck", mt.old_name AS "oldName", mt.active, mt.qb_customer AS "qbCustomer",
       cur.reading AS current, cur.read_at AS "readAt", cur.notes AS "readNotes", cc.name AS "readBy", cur.id AS "readId",
       COALESCE(prev.reading, mt.start_reading) AS previous, prev.month AS "previousQuarter"
     FROM meters mt
@@ -56,7 +56,7 @@ async function replaceAll(companyId, list) {
   const s = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
   const rows = list.map((m, i) => ({ seq: Number.isFinite(Number(m.seq)) ? Number(m.seq) : i + 1, account: s(m.account, 40), meterNo: s(m.meterNo, 40),
     name: s(m.name, 120), address: s(m.address, 160), notes: s(m.notes, 300), start: m.startReading === '' || m.startReading == null || !isFinite(Number(m.startReading)) ? null : Number(m.startReading),
-    check: !!m.nameCheck, old: s(m.oldName, 120) }));
+    check: !!m.nameCheck, old: s(m.oldName, 120), qb: s(m.qbCustomer, 160) }));
   await db.tx(async t => {
     // Keep reading history when the same meter comes back: match by account + meter number + sequence.
     const have = await t.q('SELECT id, seq, account, meter_no FROM meters WHERE company_id=$1', [companyId]);
@@ -65,9 +65,9 @@ async function replaceAll(companyId, list) {
     await t.q('UPDATE meters SET active=FALSE WHERE company_id=$1', [companyId]);
     for (const r of rows) {
       const old = byKey.get(k(r));
-      const args = [r.seq, r.account, r.meterNo, r.name, r.address, r.notes, r.start, r.check, r.old];
-      if (old) await t.q('UPDATE meters SET seq=$1, account=$2, meter_no=$3, name=$4, address=$5, notes=$6, start_reading=$7, name_check=$8, old_name=$9, active=TRUE WHERE id=$10', [...args, old.id]);
-      else await t.q('INSERT INTO meters (seq, account, meter_no, name, address, notes, start_reading, name_check, old_name, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [...args, companyId]);
+      const args = [r.seq, r.account, r.meterNo, r.name, r.address, r.notes, r.start, r.check, r.old, r.qb];
+      if (old) await t.q('UPDATE meters SET seq=$1, account=$2, meter_no=$3, name=$4, address=$5, notes=$6, start_reading=$7, name_check=$8, old_name=$9, qb_customer=$10, active=TRUE WHERE id=$11', [...args, old.id]);
+      else await t.q('INSERT INTO meters (seq, account, meter_no, name, address, notes, start_reading, name_check, old_name, qb_customer, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)', [...args, companyId]);
     }
   });
   return { meters: rows.length };
@@ -79,9 +79,9 @@ async function update(companyId, id, b) {
   if (!cur) V.bad('That meter was not found.');
   const s = (v, n, d) => (v === undefined ? d : String(v || '').trim().slice(0, n));
   const seq = b.seq !== undefined ? V.int(b.seq, 'Read sequence', 0, 100000) : cur.seq;
-  await db.q('UPDATE meters SET seq=$1, account=$2, meter_no=$3, name=$4, address=$5, notes=$6, name_check=$7, active=$8 WHERE id=$9',
+  await db.q('UPDATE meters SET seq=$1, account=$2, meter_no=$3, name=$4, address=$5, notes=$6, name_check=$7, active=$8, qb_customer=$9 WHERE id=$10',
     [seq, s(b.account, 40, cur.account), s(b.meterNo, 40, cur.meter_no), s(b.name, 120, cur.name), s(b.address, 160, cur.address), s(b.notes, 300, cur.notes),
-     b.nameCheck !== undefined ? !!b.nameCheck : cur.name_check, b.active !== undefined ? !!b.active : cur.active, id]);
+     b.nameCheck !== undefined ? !!b.nameCheck : cur.name_check, b.active !== undefined ? !!b.active : cur.active, s(b.qbCustomer, 160, cur.qb_customer), id]);
 }
 
 module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label };

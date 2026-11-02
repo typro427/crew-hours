@@ -759,13 +759,14 @@
       if (show === 'read' && m.current == null) return;
       if (show === 'low' && !(m.usage != null && m.usage < 0)) return;
       if (show === 'check' && !m.nameCheck) return;
-      if (q && [m.seq, m.account, m.name, m.oldName, m.address, m.meterNo].join(' ').toLowerCase().indexOf(q) === -1) return;
+      if (q && [m.seq, m.account, m.name, m.oldName, m.qbCustomer, m.address, m.meterNo].join(' ').toLowerCase().indexOf(q) === -1) return;
       shown++;
       var tr = el('tr', m.current != null ? 'done' : '');
       tr.appendChild(el('td', 'num', String(m.seq)));
       tr.appendChild(el('td', '', m.account));
       var nm = el('td', ''); nm.appendChild(document.createTextNode(m.name || '')); if (m.nameCheck) nm.appendChild(el('span', 'chk', 'Check'));
       if (m.oldName && m.oldName !== m.name) nm.appendChild(el('span', 'old', 'Was: ' + m.oldName));
+      if (m.qbCustomer && m.qbCustomer !== m.name) nm.appendChild(el('span', 'old', 'QuickBooks: ' + m.qbCustomer));
       tr.appendChild(nm);
       tr.appendChild(el('td', '', m.address));
       tr.appendChild(el('td', '', m.meterNo || 'no meter'));
@@ -793,7 +794,7 @@
   function meterEditRow(m) {
     var tr = el('tr', 'mr-edit'), td = el('td'); td.colSpan = 10;
     var g = el('div', 'mb-grid'), f = {};
-    [['seq', 'Read sequence', m.seq], ['account', 'Act #', m.account], ['meterNo', 'Meter ID', m.meterNo], ['name', 'Customer name', m.name], ['address', 'Service address', m.address], ['notes', 'Notes', m.notes]]
+    [['seq', 'Read sequence', m.seq], ['account', 'Act #', m.account], ['meterNo', 'Meter ID', m.meterNo], ['name', 'Customer name', m.name], ['qbCustomer', 'QuickBooks customer', m.qbCustomer], ['address', 'Service address', m.address], ['notes', 'Notes', m.notes]]
       .forEach(function (x) { var w = el('div'); w.appendChild(el('label', '', x[1])); var i = el('input'); i.value = x[2] == null ? '' : x[2]; f[x[0]] = i; w.appendChild(i); g.appendChild(w); });
     td.appendChild(g);
     var row = el('div', 'row'); row.style.marginTop = '10px';

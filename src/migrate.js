@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS meters (
   active      BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE INDEX IF NOT EXISTS meters_company ON meters (company_id, seq);
+ALTER TABLE meters ADD COLUMN IF NOT EXISTS qb_customer TEXT NOT NULL DEFAULT '';   -- the customer's name exactly as in QuickBooks
 CREATE TABLE IF NOT EXISTS meter_reads (
   id         SERIAL PRIMARY KEY,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

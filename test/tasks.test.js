@@ -309,7 +309,7 @@ test('the members file also works from the Settings import box', async () => {
 test('meter route: import keeps order, crew enter readings, usage from last, history kept on re-import', async () => {
   const meters = [
     { seq: 1, account: '2751415', meterNo: '2751415', name: 'Test Greens', address: 'Halfway House', startReading: 27011 },
-    { seq: 2, account: '2751416', meterNo: '2751416', name: 'Testy, Greg', address: '434 Fake Vista', startReading: 66476, nameCheck: true, oldName: 'Old, Name' },
+    { seq: 2, account: '2751416', meterNo: '2751416', name: 'Testy, Greg', address: '434 Fake Vista', startReading: 66476, nameCheck: true, oldName: 'Old, Name', qbCustomer: 'Testy, Greg & Pat' },
     { seq: 3, account: '1A', meterNo: '', name: 'No Meter, Pat', address: '142 Fake Trot 1A', startReading: 0, notes: 'No meter' }
   ];
   let r = await O('POST', '/api/admin/meters/import', { meters });
@@ -331,11 +331,11 @@ test('meter route: import keeps order, crew enter readings, usage from last, his
   const quarter = r.body.quarter;
   assert.match(quarter, /^\d{4}-Q[1-4]$/); assert.match(r.body.label, /^Q[1-4] \d{4} \(/);
   const adm = (await O('GET', '/api/admin/meters?all=1')).body;
-  assert.strictEqual(adm.meters[1].nameCheck, true); assert.strictEqual(adm.meters[1].oldName, 'Old, Name');
+  assert.strictEqual(adm.meters[1].nameCheck, true); assert.strictEqual(adm.meters[1].oldName, 'Old, Name'); assert.strictEqual(adm.meters[1].qbCustomer, 'Testy, Greg & Pat');
   r = await O('PUT', '/api/admin/meters/' + m2.id, { name: 'Fixed, Greg', nameCheck: false });
   assert.strictEqual(r.body.meters[1].name, 'Fixed, Greg'); assert.strictEqual(r.body.meters[1].nameCheck, false);
   const csv = (await O('GET', '/api/admin/meters.csv?quarter=' + quarter)).body.toString();
-  assert.match(csv, /"Read sequence"/); assert.match(csv, /"27500"/);
+  assert.match(csv, /"Read sequence"/); assert.match(csv, /"27500"/); assert.match(csv, /"QuickBooks customer"/); assert.match(csv, /Testy, Greg & Pat/);
   const y = Number(quarter.slice(0, 4)), qn = Number(quarter.slice(6)), next = qn === 4 ? `${y + 1}-Q1` : `${y}-Q${qn + 1}`;
   r = await O('GET', '/api/admin/meters?quarter=' + next);
   assert.strictEqual(r.body.meters[0].previous, 27500); assert.strictEqual(r.body.meters[0].current, null);

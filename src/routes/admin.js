@@ -189,8 +189,8 @@ r.post('/meters/:id/read', async (req, res) => { await MT.read(req.company, null
 r.get('/meters.csv', async (req, res) => {
   const rt = await MT.route(req.company, req.query.quarter);
   const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
-  const lines = [['Read sequence', 'Act #', 'Customer name', 'Service address', 'Meter ID', 'Last reading', 'Current reading', 'Usage', 'Read by', 'Notes'].map(q).join(',')];
-  rt.meters.forEach(m => lines.push([m.seq, m.account, m.name, m.address, m.meterNo, m.previous, m.current, m.usage, m.readBy, [m.notes, m.readNotes].filter(Boolean).join(' · ')].map(q).join(',')));
+  const lines = [['Read sequence', 'Act #', 'Customer name', 'QuickBooks customer', 'Service address', 'Meter ID', 'Last reading', 'Current reading', 'Usage', 'Read by', 'Notes'].map(q).join(',')];
+  rt.meters.forEach(m => lines.push([m.seq, m.account, m.name, m.qbCustomer, m.address, m.meterNo, m.previous, m.current, m.usage, m.readBy, [m.notes, m.readNotes].filter(Boolean).join(' · ')].map(q).join(',')));
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="meter-readings-${rt.quarter}.csv"` }).send('\ufeff' + lines.join('\r\n'));
 });
 
