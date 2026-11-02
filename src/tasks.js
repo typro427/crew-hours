@@ -11,25 +11,28 @@ const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/webp': [0x52, 0x49, 0x46, 0x46] };
 
 const COLS = `t.id, t.title, t.details, t.assigned_to AS "assignedTo", a.name AS "assignedName", to_char(t.due, 'YYYY-MM-DD') AS due,
-  t.status, t.cost, t.qty, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
+  t.status, t.cost, t.qty, t.priority, t.created_at AS "createdAt", t.created_by AS "createdBy", cb.name AS "createdByName", t.done_at AS "doneAt", d.name AS "doneByName", t.done_notes AS "doneNotes",
   t.address, t.owner, t.owner_phone AS "ownerPhone",
   t.arrived_at AS "arrivedAt", ar.name AS "arrivedByName", t.actual_cost AS "actualCost",
   COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id AND p.update_id IS NULL), '[]') AS photos,
   COALESCE((SELECT json_agg(json_build_object('id', u.id, 'at', u.created_at, 'by', u.by_name, 'crewId', u.crew_id, 'note', u.note,
       'photos', COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.update_id=u.id), '[]')) ORDER BY u.id)
     FROM task_updates u WHERE u.task_id=t.id), '[]') AS updates`;
+const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
+const PRI = "CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'low' THEN 3 ELSE 2 END";   // most urgent first
+const cleanPriority = v => { const s = String(v || '').trim().toLowerCase(); if (!s) return 'normal'; if (!PRIORITIES.includes(s)) V.bad('Pick a priority: urgent, high, normal or low.'); return s; };
 const FROM = 'FROM tasks t LEFT JOIN crew a ON a.id=t.assigned_to LEFT JOIN crew d ON d.id=t.done_by LEFT JOIN crew cb ON cb.id=t.created_by LEFT JOIN crew ar ON ar.id=t.arrived_by';
 
 /** The boss's list: everything open, plus what was finished in the last 60 days. */
 const kindOf = k => (k === 'repair' || k === 'order' ? k : 'task');   // task | repair (water leaks) | order (needs to order)
 const forOwner = async (companyId, kind) => (kindOf(kind) === 'repair' && await fillOwners(companyId), db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$2 AND (t.status='open' OR t.done_at > now() - interval '60 days' OR (t.kind='order' AND t.arrived_at IS NULL))
-  ORDER BY t.status='done', CASE WHEN t.status='open' THEN t.due END NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, kindOf(kind)]));
+  ORDER BY t.status='done', CASE WHEN t.status='open' THEN ${PRI} END, CASE WHEN t.status='open' THEN t.due END NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, kindOf(kind)]));
 
 /** A crew member sees open tasks for them or for anyone, and what they finished in the last 14 days. */
 const forCrew = async (companyId, crewId, kind) => (kindOf(kind) === 'repair' && await fillOwners(companyId), db.q(`SELECT ${COLS} ${FROM} WHERE t.company_id=$1 AND t.kind=$3 AND
   ((t.status='open' AND (t.assigned_to IS NULL OR t.assigned_to=$2)) OR (t.status='done' AND t.done_by=$2 AND t.done_at > now() - interval '14 days')
    OR (t.kind='order' AND t.status='done' AND (t.arrived_at IS NULL OR t.arrived_at > now() - interval '14 days')))
-  ORDER BY t.status='done', t.due NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, crewId, kindOf(kind)]));
+  ORDER BY t.status='done', CASE WHEN t.status='open' THEN ${PRI} END, t.due NULLS LAST, t.done_at DESC NULLS LAST, t.id DESC`, [companyId, crewId, kindOf(kind)]));
 
 // ---- Who owns the place with the leak: look the address up on the members list. ----
 const M = require('./meters');
@@ -91,6 +94,7 @@ async function fields(companyId, b, cur) {
     due: b.due !== undefined ? (b.due ? b.due : null) : cur.due,
     assigned: b.assignedTo !== undefined ? (b.assignedTo ? Number(b.assignedTo) : null) : cur.assigned_to,
     cost: b.cost !== undefined ? roughCost(b.cost) : (cur.cost == null ? null : Number(cur.cost)),
+    priority: b.priority !== undefined ? cleanPriority(b.priority) : (cur.priority || 'normal'),
     address: b.address !== undefined ? cleanAddress(b.address) : (cur.address || ''),
     qty: b.qty !== undefined ? cleanQty(b.qty) : (cur.qty || '')
   };
@@ -100,13 +104,13 @@ async function fields(companyId, b, cur) {
 }
 
 async function create(companyId, b) {
-  const v = await fields(companyId, b, { details: '', due: null, assigned_to: null, address: '', qty: '' });
+  const v = await fields(companyId, b, { details: '', due: null, assigned_to: null, address: '', qty: '', priority: 'normal' });
   const n = await db.one("SELECT count(*)::int AS n FROM tasks WHERE company_id=$1 AND status='open'", [companyId]);
   if (n.n >= 500) V.bad('That is a lot of open tasks. Finish or delete some first.');
   const photos = (Array.isArray(b.photos) ? b.photos : []).map(photoBytes);
   if (photos.length > MAX_PHOTOS) V.bad(`Up to ${MAX_PHOTOS} photos.`);
   const id = await db.tx(async t => {
-    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, kind, cost, address, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id', [companyId, v.title, v.details, v.due, v.assigned, kindOf(b.kind), v.cost, v.address, v.qty]);
+    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, kind, cost, address, qty, priority) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id', [companyId, v.title, v.details, v.due, v.assigned, kindOf(b.kind), v.cost, v.address, v.qty, v.priority]);
     for (const p of photos) await t.q('INSERT INTO task_photos (task_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [r.id, companyId, p.mime, p.buf]);
     return r.id;
   });
@@ -119,6 +123,26 @@ async function fromMeter(companyId, b, taskId, quarter) {
   if (!b.meterId || kindOf(b.kind) !== 'repair' || !/^[0-9]{4}-Q[1-4]$/.test(String(quarter || ''))) return;
   await require('./meters').linkLeak(companyId, Number(b.meterId), quarter, taskId);
 }
+/**
+ * Add many at once from pasted lines (e.g. a Trello list). One per line; start a line with "Urgent:", "High:" or "Low:"
+ * (or "!!" / "!") to set the priority. Anything after " -- " on a line becomes the details.
+ */
+async function bulk(companyId, b) {
+  const lines = String((b && b.text) || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) V.bad('Paste at least one line.');
+  if (lines.length > 200) V.bad('Up to 200 at a time.');
+  const items = lines.map(l => {
+    let priority = 'normal', m;
+    if ((m = /^(urgent|high|normal|low)\s*[:\-–]\s*/i.exec(l))) { priority = m[1].toLowerCase(); l = l.slice(m[0].length); }
+    else if (l.startsWith('!!')) { priority = 'urgent'; l = l.slice(2).trim(); }
+    else if (l.startsWith('!')) { priority = 'high'; l = l.slice(1).trim(); }
+    l = l.replace(/^[-*•\d.)\s]+(?=\S)/, (x) => (/^\d+\s/.test(x) ? x : ''));   // drop bullets, keep house numbers
+    const [title, ...rest] = l.split(' -- ');
+    return { title: title.trim().slice(0, 120), details: rest.join(' -- ').trim(), priority };
+  }).filter(x => x.title);
+  for (const it of items) await create(companyId, { ...it, kind: b.kind });
+  return items.length;
+}
 const cleanRef = v => { const s = String(v || '').trim(); return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null; };
 
 async function update(companyId, id, b) {
@@ -126,7 +150,7 @@ async function update(companyId, id, b) {
   if (!cur) V.bad('That task was not found.');
   const v = await fields(companyId, b, cur);
   const moved = v.title !== cur.title || v.details !== cur.details || v.address !== cur.address;   // look the owner up again
-  await db.q('UPDATE tasks SET title=$1, details=$2, due=$3, assigned_to=$4, cost=$5, address=$6, qty=$7, owner_checked=owner_checked AND NOT $8 WHERE id=$9', [v.title, v.details, v.due, v.assigned, v.cost, v.address, v.qty, moved, id]);
+  await db.q('UPDATE tasks SET title=$1, details=$2, due=$3, assigned_to=$4, cost=$5, address=$6, qty=$7, priority=$10, owner_checked=owner_checked AND NOT $8 WHERE id=$9', [v.title, v.details, v.due, v.assigned, v.cost, v.address, v.qty, moved, id, v.priority]);
   if (b.actualCost !== undefined && cur.arrived_at) await db.q('UPDATE tasks SET actual_cost=$1 WHERE id=$2', [roughCost(b.actualCost), id]);
   if (b.reopen) await db.q("UPDATE tasks SET status='open', done_at=NULL, done_by=NULL, arrived_at=NULL, arrived_by=NULL, actual_cost=NULL WHERE id=$1", [id]);
 }
@@ -147,13 +171,13 @@ async function createByCrew(company, crew, b) {
   const ref = cleanRef(b.clientRef);
   if (ref && await db.one('SELECT 1 FROM tasks WHERE company_id=$1 AND client_ref=$2', [company.id, ref])) return;   // sent again from the phone's outbox
   const id = await db.tx(async t => {
-    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind, cost, address, qty, client_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
-      [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind, roughCost(b.cost), cleanAddress(b.address), cleanQty(b.qty), ref]);
+    const r = await t.one('INSERT INTO tasks (company_id, title, details, due, assigned_to, created_by, kind, cost, address, qty, client_ref, priority) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id',
+      [company.id, title, details, due, b.forMe ? crew.id : null, crew.id, kind, roughCost(b.cost), cleanAddress(b.address), cleanQty(b.qty), ref, cleanPriority(b.priority)]);
     for (const p of photos) await t.q('INSERT INTO task_photos (task_id, company_id, mime, data) VALUES ($1,$2,$3,$4)', [r.id, company.id, p.mime, p.buf]);
     return r.id;
   });
   await fromMeter(company.id, b, id, require('./meters').quarterOf(company));
-  notifyNew(company, crew.name, title, details, !!b.forMe, kind, due, roughCost(b.cost), cleanQty(b.qty)).catch(() => {});   // logged in email.js
+  notifyNew(company, crew.name, (b.priority && cleanPriority(b.priority) !== 'normal' ? cleanPriority(b.priority).toUpperCase() + ': ' : '') + title, details, !!b.forMe, kind, due, roughCost(b.cost), cleanQty(b.qty)).catch(() => {});   // logged in email.js
 }
 
 /**
@@ -273,4 +297,4 @@ const kindOfTaskPhoto = async (companyId, id) => { const r = await db.one('SELEC
 /** One photo, only for someone in the same company. */
 const photo = (companyId, photoId) => db.one('SELECT mime, data FROM task_photos WHERE id=$1 AND company_id=$2', [photoId, companyId]);
 
-module.exports = { arrived, spending, progress, removeProgress, kindOfUpdate, fillOwners, recheckOwners, ownerAt, activeMembers, kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };
+module.exports = { bulk, PRIORITIES, arrived, spending, progress, removeProgress, kindOfUpdate, fillOwners, recheckOwners, ownerAt, activeMembers, kindOf, kindOfTask, kindOfTaskPhoto, forOwner, forCrew, create, update, remove, createByCrew, removeByCrew, complete, photo, photoBytes, MAX_PHOTOS };

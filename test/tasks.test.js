@@ -809,3 +809,26 @@ test('address jobs: running totals for the person; managers can view someone els
   await O('PUT', '/api/admin/crew/' + jake1.id, { manager: false });
   await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, jobs: false } });
 });
+
+test('priority tags: set, sorted most urgent first, and paste many at once', async () => {
+  assert.strictEqual((await O('POST', '/api/admin/tasks', { kind: 'repair', title: 'x', priority: 'whenever' })).status, 400);
+  let r = await O('POST', '/api/admin/tasks/bulk', { kind: 'repair', text: [
+    'Urgent: Chuck 1231 df way condo 2 needs new water box ASAP',
+    '183 Needs 2 meters second row',
+    'High: 206 Deer Ridge main valve leak needs fixed -- photo on Trello',
+    'Low: 439 deer hill find meter box', '', '  '].join('\n') });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.added, 4);
+  const open = r.body.tasks.filter(t => t.status === 'open');
+  assert.strictEqual(open[0].priority, 'urgent'); assert.match(open[0].title, /^Chuck 1231/);
+  const v = open.find(t => /206 Deer Ridge/.test(t.title));
+  assert.strictEqual(v.priority, 'high'); assert.strictEqual(v.details, 'photo on Trello'); assert.strictEqual(v.title, '206 Deer Ridge main valve leak needs fixed');
+  assert.strictEqual(open.find(t => /^183 Needs/.test(t.title)).priority, 'normal', 'house number kept');
+  assert.strictEqual(open[open.length - 1].priority === 'low' || open.some(t => t.priority === 'low'), true);
+  r = await O('PUT', '/api/admin/tasks/' + v.id, { priority: 'urgent' });
+  assert.strictEqual(r.body.tasks.find(t => t.id === v.id).priority, 'urgent');
+  // crew can set it when reporting, and see it
+  r = await jake('POST', '/tasks', { kind: 'repair', title: 'Big leak by the clubhouse', priority: 'urgent' });
+  assert.strictEqual(r.body.tasks.find(t => t.title === 'Big leak by the clubhouse').priority, 'urgent');
+  assert.strictEqual((await O('POST', '/api/admin/tasks/bulk', { kind: 'repair', text: '' })).status, 400);
+});

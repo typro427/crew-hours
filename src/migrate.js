@@ -186,6 +186,8 @@ ALTER TABLE crew ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS arrived_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS arrived_by INTEGER REFERENCES crew(id) ON DELETE SET NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS actual_cost NUMERIC;
+-- Priority tag on tasks, leaks & repairs: urgent, high, normal, low.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
 -- Offline: the phone gives each report an id, so sending it twice never makes two.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS client_ref TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_client_ref ON tasks (company_id, client_ref) WHERE client_ref IS NOT NULL;

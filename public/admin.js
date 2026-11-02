@@ -376,6 +376,8 @@
     function field(label, node, hint) { var l = el('label', '', label); if (hint) l.appendChild(el('span', 'hint', ' ' + hint)); form.appendChild(l); form.appendChild(node); return node; }
     var fT = field(L.titleLabel, el('input')); fT.maxLength = 120; fT.placeholder = L.titlePh; fT.autocomplete = 'off';
     var fD = field(L.detailsLabel || 'Details', el('textarea'), '(optional)'); fD.maxLength = 2000; fD.rows = 3; fD.placeholder = L.detailsPh;
+    var fP = el('select'); [["normal","Normal"],["urgent","Urgent"],["high","High"],["low","Low"]].forEach(function (o) { var x = el('option', '', o[1]); x.value = o[0]; fP.appendChild(x); });
+    if (L.priority) field('Priority', fP);
     var fA = el('input'); fA.maxLength = 200; fA.placeholder = 'e.g. 141 Deer Meadow'; fA.autocomplete = 'off';
     if (L.addressField) field('Address', fA, '(finds the owner on the members list)');
     var g = el('div', 'grid2'), w1 = el('div'), w2 = el('div');
@@ -411,7 +413,18 @@
     doneC.appendChild(el('h3', '', L.doneTitle)); doneC.lastChild.appendChild(el('span', 'hint', ' (last 60 days)'));
     var doneL = el('div', 'tasks'), doneE = el('p', 'hint', L.doneEmpty); doneC.appendChild(doneL); doneC.appendChild(doneE);
     var spendC = el('div', 'card'); spendC.hidden = !L.arrival;
-    var wrap = el('div', 'stack'); [form, openC, doneC, spendC].forEach(function (n) { wrap.appendChild(n); }); root.appendChild(wrap);
+    // add many at once (pasted from Trello or a list)
+    var bulkC = el('details', 'card bulk'); bulkC.hidden = !L.bulk;
+    bulkC.appendChild(el('summary', '', L.bulkTitle || 'Add several at once'));
+    var bt = el('textarea'); bt.rows = 8; bt.placeholder = 'One per line. Start a line with Urgent:, High: or Low: to set the priority.\nUrgent: 1231 Deerfield Way condo 2 needs new water box\n206 Deer Ridge main valve leak -- notes go after two dashes';
+    var brow = el('div', 'row'), bb = el('button', 'btn', 'Add them'), bs = el('span', 'status'); bb.type = 'button';
+    brow.appendChild(bb); brow.appendChild(bs); bulkC.appendChild(bt); bulkC.appendChild(brow);
+    bb.onclick = function () {
+      bs.textContent = 'Adding…'; bs.className = 'status';
+      api('POST', '/api/admin/tasks/bulk', { kind: kind, text: bt.value }).then(function (r) { me.tasks = r.tasks; draw(); bt.value = ''; bs.textContent = 'Added ' + r.added + '.'; bs.className = 'status ok'; })
+        .catch(function (e) { bs.textContent = e.message; bs.className = 'status err'; });
+    };
+    var wrap = el('div', 'stack'); [form, bulkC, openC, doneC, spendC].forEach(function (n) { wrap.appendChild(n); }); root.appendChild(wrap);
     function drawSpending(s) {
       spendC.innerHTML = ''; if (!s) return;
       spendC.appendChild(el('h3', '', 'Spending'));
@@ -445,6 +458,7 @@
       me.tasks.forEach(function (t) {
         var r = el('div', 'trow'), top = el('div', 't-top'), left = el('div');
         left.appendChild(el('b', '', t.title));
+        if (t.status === 'open' && t.priority && t.priority !== 'normal') left.appendChild(el('span', 'pri pri-' + t.priority, t.priority.toUpperCase()));
         var meta = el('div', 't-meta');
         if (!L.hideFor) meta.appendChild(el('span', '', t.assignedName ? 'For ' + t.assignedName : 'For anyone'));
         if (t.createdByName) meta.appendChild(el('span', '', L.byWord + ' ' + t.createdByName));
@@ -533,7 +547,7 @@
       if (t.arrivedAt) { var un = el('button', 'btn ghost', 'Not arrived yet'); un.type = 'button'; un.onclick = function () { api('POST', '/api/admin/tasks/' + t.id + '/arrived', { undo: true }).then(function (q) { me.tasks = q.tasks; draw(); drawSpending(q.spending); }).catch(function (e) { say(e.message, 'err'); }); }; row.appendChild(un); }
       row.appendChild(ps); f.appendChild(row); r.appendChild(f); c.focus();
     }
-    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; fQty.value = t.qty || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
+    function edit(t) { me.editing = t.id; fT.value = t.title; fD.value = t.details || ''; fW.value = t.assignedTo || ''; fDue.value = t.due || ''; fCost.value = t.cost == null ? '' : t.cost; fA.value = t.address || ''; fP.value = t.priority || 'normal'; fQty.value = t.qty || ''; sv.textContent = 'Save'; cancel.hidden = false; fT.focus(); }
     function reset() { me.editing = null; form.reset(); fPics = []; drawPics(); sv.textContent = L.addBtn; cancel.hidden = true; }
     cancel.onclick = reset;
     form.onsubmit = function (e) {
@@ -541,6 +555,7 @@
       var body = { kind: kind, title: fT.value.trim(), details: fD.value, assignedTo: L.hideFor ? null : (fW.value ? Number(fW.value) : null), due: fDue.value || null };
       if (L.costField) body.cost = fCost.value.replace(/[$,\s]/g, '');
       if (L.addressField) body.address = fA.value.trim();
+      if (L.priority) body.priority = fP.value;
       if (L.qtyField) body.qty = fQty.value.trim();
       if (!me.editing && fPics.length) body.photos = fPics.slice();
       if (!body.title) return say(L.needTitle, 'err');
@@ -836,7 +851,7 @@
     return me;
   }
 
-  var taskPanel = TaskPanel('task', $('tasks-panel'), { formTitle: 'Give the crew a task', titleLabel: 'Task', titlePh: 'e.g. Fix the leak at the pool well house',
+  var taskPanel = TaskPanel('task', $('tasks-panel'), { priority: true, bulk: true, formTitle: 'Give the crew a task', titleLabel: 'Task', titlePh: 'e.g. Fix the leak at the pool well house',
     detailsPh: 'Where, what to bring, anything they should know', addBtn: 'Add task', needTitle: 'Give the task a name.', addedOk: 'Task added. The crew will see it in their app.',
     formHint: 'The crew sees it under Tasks in their app. When they finish, they add notes and photos and you get an email.',
     openTitle: 'Open', openEmpty: 'Nothing open.', doneTitle: 'Done', doneEmpty: 'Nothing finished yet.', byWord: 'Added by', doneWord: 'Done' });
@@ -845,7 +860,7 @@
     formHint: 'Crew you switch on (Crew & PINs → Needs to order) can add items from their app too, with a picture. You get an email when they do.',
     openTitle: 'Needs to order', openEmpty: 'Nothing to order.', doneTitle: 'Ordered', doneEmpty: 'Nothing ordered yet.', byWord: 'Added by', doneWord: 'Ordered',
     hideFor: true, costField: true, photosOnCreate: true, detailsLabel: 'Description', dueLabel: 'Due by', dueWord: 'Due by ', overdueWord: 'Past due: ' });
-  var repairPanel = TaskPanel('repair', $('water-repairs'), { addressField: true, progress: true, photosOnCreate: true, formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
+  var repairPanel = TaskPanel('repair', $('water-repairs'), { priority: true, bulk: true, bulkTitle: 'Add several at once (paste from Trello)', addressField: true, progress: true, photosOnCreate: true, formTitle: 'Log a leak or repair', titleLabel: 'What and where', titlePh: 'e.g. Leak at the meter by 141 Deer Meadow',
     detailsPh: 'What needs doing, parts needed', addBtn: 'Add', needTitle: 'Say what the problem is and where.', addedOk: 'Added. The crew will see it under Water System.',
     formHint: 'The crew can also report problems from their app. When they fix one, they add notes and photos and you get an email.',
     openTitle: 'Open leaks & repairs', openEmpty: 'Nothing open.', doneTitle: 'Fixed', doneEmpty: 'Nothing fixed yet.', byWord: 'Reported by', doneWord: 'Fixed' });

@@ -135,3 +135,9 @@ table.roads td.num{font-variant-numeric:tabular-nums}
 .ji-client summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:4px 0}
 .ji-client .ji-tot{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
 .ji-client tr.ji-sub td{font-weight:700;border-top:2px solid var(--line)}
+.pri{display:inline-block;margin-left:8px;font-size:11px;font-weight:700;letter-spacing:.04em;border-radius:5px;padding:2px 7px;color:#fff;vertical-align:2px}
+.pri-urgent{background:#b42318}
+.pri-high{background:#c4560c}
+.pri-low{background:#6b7280}
+details.bulk summary{cursor:pointer;font-weight:700}
+details.bulk textarea{width:100%;margin:10px 0}

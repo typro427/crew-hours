@@ -168,6 +168,7 @@ const K = require('../tasks');
 // kind=task (Tasks tab) or kind=repair (Water System tab: leaks & repairs).
 const tasksOut = async (req, kind) => ({ tasks: await K.forOwner(req.company.id, kind), kind: K.kindOf(kind) });
 r.get('/tasks', async (req, res) => res.json(await tasksOut(req, req.query.kind)));
+r.post('/tasks/bulk', async (req, res) => { const n = await K.bulk(req.company.id, req.body || {}); res.json({ ...(await tasksOut(req, (req.body || {}).kind)), added: n }); });
 r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json(await tasksOut(req, (req.body || {}).kind)); });
 r.put('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await tasksOut(req, k)); });
 r.post('/tasks/:id/progress', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.progress(req.company.id, Number(req.params.id), { boss: req.owner.name || 'Boss' }, req.body || {}); res.json(await tasksOut(req, k)); });
