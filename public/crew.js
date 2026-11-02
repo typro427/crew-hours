@@ -63,23 +63,135 @@
     delReceipt:      function(a){ return ["DELETE", "/receipts/" + a[1]]; },
     doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; },
     arrivedTask:     function(a){ return ["POST", "/tasks/" + a[1] + "/arrived", { actualCost:a[2] }]; },
-    progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3] }]; },
+    progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3], clientRef:a[4] }]; },
     delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; }
   };
-  function call(fn, args, ok, fail){
+  // ---- Offline: saves wait in an outbox on the phone; the last lists loaded are kept so screens open with no signal. ----
+  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job" };
+  var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1 };
+  var memBox=[], memCache={}, memId=1;
+  var IDB=(function(){
+    var dbp=null;
+    function open(){
+      if(!dbp) dbp=new Promise(function(ok,no){
+        try{ var r=indexedDB.open("crewhours",1);
+          r.onupgradeneeded=function(){ var d=r.result; d.createObjectStore("outbox",{ keyPath:"id", autoIncrement:true }); d.createObjectStore("cache"); };
+          r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ no(r.error); };
+        }catch(e){ no(e); }
+      });
+      return dbp;
+    }
+    function tx(store, mode, fn){
+      return open().then(function(d){ return new Promise(function(ok,no){
+        var t=d.transaction(store,mode), q=fn(t.objectStore(store)), out;
+        if(q) q.onsuccess=function(){ out=q.result; };
+        t.oncomplete=function(){ ok(out); }; t.onerror=t.onabort=function(){ no(t.error); };
+      }); });
+    }
+    return {   // falls back to memory (lost if the app is closed) when the phone won't allow storage
+      all:function(){ return tx("outbox","readonly",function(s){ return s.getAll(); }).catch(function(){ return memBox.slice(); }); },
+      add:function(v){ return tx("outbox","readwrite",function(s){ return s.add(v); }).catch(function(){ v.id=memId++; memBox.push(v); }); },
+      put:function(v){ return tx("outbox","readwrite",function(s){ return s.put(v); }).catch(function(){ memBox=memBox.map(function(x){ return x.id===v.id ? v : x; }); }); },
+      del:function(id){ return tx("outbox","readwrite",function(s){ return s.delete(id); }).catch(function(){ memBox=memBox.filter(function(x){ return x.id!==id; }); }); },
+      get:function(k){ return tx("cache","readonly",function(s){ return s.get(k); }).catch(function(){ return memCache[k]; }); },
+      set:function(k,v){ return tx("cache","readwrite",function(s){ return s.put(v,k); }).catch(function(){ memCache[k]=v; }); },
+      clearCache:function(){ memCache={}; return tx("cache","readwrite",function(s){ return s.clear(); }).catch(function(){}); }
+    };
+  })();
+  function me_name(){ return $("who-name").textContent; }
+  function keepKey(fn, args){ return SLUG+"|"+String(token||"").slice(-16)+"|"+fn+"|"+(fn==="getMyWeek" ? "" : JSON.stringify(args.slice(1))); }   // per sign-in; the last week loaded opens the app offline   // per sign-in; cleared on sign out
+  function send(fn, args, tok){
     var r = ROUTES[fn](args), opts = { method: r[0], headers: { "x-ch": "1" } };
-    if (token) opts.headers.Authorization = "Bearer " + token;
+    if (tok) opts.headers.Authorization = "Bearer " + tok;
     if (r[2]) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(r[2]); }
-    fetch(API + r[1], opts)
-      .then(function(res){ return res.json().catch(function(){ return { error: "Something went wrong. Try again." }; }); })
+    return fetch(API + r[1], opts).then(function(res){ return res.json().catch(function(){ return { error: "Something went wrong. Try again." }; }); });
+  }
+  function call(fn, args, ok, fail){
+    function queue(){
+      IDB.add({ fn:fn, args:args.slice(1), who:me_name(), slug:SLUG, label:QUEUE[fn], at:Date.now() }).then(function(){ drawOutbox(); ok({ queued:true }); });
+    }
+    if(QUEUE[fn] && token && navigator.onLine===false) return queue();
+    send(fn, args, token)
       .then(function(res){
-        if(res && !res.error){ if(res.settings) applySettings(res.settings); ok(res); return; }
+        if(res && !res.error){
+          if(res.settings) applySettings(res.settings);
+          if(KEEP[fn]) IDB.set(keepKey(fn,args), res);
+          ok(res); if(outboxCount) flushSoon(); return;
+        }
         var msg = (res && res.error) || "Something went wrong. Try again.";
         if(msg==="SESSION_EXPIRED"){ signOut("You were signed out. Enter your PIN again."); return; }
         fail(msg);
-      })
-      .catch(function(){ fail(navigator.onLine ? "Couldn't reach the time log. Try again in a moment." : "No internet connection. Try again when you have signal."); });
+      }, function(){
+        if(QUEUE[fn] && token) return queue();
+        var msg = navigator.onLine ? "Couldn't reach the time log. Try again in a moment." : "No internet connection. Try again when you have signal.";
+        if(KEEP[fn] && token) return IDB.get(keepKey(fn,args)).then(function(v){ if(v){ v.offline=true; ok(v); } else fail(msg); });
+        fail(msg);
+      });
   }
+  // A saved-offline item that hasn't gone yet can still be changed (time out on a job made with no signal).
+  function patchQueued(ref, patch){
+    return IDB.all().then(function(list){
+      var it=list.filter(function(x){ return x.args && x.args[0] && x.args[0].clientRef===ref; })[0];
+      if(!it) return false;
+      var body=it.args[0];
+      Object.keys(patch).forEach(function(k){ if(k==="receipts") body.receipts=(body.receipts||[]).concat(patch.receipts||[]); else body[k]=patch[k]; });
+      return IDB.put(it).then(function(){ return true; });
+    });
+  }
+  function waiting(fn){ return IDB.all().then(function(list){ return list.filter(function(x){ return x.slug===SLUG && x.who===me_name() && x.fn===fn; }); }); }
+  var outboxCount=0, outboxFailed=[], flushing=false, flushTimer=null;
+  function drawOutbox(){
+    IDB.all().then(function(list){
+      var mine=list.filter(function(x){ return x.slug===SLUG; }), here=mine.filter(function(x){ return x.who===me_name(); });
+      outboxCount=here.length;
+      var box=$("outbox"); box.innerHTML="";
+      if(!token || (!mine.length && !outboxFailed.length)){ box.hidden=true; return; }
+      box.hidden=false;
+      if(here.length){
+        var kinds={}; here.forEach(function(x){ kinds[x.label]=(kinds[x.label]||0)+1; });
+        box.appendChild(el("b","", "📶 "+here.length+" saved on this phone"));
+        box.appendChild(el("span","", Object.keys(kinds).map(function(k){ return kinds[k]+" × "+k.toLowerCase(); }).join(", ")+". "+(navigator.onLine===false ? "They'll send when you have signal." : "Sending when the connection is back.")));
+        var b=el("button","ghost","Send now"); b.type="button"; b.onclick=function(){ flush(true); }; box.appendChild(b);
+      }
+      var others=mine.length-here.length;
+      if(others) box.appendChild(el("span","", others+" saved by someone else on this phone. They go when that person signs in."));
+      outboxFailed.forEach(function(f){ box.appendChild(el("span","err", "Couldn't send "+f.label.toLowerCase()+": "+f.msg)); });
+      if(outboxFailed.length){ var x=el("button","ghost","OK"); x.type="button"; x.onclick=function(){ outboxFailed=[]; drawOutbox(); }; box.appendChild(x); }
+    });
+  }
+  function flushSoon(){ clearTimeout(flushTimer); flushTimer=setTimeout(function(){ flush(false); }, 800); }
+  function flush(loud){
+    if(flushing || !token) return;
+    flushing=true; var sent=0, tok=token, who=me_name();
+    IDB.all().then(function(list){
+      var todo=list.filter(function(x){ return x.slug===SLUG && x.who===who; });
+      function next(){
+        var it=todo.shift();
+        if(!it) return done(true);
+        send(it.fn, [tok].concat(it.args), tok).then(function(res){
+          if(res && res.error==="SESSION_EXPIRED") return done(false);
+          if(res && res.error){ outboxFailed.push({ label:it.label, msg:res.error }); }
+          else sent++;
+          IDB.del(it.id).then(next);
+        }, function(){ done(false); });
+      }
+      function done(all){
+        flushing=false; drawOutbox();
+        if(sent) refreshVisible();
+        if(!all && loud) say($("outbox-st"),"Still no connection. It'll keep trying.","err");
+        if(!all) { clearTimeout(flushTimer); flushTimer=setTimeout(function(){ flush(false); }, 60000); }
+      }
+      next();
+    });
+  }
+  function refreshVisible(){
+    if(!$("job-screen").hidden) jobBoard.load();
+    if(!$("water-screen").hidden){ if(waterTab==="meters") loadMeters(); if(waterTab==="repairs") repairBoard.load(); }
+    if(!$("task-screen").hidden) taskBoard.load();
+    if(!$("order-screen").hidden) orderBoard.load();
+  }
+  window.addEventListener("online", function(){ drawOutbox(); flushSoon(); });
+  window.addEventListener("offline", drawOutbox);
   var LONGD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   function applySettings(s){
     settings = s;
@@ -126,6 +238,7 @@
     return features.jobs ? "jobs" : features.tasks ? "tasks" : features.orders ? "orders" : "water";
   }
   function signOut(msg){
+    IDB.clearCache(); outboxFailed=[];
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
     $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
@@ -136,7 +249,7 @@
   // ---- log screen ----
   function enterLog(name){
     $("who-name").textContent = name; $("who").hidden=false;
-    $("pin-screen").hidden=true; showScreen(homeScreen());
+    $("pin-screen").hidden=true; showScreen(homeScreen()); drawOutbox(); flushSoon();
     loadWeek(weekStartOf(today || new Date().toISOString().slice(0,10)), today);
   }
   function setOptions(list){
@@ -551,14 +664,23 @@
       if(L.costField && cost!=="" && !/^\d+(\.\d{1,2})?$/.test(cost)) return say(fSt,"The rough cost must be a dollar amount, like 250.","err");
       var pics=fPk ? fPk.get() : [];
       busy=true; fSave.disabled=true; say(fSt, pics.length ? "Sending photos…" : "Saving…");
-      call("newTask",[token,{ kind:kind, title:fT.value.trim(), details:fD.value, forMe:!L.hideFor && fF.value==="me", due:fDue.value||null, cost:L.costField ? cost : undefined, address:L.addressField ? fAddr.value.trim() : undefined, qty:L.qtyField ? fQty.value.trim() : undefined, photos:pics }], function(res){
-        busy=false; fSave.disabled=false; me.tasks=res.tasks||[]; fT.value=""; fD.value=""; fDue.value=""; fCost.value=""; fAddr.value=""; fQty.value=""; if(fPk) fPk.clear(); showForm(false); draw(); say(st,L.addedOk,"ok");
+      var nb={ kind:kind, title:fT.value.trim(), details:fD.value, forMe:!L.hideFor && fF.value==="me", due:fDue.value||null, cost:L.costField ? cost : undefined, address:L.addressField ? fAddr.value.trim() : undefined, qty:L.qtyField ? fQty.value.trim() : undefined, photos:pics, clientRef:newRef() };
+      call("newTask",[token,nb], function(res){
+        busy=false; fSave.disabled=false;
+        if(res.queued) me.tasks.unshift({ id:nb.clientRef, queued:true, title:nb.title, details:nb.details, status:"open", photos:[], updates:[], address:nb.address||"", qty:nb.qty||"", cost:nb.cost ? Number(nb.cost) : null, createdByName:me_name(), localPhotos:pics.length });
+        else me.tasks=res.tasks||[]; fT.value=""; fD.value=""; fDue.value=""; fCost.value=""; fAddr.value=""; fQty.value=""; if(fPk) fPk.clear(); showForm(false); draw(); say(st, res.queued ? "Saved on this phone. It sends when you have signal." : L.addedOk,"ok");
       }, function(msg){ busy=false; fSave.disabled=false; say(fSt,msg,"err"); });
     };
     me.load=function(quiet){
       if(!token) return;
       if(!quiet && !me.tasks.length) say(st,"Loading…");
-      call("getTasks",[token,kind], function(res){ me.tasks=res.tasks||[]; me.maxPhotos=res.maxPhotos||6; say(st,""); draw(); },
+      call("getTasks",[token,kind], function(res){ me.tasks=res.tasks||[]; me.maxPhotos=res.maxPhotos||6; say(st, res.offline ? "No signal: showing what was last loaded." : ""); draw();
+          waiting("newTask").then(function(items){
+            items.filter(function(it){ return (it.args[0].kind||"task")===kind; }).forEach(function(it){ var b=it.args[0];
+              me.tasks.unshift({ id:b.clientRef, queued:true, title:b.title, details:b.details, status:"open", photos:[], updates:[], address:b.address||"", createdByName:me_name(), localPhotos:(b.photos||[]).length }); });
+            draw();
+          });
+        },
         function(msg){ if(!quiet) say(st,msg,"err"); });
     };
     function draw(){
@@ -573,6 +695,8 @@
       me.tasks.forEach(function(t){
         var done=t.status==="done", card=el("div","task"+(done?" done":""));
         card.appendChild(el("h3","",t.title));
+        if(t.queued || t.pending){ card.appendChild(el("div","pending","⏳ Saved on this phone, waiting to send"+(t.localPhotos ? " ("+t.localPhotos+" photo"+(t.localPhotos===1?"":"s")+")" : ""))); }
+        if(t.queued){ if(t.address) card.appendChild(el("div","by","📍 "+t.address)); if(t.details) card.appendChild(el("p","details",t.details)); list.appendChild(card); return; }
         var meta=el("div","meta");
         if(done) meta.appendChild(el("span","ok",L.doneTag+(t.doneAt ? " "+new Date(t.doneAt).toLocaleDateString([], {month:"short", day:"numeric"}) : "")+(t.doneByName && !isMe(t.doneByName) ? " by "+t.doneByName : "")));
         else if(t.due) meta.appendChild(el("span", t.due<today ? "late" : "", (t.due<today ? (L.overdueWord||"Overdue: ") : (L.dueWord||"Due "))+dayLabel(t.due)));
@@ -651,7 +775,8 @@
         it.appendChild(el("div","meta", when.toLocaleDateString([], {month:"short", day:"numeric"})+" "+when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})+" · "+(isMe(u.by) ? "you" : u.by)));
         if(u.note) it.appendChild(el("p","details",u.note));
         if(u.photos.length) it.appendChild(thumbsFor(u.photos,"task"));
-        if(t.status==="open" && isMe(u.by) && Date.now()-when.getTime() < 864e5){
+        if(u.queued) it.appendChild(el("div","pending","⏳ Waiting to send"+(u.queued>0 ? " ("+u.queued+" photo"+(u.queued===1?"":"s")+")" : "")));
+        if(!u.queued && t.status==="open" && isMe(u.by) && Date.now()-when.getTime() < 864e5){
           var dl=el("button","linkdel","Remove this update"); dl.type="button";
           dl.onclick=function(){
             if(dl.textContent!=="Tap again to remove"){ dl.textContent="Tap again to remove"; setTimeout(function(){ dl.textContent="Remove this update"; },3000); return; }
@@ -676,8 +801,10 @@
         var pics=pk.get();
         if(!notes.value.trim() && !pics.length) return say(fst,"Add a photo or a few words.","err");
         busy=true; send.disabled=true; say(fst, pics.length ? "Sending photos…" : "Saving…");
-        call("progressTask",[token,t.id,notes.value.trim(),pics], function(res){
-          busy=false; me.progForm=null; me.tasks=res.tasks||[]; draw(); say(st,"Progress saved. Still open until you mark it fixed.","ok");
+        call("progressTask",[token,t.id,notes.value.trim(),pics,newRef()], function(res){
+          busy=false; me.progForm=null;
+          if(res.queued){ t.updates=(t.updates||[]).concat([{ id:0, at:new Date().toISOString(), by:me_name(), note:notes.value.trim(), photos:[], queued:pics.length||true }]); draw(); say(st,"Saved on this phone. It sends when you have signal.","ok"); return; }
+          me.tasks=res.tasks||[]; draw(); say(st,"Progress saved. Still open until you mark it fixed.","ok");
         }, function(msg){ busy=false; send.disabled=false; say(fst,msg,"err"); });
       };
       row.appendChild(send); row.appendChild(cancel); f.appendChild(row); f.appendChild(fst);
@@ -699,7 +826,9 @@
         if(!done && !notes.value.trim() && !pics.length) return say(fst,"Add a few words about what you did, or a photo.","err");
         busy=true; send.disabled=true; say(fst, pics.length ? "Sending photos…" : "Saving…");
         call("doneTask",[token,t.id,notes.value.trim(),pics], function(res){
-          busy=false; me.openForm=null; me.tasks=res.tasks||[]; draw(); say(st, done ? "Saved." : L.doneOk,"ok");
+          busy=false; me.openForm=null;
+          if(res.queued){ t.status="done"; t.doneNotes=notes.value.trim()||t.doneNotes; t.doneAt=new Date().toISOString(); t.pending=true; t.localPhotos=pics.length; draw(); say(st,"Saved on this phone. It sends when you have signal.","ok"); return; }
+          me.tasks=res.tasks||[]; draw(); say(st, done ? "Saved." : L.doneOk,"ok");
         }, function(msg){ busy=false; send.disabled=false; say(fst,msg,"err"); });
       };
       row.appendChild(send); row.appendChild(cancel); f.appendChild(row); f.appendChild(fst);
@@ -910,7 +1039,13 @@
     me.load=function(){
       if(!token) return; loadAddrs();
       if(!me.jobs.length) say(st,"Loading…");
-      call("getJobs",[token], function(r){ me.jobs=r.jobs||[]; me.today=r.today; me.max=r.maxReceipts||10; say(st,""); draw(); }, function(msg){ say(st,msg,"err"); });
+      call("getJobs",[token], function(r){ me.jobs=r.jobs||[]; me.today=r.today; me.max=r.maxReceipts||10; say(st, r.offline ? "No signal: showing what was last loaded." : ""); draw();
+        waiting("newJob").then(function(items){   // jobs saved on this phone that haven't gone yet
+          items.forEach(function(it){ var b=it.args[0]; if(me.jobs.some(function(x){ return x.clientRef===b.clientRef || x.id===b.clientRef; })) return;
+            var nj={ id:b.clientRef, clientRef:b.clientRef, queued:true, receipts:[], owner:"" }; localJob(nj,b); me.jobs.unshift(nj); });
+          if(items.length) draw();
+        });
+      }, function(msg){ say(st,msg,"err"); });
     };
     add.onclick=function(){ me.editing="new"; draw(); };
     function form(j){
@@ -958,13 +1093,32 @@
         if(bad.length) return say(fst,"Costs must be dollar amounts, like 42.50.","err");
         var body={ address:addr.value.trim(), day:day.value, timeIn:tin.value||"", timeOut:tout.value||"", chemCost:chem.value.replace(/[$,\s]/g,""), materialCost:mat.value.replace(/[$,\s]/g,""), notes:notes.value, receipts:pk.get() };
         if(!j) body.clientRef=newRef();
+        if(j && j.queued){   // not sent yet: change what's waiting in the outbox
+          patchQueued(j.clientRef, body).then(function(){ localJob(j, body); me.editing=null; draw(); say(st,"Saved on this phone. It sends when you have signal.","ok"); });
+          return;
+        }
         busy=true; sv.disabled=true; say(fst, body.receipts.length ? "Sending receipts…" : "Saving…");
         call(j ? "saveJob" : "newJob", j ? [token,j.id,body] : [token,body], function(r){
-          busy=false; me.jobs=r.jobs||[]; me.editing=null; draw(); say(st,"Saved.","ok");
+          busy=false; me.editing=null;
+          if(r.queued){
+            if(j) { localJob(j, body); j.pending=true; }
+            else { var nj={ id:body.clientRef, clientRef:body.clientRef, queued:true, receipts:[], owner:"" }; localJob(nj, body); me.jobs.unshift(nj); }
+            draw(); say(st,"Saved on this phone. It sends when you have signal.","ok"); return;
+          }
+          me.jobs=r.jobs||[]; draw(); say(st,"Saved.","ok");
         }, function(msg){ busy=false; sv.disabled=false; say(fst,msg,"err"); });
       };
       setTimeout(function(){ if(!j) addr.focus(); }, 50);
       return f;
+    }
+    function localJob(j, b){   // show a change made with no signal
+      ["address","day","timeIn","timeOut","notes"].forEach(function(k){ if(b[k]!==undefined) j[k]=b[k]||(k==="notes"?"":null); });
+      if(b.chemCost!==undefined) j.chemCost=b.chemCost==="" ? null : Number(b.chemCost);
+      if(b.materialCost!==undefined) j.materialCost=b.materialCost==="" ? null : Number(b.materialCost);
+      j.localReceipts=(j.localReceipts||0)+((b.receipts||[]).length);
+      j.total=Math.round(((j.chemCost||0)+(j.materialCost||0))*100)/100;
+      var a=me.addrs && me.addrs.filter(function(x){ return x.address===j.address; })[0]; if(a) j.owner=a.owner;
+      if(j.timeIn && j.timeOut){ var mm=function(s){ return Number(s.slice(0,2))*60+Number(s.slice(3,5)); }, d=mm(j.timeOut)-mm(j.timeIn); if(d<0) d+=1440; j.hours=Math.round(d/6)/10; } else j.hours=null;
     }
     function draw(){
       formBox.innerHTML=""; list.innerHTML="";
@@ -987,12 +1141,17 @@
         if(costs.childNodes.length) c.appendChild(costs);
         if(j.notes) c.appendChild(el("p","details",j.notes));
         if(j.receipts.length) c.appendChild(thumbsFor(j.receipts,"receipt","Receipt"));
+        if(j.queued || j.pending) c.appendChild(el("div","pending","⏳ Saved on this phone, waiting to send"+(j.localReceipts ? " ("+j.localReceipts+" receipt"+(j.localReceipts===1?"":"s")+")" : "")));
         var row=el("div","row");
         if(open){
           var out=el("button","primary","Time out now"); out.type="button";
           out.onclick=function(){
             if(busy) return; busy=true; out.disabled=true;
-            call("saveJob",[token,j.id,{ timeOut:nowHM() }], function(r){ busy=false; me.jobs=r.jobs||[]; draw(); say(st,"Timed out at "+ampm(nowHM())+".","ok"); },
+            var t=nowHM();
+            if(j.queued){ busy=false; patchQueued(j.clientRef,{ timeOut:t }).then(function(){ localJob(j,{ timeOut:t }); draw(); say(st,"Timed out at "+ampm(t)+". Saved on this phone.","ok"); }); return; }
+            call("saveJob",[token,j.id,{ timeOut:t }], function(r){ busy=false;
+                if(r.queued){ localJob(j,{ timeOut:t }); j.pending=true; draw(); say(st,"Timed out at "+ampm(t)+". Saved on this phone.","ok"); return; }
+                me.jobs=r.jobs||[]; draw(); say(st,"Timed out at "+ampm(t)+".","ok"); },
               function(msg){ busy=false; out.disabled=false; say(st,msg,"err"); });
           };
           row.appendChild(out);
@@ -1029,6 +1188,7 @@
       info.appendChild(el("span", u<0 ? "warn" : "ok", u<0 ? "Lower than last reading. Check it." : "Used "+fmtN(Math.round(u*100)/100)));
     }
     if(m.readBy) info.appendChild(el("span","","by "+m.readBy));
+    if(m.queued) info.appendChild(el("span","pending","⏳ waiting to send"));
     if(m.notes) info.appendChild(el("span","",m.notes));
     if(m.alert && m.alert.level==="high") info.appendChild(highUse(m));
   }
@@ -1080,8 +1240,9 @@
         call("readMeter",[token, m.id, v, mtData.quarter], function(res){
           saved=v; m.current = v==="" ? null : Number(v); m.readBy = v==="" ? null : $("who-name").textContent;
           if(res && res.meter){ m.alert=res.meter.alert; m.usage=res.meter.usage; m.leakTaskId=res.meter.leakTaskId; }
+          m.queued=!!(res && res.queued);
           row.className="mrow"+(m.current!=null?" done":""); mtInfo(m, info); mtProgress();
-          say($("mt-status"), v==="" ? "Cleared." : "Saved "+(m.name||"")+": "+fmtN(m.current)+".","ok");
+          say($("mt-status"), (v==="" ? "Cleared" : "Saved "+(m.name||"")+": "+fmtN(m.current))+(res && res.queued ? ". On this phone until you have signal." : "."),"ok");
         }, function(msg){ say($("mt-status"),msg,"err"); });
       }
       inp.onblur=save;
@@ -1192,8 +1353,15 @@
   if(token){
     $("pin-screen").hidden=true; $("log-screen").hidden=false;
     call("getMyWeek",[token, ""],
-      function(res){ applyWeek(res, res.today); showScreen(homeScreen()); },
-      function(msg){ signOut(msg); });
+      function(res){ applyWeek(res, res.today); showScreen(homeScreen()); drawOutbox(); flushSoon(); },
+      function(msg){
+        if(/internet|reach/i.test(msg)){   // no signal and nothing saved: stay signed in, try again when it's back
+          $("log-screen").hidden=true; $("pin-screen").hidden=false; setStatus("pin-status","No signal. This opens by itself when you're back in range.");
+          window.addEventListener("online", function(){ location.reload(); }, { once:true });
+          return;
+        }
+        signOut(msg);
+      });
   }
 })();
 

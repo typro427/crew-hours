@@ -233,3 +233,11 @@ tfoot td{font-weight:700;border-bottom:0}
 .addrsug button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;min-height:44px;padding:8px 12px}
 .addrsug button span{font-size:13px;color:var(--muted)}
 .task.open-job{border:2px solid var(--accent)}
+/* Offline outbox */
+.outbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb, var(--accent) 18%, var(--surface));border:1px solid var(--accent);font-size:15px}
+.outbox b{flex-basis:100%}
+.outbox .err{color:var(--err);flex-basis:100%}
+.outbox button{min-height:40px;padding:8px 14px}
+#outbox-st:empty{display:none}
+.pending{font-size:14px;font-weight:600;color:var(--ink);background:color-mix(in srgb, var(--accent) 18%, transparent);border-radius:6px;padding:4px 8px;align-self:flex-start}
+.mrow .info .pending{padding:0 6px}
