@@ -333,6 +333,7 @@
       }
       return api('POST', '/api/admin/import', data);
     }).then(function (r) {
+      if (r.meters) { status('imp-status', 'Done. Imported ' + r.meters + ' meters. See them under Water System → Meters.', 'ok'); return loadMe(); }
       if (r.members) { status('imp-status', 'Done. Imported ' + r.members + ' members. See them in the Members tab.', 'ok'); return loadMe(); }
       var msg = (r.crewAdded || r.daysAdded || !(r.roadsAdded || r.roadsUpdated)) ? 'Done. Added ' + r.crewAdded + ' crew and ' + r.daysAdded + ' days of hours.' : 'Done.';
       if (r.crewSkipped.length) msg += ' Skipped: ' + r.crewSkipped.join(', ') + '.';
@@ -567,11 +568,12 @@
   var loadTasks = function () { return taskPanel.load(); }, loadRoads = function () { return roadPanel.load(); };
 
   /* ------------------------------- water tab ------------------------------ */
-  var wTab = 'readings', wTypes = [];
+  var wTab = 'meters', wTypes = [];
   function showWater(which) {
     wTab = which;
     document.querySelectorAll('[data-w]').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-w') === which); });
     document.querySelectorAll('[data-wp]').forEach(function (p) { p.hidden = p.getAttribute('data-wp') !== which; });
+    if (which === 'meters') loadMeterAdmin();
     if (which === 'readings') loadReadings();
     if (which === 'sites') sitePanel.load();
     if (which === 'repairs') repairPanel.load();
@@ -717,5 +719,92 @@
     }).then(function (r) {
       status('mb-status-line', 'Imported ' + r.rows + ' members with ' + r.columns + ' columns.', 'ok'); $('mb-file').value = ''; $('mb-q').value = ''; loadMembers();
     }).catch(function (e) { status('mb-status-line', e.message, 'err'); });
+  };
+
+  /* ------------------------------ meter readings ------------------------------ */
+  var mr = { data: null, edit: null };
+  function nfmt(v) { return v == null ? '' : Number(v).toLocaleString(); }
+  function loadMeterAdmin() {
+    var m = $('mr-month').value;
+    return api('GET', '/api/admin/meters?all=1' + (m ? '&month=' + m : '')).then(function (r) {
+      mr.data = r; if (!$('mr-month').value) $('mr-month').value = r.month; $('mr-month').max = r.thisMonth;
+      $('mr-csv').href = '/api/admin/meters.csv?month=' + r.month; drawMeterAdmin();
+    }).catch(function (e) { status('mr-status', e.message, 'err'); });
+  }
+  $('mr-month').onchange = loadMeterAdmin;
+  $('mr-q').oninput = function () { if (mr.data) drawMeterAdmin(); };
+  $('mr-show').onchange = function () { if (mr.data) drawMeterAdmin(); };
+  function drawMeterAdmin() {
+    var d = mr.data, q = $('mr-q').value.trim().toLowerCase(), show = $('mr-show').value, body = $('mr-body'); body.innerHTML = '';
+    var active = d.meters.filter(function (m) { return m.active; });
+    var checks = active.filter(function (m) { return m.nameCheck; }).length;
+    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.month + (checks ? ' · ' + checks + ' names to check' : '');
+    var shown = 0;
+    d.meters.forEach(function (m) {
+      if (show === 'inactive' ? m.active : !m.active) return;
+      if (show === 'unread' && (m.current != null || !m.meterNo)) return;
+      if (show === 'read' && m.current == null) return;
+      if (show === 'low' && !(m.usage != null && m.usage < 0)) return;
+      if (show === 'check' && !m.nameCheck) return;
+      if (q && [m.seq, m.account, m.name, m.oldName, m.address, m.meterNo].join(' ').toLowerCase().indexOf(q) === -1) return;
+      shown++;
+      var tr = el('tr', m.current != null ? 'done' : '');
+      tr.appendChild(el('td', 'num', String(m.seq)));
+      tr.appendChild(el('td', '', m.account));
+      var nm = el('td', ''); nm.appendChild(document.createTextNode(m.name || '')); if (m.nameCheck) nm.appendChild(el('span', 'chk', 'Check'));
+      if (m.oldName && m.oldName !== m.name) nm.appendChild(el('span', 'old', 'Was: ' + m.oldName));
+      tr.appendChild(nm);
+      tr.appendChild(el('td', '', m.address));
+      tr.appendChild(el('td', '', m.meterNo || 'no meter'));
+      tr.appendChild(el('td', 'num', nfmt(m.previous)));
+      var ct = el('td', 'num'), inp = el('input', 'cur'); inp.inputMode = 'numeric'; inp.value = m.current != null ? String(m.current) : ''; inp.setAttribute('aria-label', 'Current reading for ' + m.name);
+      var was = inp.value;
+      inp.onchange = function () {
+        var v = inp.value.replace(/[,\s]/g, '');
+        if (v !== '' && !/^\d+(\.\d+)?$/.test(v)) { status('mr-status', 'Readings are numbers only.', 'err'); return; }
+        api('POST', '/api/admin/meters/' + m.id + '/read', { reading: v, month: d.month }).then(function () { was = v; return loadMeterAdmin(); })
+          .catch(function (e) { inp.value = was; status('mr-status', e.message, 'err'); });
+      };
+      ct.appendChild(inp); tr.appendChild(ct);
+      tr.appendChild(el('td', 'num' + (m.usage != null && m.usage < 0 ? ' warn' : ''), m.usage == null ? '' : nfmt(m.usage)));
+      tr.appendChild(el('td', '', m.readBy || ''));
+      var et = el('td'), eb = el('button', 'btn ghost small', mr.edit === m.id ? 'Close' : 'Edit'); eb.type = 'button';
+      eb.onclick = function () { mr.edit = mr.edit === m.id ? null : m.id; drawMeterAdmin(); };
+      et.appendChild(eb); tr.appendChild(et);
+      body.appendChild(tr);
+      if (mr.edit === m.id) body.appendChild(meterEditRow(m));
+    });
+    $('mr-empty').hidden = shown > 0;
+    $('mr-empty').textContent = d.meters.length ? 'No meters match.' : 'No meters yet. Import the meter list below.';
+  }
+  function meterEditRow(m) {
+    var tr = el('tr', 'mr-edit'), td = el('td'); td.colSpan = 10;
+    var g = el('div', 'mb-grid'), f = {};
+    [['seq', 'Read sequence', m.seq], ['account', 'Act #', m.account], ['meterNo', 'Meter ID', m.meterNo], ['name', 'Customer name', m.name], ['address', 'Service address', m.address], ['notes', 'Notes', m.notes]]
+      .forEach(function (x) { var w = el('div'); w.appendChild(el('label', '', x[1])); var i = el('input'); i.value = x[2] == null ? '' : x[2]; f[x[0]] = i; w.appendChild(i); g.appendChild(w); });
+    td.appendChild(g);
+    var row = el('div', 'row'); row.style.marginTop = '10px';
+    var ck = el('label', 'check'), cki = el('input'); cki.type = 'checkbox'; cki.checked = m.nameCheck; ck.appendChild(cki); ck.appendChild(document.createTextNode(' Name needs checking'));
+    var ac = el('label', 'check'), aci = el('input'); aci.type = 'checkbox'; aci.checked = m.active; ac.appendChild(aci); ac.appendChild(document.createTextNode(' On the route'));
+    var sv = el('button', 'btn small', 'Save'), st = el('span', 'status'); sv.type = 'button';
+    sv.onclick = function () {
+      var b = { month: mr.data.month, nameCheck: cki.checked, active: aci.checked }; Object.keys(f).forEach(function (k) { b[k] = f[k].value; });
+      api('PUT', '/api/admin/meters/' + m.id, b).then(function (r) { mr.edit = null; mr.data = r; drawMeterAdmin(); status('mr-status', 'Saved.', 'ok'); })
+        .catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
+    };
+    [ck, ac, sv, st].forEach(function (n) { row.appendChild(n); }); td.appendChild(row);
+    if (m.oldName && m.oldName !== m.name) td.appendChild(el('p', 'hint', 'Name on the old meter sheet: ' + m.oldName));
+    tr.appendChild(td); return tr;
+  }
+  $('mr-import').onclick = function () {
+    var file = $('mr-file').files[0];
+    if (!file) return status('mr-status', 'Pick the meter list file first.', 'err');
+    status('mr-status', 'Importing…');
+    file.text().then(function (txt) {
+      var b; try { b = JSON.parse(txt.replace(/^﻿/, '')); } catch (e) { throw new Error(/^%PDF/.test(txt) ? "That's a PDF. Pick the .json file Claude made." : "That file isn't a meter list file."); }
+      if (b.format !== 'crewhours-meters-1') throw new Error("That file isn't a meter list file.");
+      return api('POST', '/api/admin/meters/import', { meters: b.meters });
+    }).then(function (r) { status('mr-status', 'Imported ' + r.meters + ' meters.', 'ok'); $('mr-file').value = ''; return loadMeterAdmin(); })
+      .catch(function (e) { status('mr-status', e.message, 'err'); });
   };
 })();

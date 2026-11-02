@@ -162,6 +162,33 @@ CREATE TABLE IF NOT EXISTS members (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS members_company ON members (company_id, position);
+-- Customer water meters, read in route order each month.
+CREATE TABLE IF NOT EXISTS meters (
+  id          SERIAL PRIMARY KEY,
+  company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  seq         INTEGER NOT NULL DEFAULT 0,
+  account     TEXT NOT NULL DEFAULT '',
+  meter_no    TEXT NOT NULL DEFAULT '',
+  name        TEXT NOT NULL DEFAULT '',
+  address     TEXT NOT NULL DEFAULT '',
+  notes       TEXT NOT NULL DEFAULT '',
+  start_reading NUMERIC,            -- the last reading from the old sheet, before any reads in the app
+  name_check  BOOLEAN NOT NULL DEFAULT FALSE,   -- name not confirmed against the members list
+  old_name    TEXT NOT NULL DEFAULT '',
+  active      BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS meters_company ON meters (company_id, seq);
+CREATE TABLE IF NOT EXISTS meter_reads (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  meter_id   INTEGER NOT NULL REFERENCES meters(id) ON DELETE CASCADE,
+  reading    NUMERIC NOT NULL,
+  month      TEXT NOT NULL,         -- YYYY-MM billing month
+  read_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  crew_id    INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  notes      TEXT NOT NULL DEFAULT '',
+  UNIQUE (meter_id, month)
+);
 -- Water system readings: the boss picks what to record; the crew logs values.
 CREATE TABLE IF NOT EXISTS reading_types (
   id         SERIAL PRIMARY KEY,

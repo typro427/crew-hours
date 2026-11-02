@@ -6,6 +6,7 @@ const FEATURES = {
   w_readings: 'Water: readings',
   w_sites:    'Water: sites',
   w_repairs:  'Water: leaks & repairs',
+  w_meters:   'Water: meter reading',
   members:    'Members list (private contact info)'
 };
 const OFF_BY_DEFAULT = new Set(['members']);

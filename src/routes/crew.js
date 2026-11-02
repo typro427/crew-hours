@@ -40,7 +40,8 @@ r.post('/:slug/login', async (req, res) => {
 const setupOf = async companyId => db.one(`SELECT
   (SELECT count(*)::int FROM roads WHERE company_id=$1 AND active AND kind='road') AS roads,
   (SELECT count(*)::int FROM roads WHERE company_id=$1 AND active AND kind='water') AS "waterSites",
-  (SELECT count(*)::int FROM reading_types WHERE company_id=$1 AND active) AS "readingTypes"`, [companyId]);
+  (SELECT count(*)::int FROM reading_types WHERE company_id=$1 AND active) AS "readingTypes",
+  (SELECT count(*)::int FROM meters WHERE company_id=$1 AND active) AS meters`, [companyId]);
 r.get('/:slug/week', A.requireCrew, async (req, res) => res.json({ ...(await H.myWeek(req.company, req.crew, req.query.start)),
   features: require('../features').forCrew(req.crew), setup: await setupOf(req.company.id) }));
 r.post('/:slug/day', A.requireCrew, async (req, res) => res.json(await H.saveDay(req.company, req.crew, req.body || {})));
@@ -113,6 +114,18 @@ r.get('/:slug/road-photo/:id', A.requireCrew, async (req, res) => {
   const kind = await RD.kindOfPhoto(req.company.id, Number(req.params.id));
   if (!kind || !F.can(req.crew, featPlace(kind))) return res.status(404).end();
   sendPhoto(res, await RD.photo(req.company.id, Number(req.params.id)));
+});
+
+// Meter reading route (current month). The crew enters readings; usage is worked out from last month.
+const MT = require('../meters');
+r.get('/:slug/meters', A.requireCrew, F.need('w_meters'), async (req, res) => {
+  const rt = await MT.route(req.company);
+  res.json({ ...rt, meters: rt.meters.map(m => ({ id: m.id, seq: m.seq, account: m.account, meterNo: m.meterNo, name: m.name, address: m.address, notes: m.notes,
+    previous: m.previous, current: m.current, usage: m.usage, readBy: m.readBy, readNotes: m.readNotes })) });
+});
+r.post('/:slug/meters/:id/read', A.requireCrew, F.need('w_meters'), async (req, res) => {
+  await MT.read(req.company, req.crew, Number(req.params.id), { reading: (req.body || {}).reading, notes: (req.body || {}).notes });
+  res.json({ ok: true });
 });
 
 // Members list: read-only search, only for people the boss has switched it on for.

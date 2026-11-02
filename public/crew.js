@@ -43,6 +43,8 @@
     getTasks:        function(a){ return ["GET", "/tasks?kind=" + (a[1]||"task")]; },
     getRoads:        function(a){ return ["GET", "/roads?kind=" + (a[1]||"road")]; },
     getReadings:     function(){ return ["GET", "/readings"]; },
+    getMeters:       function(){ return ["GET", "/meters"]; },
+    readMeter:       function(a){ return ["POST", "/meters/" + a[1] + "/read", { reading:a[2] }]; },
     searchMembers:   function(a){ return ["GET", "/members?q=" + encodeURIComponent(a[1]||"") + "&status=" + encodeURIComponent(a[2]||"")]; },
     logReadings:     function(a){ return ["POST", "/readings", a[1]]; },
     delReading:      function(a){ return ["DELETE", "/readings/" + a[1]]; },
@@ -757,24 +759,100 @@
   };
 
   // ---- water tab: sub-tabs ----
-  var waterTab="readings";
+  var waterTab="meters";
+
+  // ---- meter reading route ----
+  var mtData=null, mtRows={};
+  var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  function fmtN(v){ return v==null ? "—" : Number(v).toLocaleString(); }
+  function loadMeters(){
+    if(!token) return;
+    say($("mt-status"), mtData ? "" : "Loading the route…");
+    call("getMeters",[token], function(res){ mtData=res; say($("mt-status"),""); drawMeters(); }, function(msg){ say($("mt-status"),msg,"err"); });
+  }
+  function mtProgress(){
+    var withMeter=mtData.meters.filter(function(m){ return m.meterNo; }), done=withMeter.filter(function(m){ return m.current!=null; }).length;
+    $("mt-progress").textContent = done+" of "+withMeter.length+" read";
+    var p=mtData.month.split("-"); $("mt-month").textContent = MONTHS[Number(p[1])-1]+" "+p[0]+" readings";
+  }
+  function mtInfo(m, info){
+    info.innerHTML="";
+    info.appendChild(el("span","","Meter "+(m.meterNo||"—")));
+    info.appendChild(el("span","","Last "+fmtN(m.previous)));
+    if(m.current!=null && m.previous!=null){
+      var u=m.current-m.previous;
+      info.appendChild(el("span", u<0 ? "warn" : "ok", u<0 ? "Lower than last reading. Check it." : "Used "+fmtN(Math.round(u*100)/100)));
+    }
+    if(m.readBy) info.appendChild(el("span","","by "+m.readBy));
+    if(m.notes) info.appendChild(el("span","",m.notes));
+  }
+  function drawMeters(){
+    mtProgress();
+    var q=$("mt-q").value.trim().toLowerCase(), show=$("mt-show").value, list=$("mt-list"); list.innerHTML=""; mtRows={};
+    var shown=0;
+    mtData.meters.forEach(function(m){
+      if(show==="unread" && m.current!=null) return;
+      if(show==="read" && m.current==null) return;
+      if(q && [m.seq,m.name,m.address,m.meterNo,m.account].join(" ").toLowerCase().indexOf(q)===-1) return;
+      shown++;
+      var row=el("div","mrow"+(m.current!=null?" done":"")); row.dataset.id=m.id;
+      row.appendChild(el("div","sq",String(m.seq)));
+      var who=el("div","who"); who.appendChild(el("b","",m.name||"(no name)")); who.appendChild(el("span","",m.address||""));
+      if(!m.meterNo) who.appendChild(el("span","nometer","NO METER"));
+      row.appendChild(who);
+      var inp=el("input"); inp.type="text"; inp.inputMode="numeric"; inp.autocomplete="off"; inp.placeholder="Reading";
+      inp.setAttribute("aria-label","Reading for "+(m.name||"meter")+" "+(m.meterNo||""));
+      inp.value = m.current!=null ? String(m.current) : "";
+      row.appendChild(inp);
+      var info=el("div","info"); mtInfo(m, info); row.appendChild(info);
+      var saved=inp.value;
+      function save(){
+        var v=inp.value.replace(/[,\s]/g,"");
+        if(v===saved) return;
+        if(v!=="" && !/^\d+(\.\d+)?$/.test(v)){ say($("mt-status"),"Readings are numbers only.","err"); inp.focus(); return; }
+        say($("mt-status"),"Saving "+(m.name||"")+"…");
+        call("readMeter",[token, m.id, v], function(){
+          saved=v; m.current = v==="" ? null : Number(v); m.readBy = v==="" ? null : $("who-name").textContent;
+          row.className="mrow"+(m.current!=null?" done":""); mtInfo(m, info); mtProgress();
+          say($("mt-status"), v==="" ? "Cleared." : "Saved "+(m.name||"")+": "+fmtN(m.current)+".","ok");
+        }, function(msg){ say($("mt-status"),msg,"err"); });
+      }
+      inp.onblur=save;
+      inp.onkeydown=function(e){ if(e.key==="Enter"){ e.preventDefault(); save(); var nx=row.nextSibling; if(nx){ var ni=nx.querySelector("input"); if(ni) ni.focus(); } } };
+      list.appendChild(row); mtRows[m.id]=row;
+    });
+    if(!shown) list.appendChild(el("p","muted", mtData.meters.length ? "No meters match." : "The boss hasn't loaded the meter list yet.")).style.padding="12px";
+  }
+  $("mt-q").oninput=function(){ if(mtData) drawMeters(); };
+  $("mt-show").onchange=function(){ if(mtData) drawMeters(); };
+  $("mt-next").onclick=function(){
+    if(!mtData) return;
+    var next=mtData.meters.filter(function(m){ return m.meterNo && m.current==null; })[0];
+    if(!next){ say($("mt-status"),"Every meter with a meter number is read for this month. Nice work.","ok"); return; }
+    if(!mtRows[next.id]){ $("mt-q").value=""; $("mt-show").value="all"; drawMeters(); }
+    var row=mtRows[next.id]; row.scrollIntoView({behavior:"smooth", block:"center"});
+    Array.prototype.forEach.call(document.querySelectorAll(".mrow.focus"), function(r){ r.classList.remove("focus"); });
+    row.classList.add("focus"); setTimeout(function(){ row.querySelector("input").focus({preventScroll:true}); }, 350);
+  };
   function waterParts(){
-    return { readings: features.w_readings && setup.readingTypes>0, sites: features.w_sites && setup.waterSites>0,
-             repairs: features.w_repairs && (setup.readingTypes>0 || setup.waterSites>0) };
+    return { meters: features.w_meters && setup.meters>0, readings: features.w_readings && setup.readingTypes>0, sites: features.w_sites && setup.waterSites>0,
+             repairs: features.w_repairs && (setup.readingTypes>0 || setup.waterSites>0 || setup.meters>0) };
   }
   function showWater(which){
     var parts=waterParts();
-    if(!parts[which]) which = parts.readings ? "readings" : parts.sites ? "sites" : "repairs";
+    if(!parts[which]) which = parts.meters ? "meters" : parts.readings ? "readings" : parts.sites ? "sites" : "repairs";
     waterTab=which;
-    ["readings","sites","repairs"].forEach(function(k){
+    ["meters","readings","sites","repairs"].forEach(function(k){
       $("wt-"+k).hidden=!parts[k]; $("wt-"+k).setAttribute("aria-selected", k===which); $("wp-"+k).hidden = k!==which;
     });
-    $("w-tabs").hidden = [parts.readings,parts.sites,parts.repairs].filter(Boolean).length<2;
+    $("w-tabs").hidden = [parts.meters,parts.readings,parts.sites,parts.repairs].filter(Boolean).length<2;
+    if(which==="meters") loadMeters();
     if(which==="readings") loadReadings();
     if(which==="sites"){ siteBoard.reset(); siteBoard.load(); }
     if(which==="repairs") repairBoard.load();
   }
   $("wt-readings").onclick=function(){ showWater("readings"); };
+  $("wt-meters").onclick=function(){ showWater("meters"); };
   $("wt-sites").onclick=function(){ showWater("sites"); };
   $("wt-repairs").onclick=function(){ showWater("repairs"); };
 
@@ -829,7 +907,7 @@
     var p=waterParts();
     $("tab-tasks").hidden=!features.tasks;
     $("tab-roads").hidden=!(features.roads && setup.roads>0);
-    $("tab-water").hidden=!(p.readings || p.sites || p.repairs);
+    $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
     if(features.tasks && !accessLoaded) taskBoard.load(true);
     accessLoaded=true;

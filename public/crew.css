@@ -199,3 +199,19 @@ tfoot td{font-weight:700;border-bottom:0}
 .mlinks a{font-size:14px;padding:6px 10px;border-radius:16px;background:var(--sunk);color:var(--ink);text-decoration:none;font-weight:600}
 .mall{display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%);gap:4px 10px;margin-top:8px;font-size:14px;border-top:1px solid var(--line);padding-top:8px}
 .mall dt{color:var(--muted)} .mall dd{margin:0;overflow-wrap:anywhere}
+
+/* meter route */
+.mtop{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;position:sticky;top:0;z-index:6}
+.mtlist{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mrow{display:grid;grid-template-columns:44px 1fr 120px;gap:4px 10px;padding:10px 12px;border-top:1px solid var(--line);align-items:center}
+.mrow:first-child{border-top:0}
+.mrow.done{background:color-mix(in srgb, var(--ok) 8%, var(--surface))}
+.mrow.focus{outline:2px solid var(--accent);outline-offset:-2px}
+.mrow .sq{font-family:var(--f-num);font-weight:600;color:var(--muted);font-size:15px}
+.mrow .who b{display:block;font-size:15px}
+.mrow .who span{display:block;font-size:13px;color:var(--muted)}
+.mrow input{width:100%;font:600 18px var(--f-num);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:44px;text-align:right}
+.mrow .info{grid-column:2 / 4;display:flex;flex-wrap:wrap;gap:2px 12px;font-size:13px;color:var(--muted)}
+.mrow .info .warn{color:var(--err);font-weight:600}
+.mrow .info .ok{color:var(--ok);font-weight:600}
+.mrow .nometer{font-size:12px;font-weight:700;color:var(--warn)}

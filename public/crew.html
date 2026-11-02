@@ -128,10 +128,23 @@
   <!-- Water system: readings, sites, leaks & repairs -->
   <section id="water-screen" hidden style="display:flex;flex-direction:column;gap:14px">
     <nav class="subtabs" id="w-tabs" role="tablist">
+      <button role="tab" id="wt-meters" aria-selected="false">Meters</button>
       <button role="tab" id="wt-readings" aria-selected="true">Readings</button>
       <button role="tab" id="wt-sites" aria-selected="false">Sites</button>
       <button role="tab" id="wt-repairs" aria-selected="false">Leaks &amp; repairs</button>
     </nav>
+    <div id="wp-meters" hidden style="display:flex;flex-direction:column;gap:10px">
+      <div class="mtop">
+        <div><b id="mt-progress"></b><div class="hint" id="mt-month"></div></div>
+        <button class="primary" id="mt-next" type="button">Next unread ›</button>
+      </div>
+      <div class="msearch" style="grid-template-columns:1fr auto">
+        <input id="mt-q" type="search" placeholder="Find: name, address, meter #, seq" autocomplete="off" aria-label="Find a meter">
+        <select id="mt-show" aria-label="Which meters"><option value="all">All</option><option value="unread">Not read yet</option><option value="read">Read</option></select>
+      </div>
+      <div id="mt-list" class="mtlist"></div>
+      <div class="status" id="mt-status" role="status"></div>
+    </div>
     <div id="wp-readings" style="display:flex;flex-direction:column;gap:14px">
       <div class="task" id="rd-form-card">
         <h3>New readings</h3>

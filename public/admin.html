@@ -84,10 +84,32 @@
   <!-- WATER SYSTEM -->
   <section data-panel="water" class="panel" hidden>
     <nav class="subtabs" role="tablist">
+      <button type="button" role="tab" data-w="meters" aria-selected="false">Meters</button>
       <button type="button" role="tab" data-w="readings" aria-selected="true">Readings</button>
       <button type="button" role="tab" data-w="sites" aria-selected="false">Sites</button>
       <button type="button" role="tab" data-w="repairs" aria-selected="false">Leaks &amp; repairs</button>
     </nav>
+    <div data-wp="meters" hidden>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div><h3>Meter readings</h3><p class="hint" id="mr-progress" style="margin:0"></p></div>
+          <div class="row" style="gap:8px"><input type="month" id="mr-month" aria-label="Month"><a class="btn ghost small" id="mr-csv">Download CSV</a></div>
+        </div>
+        <div class="mb-search">
+          <input id="mr-q" type="search" placeholder="Find: name, address, meter #, act #, seq" autocomplete="off" aria-label="Find a meter">
+          <select id="mr-show" aria-label="Which meters"><option value="all">All meters</option><option value="unread">Not read yet</option><option value="read">Read</option><option value="low">Lower than last</option><option value="check">Names to check</option><option value="inactive">Removed</option></select>
+        </div>
+        <div class="tablebox"><table class="roads mr-table"><thead><tr><th>Seq</th><th>Act #</th><th>Customer</th><th>Service address</th><th>Meter ID</th><th class="num">Last</th><th class="num">Current</th><th class="num">Usage</th><th>Read by</th><th></th></tr></thead><tbody id="mr-body"></tbody></table></div>
+        <p class="hint" id="mr-empty" hidden></p>
+        <p class="hint">“Check” means the name couldn't be confirmed against the members list. Click Edit to fix the name, then untick Check.</p>
+      </div>
+      <div class="card">
+        <h3>Import the meter list</h3>
+        <p class="hint">Upload the meter list file (.json). Meters that are already here keep their reading history.</p>
+        <div class="row"><input type="file" id="mr-file" accept=".json,application/json"><button class="btn" id="mr-import" type="button">Import</button></div>
+        <span class="status" id="mr-status" role="status"></span>
+      </div>
+    </div>
     <div data-wp="readings">
       <div class="card">
         <div class="row" style="justify-content:space-between"><h3>Readings</h3>

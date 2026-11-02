@@ -205,7 +205,7 @@ test('water system: sites are separate from roads, repairs separate from tasks, 
   assert.strictEqual((await sam('DELETE', '/readings/' + r.body.readings[0].id)).status, 400, "Sam can't remove Jake's reading");
   assert.strictEqual((await O2('GET', '/api/admin/readings')).body.readings.length, 0, 'other company');
   const wk = (await jake('GET', '/week')).body;
-  assert.deepStrictEqual(wk.setup, { roads: 31, waterSites: 2, readingTypes: 2 });
+  assert.deepStrictEqual(wk.setup, { roads: 31, waterSites: 2, readingTypes: 2, meters: 0 });
 });
 
 test('per-person switches: the boss turns parts of the app off for one person', async () => {
@@ -213,11 +213,11 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.ok(crew.features.w_readings);
   const samRow = crew.crew.find(c => c.name === 'Sam');
   assert.strictEqual(samRow.features.tasks, true);
-  let r = await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false } });
+  let r = await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false, w_meters: true } });
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
   const wk = (await sam('GET', '/week')).body;
-  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false, members: false });
+  assert.deepStrictEqual(wk.features, { tasks: true, roads: false, w_readings: false, w_sites: true, w_repairs: false, w_meters: true, members: false });
   assert.strictEqual((await sam('GET', '/roads')).status, 403);
   assert.strictEqual((await sam('GET', '/readings')).status, 403);
   assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
@@ -227,7 +227,7 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.strictEqual((await sam('POST', `/roads/${roadId}/mows`, { day: wk.today })).status, 403, 'blocked by id too');
   assert.strictEqual((await jake('GET', '/roads')).status, 200, 'others unaffected');
   // turn everything back on
-  await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: true, w_readings: true, w_sites: true, w_repairs: true } });
+  await O('PUT', '/api/admin/crew/' + samRow.id, { features: { tasks: true, roads: true, w_readings: true, w_sites: true, w_repairs: true, w_meters: true } });
   assert.strictEqual((await sam('GET', '/readings')).status, 200);
 });
 
@@ -305,4 +305,48 @@ test('the members file also works from the Settings import box', async () => {
   assert.strictEqual(r.status, 200, JSON.stringify(r.body)); assert.strictEqual(r.body.members, 1);
   assert.strictEqual((await O('GET', '/api/admin/members?q=viasettings')).body.total, 1);
   assert.strictEqual((await O('POST', '/api/admin/import', { format: 'nope' })).status, 400);
+});
+
+test('meter route: import keeps order, crew enter readings, usage from last, history kept on re-import', async () => {
+  const meters = [
+    { seq: 1, account: '2751415', meterNo: '2751415', name: 'Test Greens', address: 'Halfway House', startReading: 27011 },
+    { seq: 2, account: '2751416', meterNo: '2751416', name: 'Testy, Greg', address: '434 Fake Vista', startReading: 66476, nameCheck: true, oldName: 'Old, Name' },
+    { seq: 3, account: '1A', meterNo: '', name: 'No Meter, Pat', address: '142 Fake Trot 1A', startReading: 0, notes: 'No meter' }
+  ];
+  let r = await O('POST', '/api/admin/meters/import', { meters });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body)); assert.strictEqual(r.body.meters, 3);
+  r = await jake('GET', '/meters');
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.deepStrictEqual(r.body.meters.map(m => m.seq), [1, 2, 3]);
+  assert.strictEqual(r.body.toRead, 2, 'only meters with a meter number count');
+  const [m1, m2] = r.body.meters;
+  assert.strictEqual(m1.previous, 27011);
+  assert.strictEqual((await jake('POST', `/meters/${m1.id}/read`, { reading: 'abc' })).status, 400);
+  assert.strictEqual((await jake('POST', `/meters/${m1.id}/read`, { reading: '27500' })).status, 200);
+  assert.strictEqual((await jake('POST', `/meters/${m2.id}/read`, { reading: 66000 })).status, 200);
+  r = await jake('GET', '/meters');
+  assert.strictEqual(r.body.meters[0].usage, 489); assert.strictEqual(r.body.meters[0].readBy, 'Jake');
+  assert.strictEqual(r.body.meters[1].usage, -476, 'lower than last shows negative usage');
+  assert.strictEqual(r.body.read, 2);
+  // boss: month view, CSV, edit; next month uses this month's reading as "last"
+  const month = r.body.month;
+  const adm = (await O('GET', '/api/admin/meters?all=1')).body;
+  assert.strictEqual(adm.meters[1].nameCheck, true); assert.strictEqual(adm.meters[1].oldName, 'Old, Name');
+  r = await O('PUT', '/api/admin/meters/' + m2.id, { name: 'Fixed, Greg', nameCheck: false });
+  assert.strictEqual(r.body.meters[1].name, 'Fixed, Greg'); assert.strictEqual(r.body.meters[1].nameCheck, false);
+  const csv = (await O('GET', '/api/admin/meters.csv?month=' + month)).body.toString();
+  assert.match(csv, /"Read sequence"/); assert.match(csv, /"27500"/);
+  const [y, mo] = month.split('-').map(Number), next = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
+  r = await O('GET', '/api/admin/meters?month=' + next);
+  assert.strictEqual(r.body.meters[0].previous, 27500); assert.strictEqual(r.body.meters[0].current, null);
+  assert.strictEqual((await O('POST', `/api/admin/meters/${m1.id}/read`, { reading: 1, month: next })).status, 400, 'future month');
+  // re-import keeps the readings for the same meters
+  await O('POST', '/api/admin/meters/import', { meters });
+  r = await jake('GET', '/meters');
+  assert.strictEqual(r.body.meters[0].current, 27500);
+  // switch
+  const sRow = (await O('GET', '/api/admin/crew')).body.crew.find(c => c.name === 'Sam');
+  await O('PUT', '/api/admin/crew/' + sRow.id, { features: { ...sRow.features, w_meters: false } });
+  assert.strictEqual((await sam('GET', '/meters')).status, 403);
+  assert.strictEqual((await O2('GET', '/api/admin/meters')).body.meters.length, 0, 'other company');
 });

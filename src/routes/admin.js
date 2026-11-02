@@ -159,6 +159,20 @@ r.delete('/mows/:id', async (req, res) => {
   res.json({ road, roads: await RD.list(req.company.id, road.kind) });
 });
 
+/* --------------------------------- meters ----------------------------------- */
+const MT = require('../meters');
+r.get('/meters', async (req, res) => res.json(await MT.route(req.company, req.query.month, { all: req.query.all === '1' })));
+r.post('/meters/import', async (req, res) => res.json(await MT.replaceAll(req.company.id, (req.body || {}).meters)));
+r.put('/meters/:id', async (req, res) => { await MT.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await MT.route(req.company, (req.body || {}).month, { all: true })); });
+r.post('/meters/:id/read', async (req, res) => { await MT.read(req.company, null, Number(req.params.id), req.body || {}); res.json({ ok: true }); });
+r.get('/meters.csv', async (req, res) => {
+  const rt = await MT.route(req.company, req.query.month);
+  const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const lines = [['Read sequence', 'Act #', 'Customer name', 'Service address', 'Meter ID', 'Last reading', 'Current reading', 'Usage', 'Read by', 'Notes'].map(q).join(',')];
+  rt.meters.forEach(m => lines.push([m.seq, m.account, m.name, m.address, m.meterNo, m.previous, m.current, m.usage, m.readBy, [m.notes, m.readNotes].filter(Boolean).join(' · ')].map(q).join(',')));
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="meter-readings-${rt.month}.csv"` }).send('\ufeff' + lines.join('\r\n'));
+});
+
 /* -------------------------------- members ----------------------------------- */
 const MB = require('../members');
 r.get('/members', async (req, res) => res.json(await MB.search(req.company.id, req.query)));
@@ -210,6 +224,10 @@ r.get('/tasks/photo/:id', async (req, res) => {
 // Safe to run twice: existing crew (same name) and days already logged are left alone.
 r.post('/import', async (req, res) => {
   const b = req.body || {}, c = req.company;
+  if (b.format === 'crewhours-meters-1') {
+    const m = await require('../meters').replaceAll(c.id, b.meters);
+    return res.json({ meters: m.meters, crewAdded: 0, crewSkipped: [], daysAdded: 0, daysSkipped: 0, roadsAdded: 0, roadsUpdated: 0, problems: [] });
+  }
   if (b.format === 'crewhours-members-1') {   // the members list file, uploaded in Settings instead of the Members tab
     const m = await require('../members').replaceAll(c.id, b);
     return res.json({ members: m.rows, crewAdded: 0, crewSkipped: [], daysAdded: 0, daysSkipped: 0, roadsAdded: 0, roadsUpdated: 0, problems: [] });
