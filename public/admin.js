@@ -723,11 +723,17 @@
   /* ------------------------------ meter readings ------------------------------ */
   var mr = { data: null, edit: null };
   function nfmt(v) { return v == null ? '' : Number(v).toLocaleString(); }
+  function quarterLabel(q) { var M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], n = Number(q.slice(6)); return 'Q' + n + ' ' + q.slice(0, 4) + ' (' + M[(n - 1) * 3] + '–' + M[(n - 1) * 3 + 2] + ')'; }
+  function fillQuarters(current) {   // this quarter and the 11 before it
+    var sel = $('mr-month'); if (sel.options.length) return;
+    var y = Number(current.slice(0, 4)), n = Number(current.slice(6));
+    for (var i = 0; i < 12; i++) { var q = y + '-Q' + n, o = el('option', '', quarterLabel(q)); o.value = q; sel.appendChild(o); n--; if (!n) { n = 4; y--; } }
+  }
   function loadMeterAdmin() {
-    var m = $('mr-month').value;
-    return api('GET', '/api/admin/meters?all=1' + (m ? '&month=' + m : '')).then(function (r) {
-      mr.data = r; if (!$('mr-month').value) $('mr-month').value = r.month; $('mr-month').max = r.thisMonth;
-      $('mr-csv').href = '/api/admin/meters.csv?month=' + r.month; drawMeterAdmin();
+    var q = $('mr-month').value;
+    return api('GET', '/api/admin/meters?all=1' + (q ? '&quarter=' + q : '')).then(function (r) {
+      mr.data = r; fillQuarters(r.thisQuarter); $('mr-month').value = r.quarter;
+      $('mr-csv').href = '/api/admin/meters.csv?quarter=' + r.quarter; drawMeterAdmin();
     }).catch(function (e) { status('mr-status', e.message, 'err'); });
   }
   $('mr-month').onchange = loadMeterAdmin;
@@ -737,7 +743,7 @@
     var d = mr.data, q = $('mr-q').value.trim().toLowerCase(), show = $('mr-show').value, body = $('mr-body'); body.innerHTML = '';
     var active = d.meters.filter(function (m) { return m.active; });
     var checks = active.filter(function (m) { return m.nameCheck; }).length;
-    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.month + (checks ? ' · ' + checks + ' names to check' : '');
+    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.label + (checks ? ' · ' + checks + ' names to check' : '');
     var shown = 0;
     d.meters.forEach(function (m) {
       if (show === 'inactive' ? m.active : !m.active) return;
@@ -761,7 +767,7 @@
       inp.onchange = function () {
         var v = inp.value.replace(/[,\s]/g, '');
         if (v !== '' && !/^\d+(\.\d+)?$/.test(v)) { status('mr-status', 'Readings are numbers only.', 'err'); return; }
-        api('POST', '/api/admin/meters/' + m.id + '/read', { reading: v, month: d.month }).then(function () { was = v; return loadMeterAdmin(); })
+        api('POST', '/api/admin/meters/' + m.id + '/read', { reading: v, quarter: d.quarter }).then(function () { was = v; return loadMeterAdmin(); })
           .catch(function (e) { inp.value = was; status('mr-status', e.message, 'err'); });
       };
       ct.appendChild(inp); tr.appendChild(ct);
@@ -787,7 +793,7 @@
     var ac = el('label', 'check'), aci = el('input'); aci.type = 'checkbox'; aci.checked = m.active; ac.appendChild(aci); ac.appendChild(document.createTextNode(' On the route'));
     var sv = el('button', 'btn small', 'Save'), st = el('span', 'status'); sv.type = 'button';
     sv.onclick = function () {
-      var b = { month: mr.data.month, nameCheck: cki.checked, active: aci.checked }; Object.keys(f).forEach(function (k) { b[k] = f[k].value; });
+      var b = { quarter: mr.data.quarter, nameCheck: cki.checked, active: aci.checked }; Object.keys(f).forEach(function (k) { b[k] = f[k].value; });
       api('PUT', '/api/admin/meters/' + m.id, b).then(function (r) { mr.edit = null; mr.data = r; drawMeterAdmin(); status('mr-status', 'Saved.', 'ok'); })
         .catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
     };

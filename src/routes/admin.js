@@ -161,16 +161,16 @@ r.delete('/mows/:id', async (req, res) => {
 
 /* --------------------------------- meters ----------------------------------- */
 const MT = require('../meters');
-r.get('/meters', async (req, res) => res.json(await MT.route(req.company, req.query.month, { all: req.query.all === '1' })));
+r.get('/meters', async (req, res) => res.json(await MT.route(req.company, req.query.quarter, { all: req.query.all === '1' })));
 r.post('/meters/import', async (req, res) => res.json(await MT.replaceAll(req.company.id, (req.body || {}).meters)));
-r.put('/meters/:id', async (req, res) => { await MT.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await MT.route(req.company, (req.body || {}).month, { all: true })); });
+r.put('/meters/:id', async (req, res) => { await MT.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await MT.route(req.company, (req.body || {}).quarter, { all: true })); });
 r.post('/meters/:id/read', async (req, res) => { await MT.read(req.company, null, Number(req.params.id), req.body || {}); res.json({ ok: true }); });
 r.get('/meters.csv', async (req, res) => {
-  const rt = await MT.route(req.company, req.query.month);
+  const rt = await MT.route(req.company, req.query.quarter);
   const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
   const lines = [['Read sequence', 'Act #', 'Customer name', 'Service address', 'Meter ID', 'Last reading', 'Current reading', 'Usage', 'Read by', 'Notes'].map(q).join(',')];
   rt.meters.forEach(m => lines.push([m.seq, m.account, m.name, m.address, m.meterNo, m.previous, m.current, m.usage, m.readBy, [m.notes, m.readNotes].filter(Boolean).join(' · ')].map(q).join(',')));
-  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="meter-readings-${rt.month}.csv"` }).send('\ufeff' + lines.join('\r\n'));
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="meter-readings-${rt.quarter}.csv"` }).send('\ufeff' + lines.join('\r\n'));
 });
 
 /* -------------------------------- members ----------------------------------- */

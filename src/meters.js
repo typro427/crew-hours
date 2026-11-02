@@ -1,21 +1,26 @@
-// Customer water meters: a route in read-sequence order. Each month the crew enters the current reading.
+// Customer water meters: a route in read-sequence order. Each quarter the crew enters the current reading.
+// Quarters are calendar quarters, stored as 'YYYY-Q1'..'YYYY-Q4' (in the meter_reads.month column).
 const db = require('./db');
 const V = require('./validate');
 const T = require('./time');
 
-const monthOf = company => T.localNow(company.timezone).date.slice(0, 7);
-const validMonth = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(m || ''));
+const quarterOfDate = d => d.slice(0, 4) + '-Q' + (Math.floor((Number(d.slice(5, 7)) - 1) / 3) + 1);
+const quarterOf = company => quarterOfDate(T.localNow(company.timezone).date);
+const validQuarter = q => /^\d{4}-Q[1-4]$/.test(String(q || ''));
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Q4 2026 (Oct–Dec)" */
+const label = q => { const [y, n] = [q.slice(0, 4), Number(q.slice(6))]; return `Q${n} ${y} (${MONTHS[(n - 1) * 3]}–${MONTHS[(n - 1) * 3 + 2]})`; };
 
 /**
- * The route for one month: every active meter with its previous reading (the latest read before this month,
- * or the starting reading from the old sheet), this month's reading if there is one, and the usage.
+ * The route for one quarter: every active meter with its previous reading (the latest read before this quarter,
+ * or the starting reading from the old sheet), this quarter's reading if there is one, and the usage.
  */
-async function route(company, month, opts = {}) {
-  const m = validMonth(month) ? month : monthOf(company);
+async function route(company, quarter, opts = {}) {
+  const m = validQuarter(quarter) ? quarter : quarterOf(company);
   const rows = await db.q(`SELECT mt.id, mt.seq, mt.account, mt.meter_no AS "meterNo", mt.name, mt.address, mt.notes,
       mt.name_check AS "nameCheck", mt.old_name AS "oldName", mt.active,
       cur.reading AS current, cur.read_at AS "readAt", cur.notes AS "readNotes", cc.name AS "readBy", cur.id AS "readId",
-      COALESCE(prev.reading, mt.start_reading) AS previous, prev.month AS "previousMonth"
+      COALESCE(prev.reading, mt.start_reading) AS previous, prev.month AS "previousQuarter"
     FROM meters mt
     LEFT JOIN meter_reads cur ON cur.meter_id=mt.id AND cur.month=$2
     LEFT JOIN crew cc ON cc.id=cur.crew_id
@@ -23,16 +28,16 @@ async function route(company, month, opts = {}) {
     WHERE mt.company_id=$1 ${opts.all ? '' : 'AND mt.active'} ORDER BY mt.seq, mt.id`, [company.id, m]);
   rows.forEach(r => { r.usage = r.current != null && r.previous != null ? Math.round((r.current - r.previous) * 100) / 100 : null; });
   const withMeter = rows.filter(r => r.meterNo && r.active);
-  return { month: m, thisMonth: monthOf(company), meters: rows,
+  return { quarter: m, label: label(m), thisQuarter: quarterOf(company), meters: rows,
            read: withMeter.filter(r => r.current != null).length, toRead: withMeter.length };
 }
 
-/** Save (or change) this month's reading for one meter. */
+/** Save (or change) this quarter's reading for one meter. */
 async function read(company, crew, meterId, b) {
   const mt = await db.one('SELECT id FROM meters WHERE id=$1 AND company_id=$2 AND active', [meterId, company.id]);
   if (!mt) V.bad('That meter was not found.');
-  const month = validMonth(b.month) ? b.month : monthOf(company);
-  if (month > monthOf(company)) V.bad("You can't enter a reading for a month that hasn't started.");
+  const month = validQuarter(b.quarter) ? b.quarter : quarterOf(company);
+  if (month > quarterOf(company)) V.bad("You can't enter a reading for a quarter that hasn't started.");
   if (b.reading === '' || b.reading == null) {   // blank clears it
     await db.q('DELETE FROM meter_reads WHERE meter_id=$1 AND month=$2', [meterId, month]);
     return;
@@ -79,4 +84,4 @@ async function update(companyId, id, b) {
      b.nameCheck !== undefined ? !!b.nameCheck : cur.name_check, b.active !== undefined ? !!b.active : cur.active, id]);
 }
 
-module.exports = { route, read, replaceAll, update, monthOf };
+module.exports = { route, read, replaceAll, update, quarterOf, quarterOfDate, label };

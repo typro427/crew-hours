@@ -763,7 +763,6 @@
 
   // ---- meter reading route ----
   var mtData=null, mtRows={};
-  var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
   function fmtN(v){ return v==null ? "—" : Number(v).toLocaleString(); }
   function loadMeters(){
     if(!token) return;
@@ -773,7 +772,7 @@
   function mtProgress(){
     var withMeter=mtData.meters.filter(function(m){ return m.meterNo; }), done=withMeter.filter(function(m){ return m.current!=null; }).length;
     $("mt-progress").textContent = done+" of "+withMeter.length+" read";
-    var p=mtData.month.split("-"); $("mt-month").textContent = MONTHS[Number(p[1])-1]+" "+p[0]+" readings";
+    $("mt-month").textContent = mtData.label+" readings";
   }
   function mtInfo(m, info){
     info.innerHTML="";
@@ -828,7 +827,7 @@
   $("mt-next").onclick=function(){
     if(!mtData) return;
     var next=mtData.meters.filter(function(m){ return m.meterNo && m.current==null; })[0];
-    if(!next){ say($("mt-status"),"Every meter with a meter number is read for this month. Nice work.","ok"); return; }
+    if(!next){ say($("mt-status"),"Every meter with a meter number is read for this quarter. Nice work.","ok"); return; }
     if(!mtRows[next.id]){ $("mt-q").value=""; $("mt-show").value="all"; drawMeters(); }
     var row=mtRows[next.id]; row.scrollIntoView({behavior:"smooth", block:"center"});
     Array.prototype.forEach.call(document.querySelectorAll(".mrow.focus"), function(r){ r.classList.remove("focus"); });

@@ -328,17 +328,18 @@ test('meter route: import keeps order, crew enter readings, usage from last, his
   assert.strictEqual(r.body.meters[1].usage, -476, 'lower than last shows negative usage');
   assert.strictEqual(r.body.read, 2);
   // boss: month view, CSV, edit; next month uses this month's reading as "last"
-  const month = r.body.month;
+  const quarter = r.body.quarter;
+  assert.match(quarter, /^\d{4}-Q[1-4]$/); assert.match(r.body.label, /^Q[1-4] \d{4} \(/);
   const adm = (await O('GET', '/api/admin/meters?all=1')).body;
   assert.strictEqual(adm.meters[1].nameCheck, true); assert.strictEqual(adm.meters[1].oldName, 'Old, Name');
   r = await O('PUT', '/api/admin/meters/' + m2.id, { name: 'Fixed, Greg', nameCheck: false });
   assert.strictEqual(r.body.meters[1].name, 'Fixed, Greg'); assert.strictEqual(r.body.meters[1].nameCheck, false);
-  const csv = (await O('GET', '/api/admin/meters.csv?month=' + month)).body.toString();
+  const csv = (await O('GET', '/api/admin/meters.csv?quarter=' + quarter)).body.toString();
   assert.match(csv, /"Read sequence"/); assert.match(csv, /"27500"/);
-  const [y, mo] = month.split('-').map(Number), next = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
-  r = await O('GET', '/api/admin/meters?month=' + next);
+  const y = Number(quarter.slice(0, 4)), qn = Number(quarter.slice(6)), next = qn === 4 ? `${y + 1}-Q1` : `${y}-Q${qn + 1}`;
+  r = await O('GET', '/api/admin/meters?quarter=' + next);
   assert.strictEqual(r.body.meters[0].previous, 27500); assert.strictEqual(r.body.meters[0].current, null);
-  assert.strictEqual((await O('POST', `/api/admin/meters/${m1.id}/read`, { reading: 1, month: next })).status, 400, 'future month');
+  assert.strictEqual((await O('POST', `/api/admin/meters/${m1.id}/read`, { reading: 1, quarter: next })).status, 400, 'future quarter');
   // re-import keeps the readings for the same meters
   await O('POST', '/api/admin/meters/import', { meters });
   r = await jake('GET', '/meters');

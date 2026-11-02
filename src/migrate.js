@@ -189,6 +189,12 @@ CREATE TABLE IF NOT EXISTS meter_reads (
   notes      TEXT NOT NULL DEFAULT '',
   UNIQUE (meter_id, month)
 );
+-- Meters are read quarterly: turn any monthly keys (YYYY-MM) into quarters (YYYY-Q#), keeping the latest read per quarter.
+DELETE FROM meter_reads a USING meter_reads b
+  WHERE a.month ~ '^[0-9]{4}-[0-9]{2}$' AND b.month ~ '^[0-9]{4}-[0-9]{2}$' AND a.meter_id=b.meter_id
+    AND substr(a.month,1,4)=substr(b.month,1,4) AND (substr(a.month,6,2)::int-1)/3=(substr(b.month,6,2)::int-1)/3
+    AND (a.month < b.month OR (a.month=b.month AND a.id<b.id));
+UPDATE meter_reads SET month = substr(month,1,4) || '-Q' || ((substr(month,6,2)::int-1)/3+1) WHERE month ~ '^[0-9]{4}-[0-9]{2}$';
 -- Water system readings: the boss picks what to record; the crew logs values.
 CREATE TABLE IF NOT EXISTS reading_types (
   id         SERIAL PRIMARY KEY,
