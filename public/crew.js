@@ -55,7 +55,7 @@
     delTask:         function(a){ return ["DELETE", "/tasks/" + a[1]]; },
     addDayPhotos:    function(a){ return ["POST", "/day/" + a[1] + "/photos", { photos:a[2] }]; },
     delDayPhoto:     function(a){ return ["DELETE", "/day-photo/" + a[1]]; },
-    getJobs:         function(){ return ["GET", "/jobs"]; },
+    getJobs:         function(a){ return ["GET", "/jobs" + (a[1] ? "?crew=" + a[1] : "")]; },
     jobAddresses:    function(){ return ["GET", "/jobs/addresses"]; },
     newJob:          function(a){ return ["POST", "/jobs", a[1]]; },
     saveJob:         function(a){ return ["PUT", "/jobs/" + a[1], a[2]]; },
@@ -1027,11 +1027,29 @@
 
   // ---- Address jobs: one entry per visit. Separate from hours. ----
   function JobBoard(root){
-    var me={ jobs:[], today:null, max:10, addrs:null, editing:null };
+    var me={ jobs:[], today:null, max:10, addrs:null, editing:null, viewing:null, mine:true, totals:null };
+    var who=el("select","jobwho"); who.setAttribute("aria-label","Whose jobs"); who.hidden=true;
+    who.onchange=function(){ me.viewing=Number(who.value)||null; me.editing=null; me.jobs=[]; me.load(); };
+    var tots=el("div","jobtots"); tots.hidden=true;
     var top=el("div","row"), add=el("button","primary","+ New job"); add.type="button"; top.appendChild(add);
     var formBox=el("div",""), list=el("div","tasklist"), empty=el("p","hint","No jobs yet. Tap + New job when you get to an address."), st=statusLine();
     empty.style.cssText="margin:0;text-align:center";
-    [top,formBox,list,empty,st].forEach(function(n){ root.appendChild(n); });
+    [who,tots,top,formBox,list,empty,st].forEach(function(n){ root.appendChild(n); });
+    function drawTotals(t){
+      tots.innerHTML=""; if(!t){ tots.hidden=true; return; } tots.hidden=false;
+      [["This week",t.week],["This month",t.month]].forEach(function(x){
+        var p=x[1], c=el("div","jt");
+        c.appendChild(el("div","jt-h",x[0]));
+        c.appendChild(el("div","jt-big", t.rates ? money(p.billed) : p.hours+" h"));
+        c.appendChild(el("div","jt-sub", t.rates ? "to bill" : "on site"));
+        var g=el("div","jt-grid");
+        [["Jobs",String(p.jobs)],["Hours on site",p.hours+" h"],["Chemicals",money(p.chemCost)],["Materials",money(p.materialCost)],["Costs total",money(p.total)]].forEach(function(r){
+          g.appendChild(el("span","",r[0])); g.appendChild(el("b","",r[1])); });
+        c.appendChild(g);
+        if(p.open) c.appendChild(el("div","late", p.open+" still timed in"));
+        tots.appendChild(c);
+      });
+    }
     function nowHM(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
     function ampm(t){ if(!t) return ""; var h=Number(t.slice(0,2)), m=t.slice(3,5); return (h%12||12)+":"+m+" "+(h<12?"AM":"PM"); }
     function money(v){ return v==null ? "" : "$"+Number(v).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}); }
@@ -1039,7 +1057,14 @@
     me.load=function(){
       if(!token) return; loadAddrs();
       if(!me.jobs.length) say(st,"Loading…");
-      call("getJobs",[token], function(r){ me.jobs=r.jobs||[]; me.today=r.today; me.max=r.maxReceipts||10; say(st, r.offline ? "No signal: showing what was last loaded." : ""); draw();
+      call("getJobs",[token, me.viewing], function(r){ me.jobs=r.jobs||[]; me.today=r.today; me.max=r.maxReceipts||10; me.mine=r.mine!==false; drawTotals(r.totals);
+        if(r.people && (r.people.length>1 || !r.mine)){
+          var keep=String(r.viewing||""); who.innerHTML="";
+          r.people.forEach(function(p){ var o=el("option","", p.name+(p.name===me_name() ? " (me)" : "")); o.value=p.id; who.appendChild(o); });
+          who.value=keep; who.hidden=false;
+        }
+        say(st, r.offline ? "No signal: showing what was last loaded." : (!me.mine ? "Viewing only. Only "+(who.options[who.selectedIndex]||{}).text+" can change these." : "")); draw();
+        if(!me.mine) return;
         waiting("newJob").then(function(items){   // jobs saved on this phone that haven't gone yet
           items.forEach(function(it){ var b=it.args[0]; if(me.jobs.some(function(x){ return x.clientRef===b.clientRef || x.id===b.clientRef; })) return;
             var nj={ id:b.clientRef, clientRef:b.clientRef, queued:true, receipts:[], owner:"" }; localJob(nj,b); me.jobs.unshift(nj); });
@@ -1122,7 +1147,7 @@
     }
     function draw(){
       formBox.innerHTML=""; list.innerHTML="";
-      add.hidden = me.editing!=null;
+      add.hidden = me.editing!=null || !me.mine || !features.jobs;
       if(me.editing==="new") formBox.appendChild(form(null));
       empty.hidden = me.jobs.length>0 || me.editing!=null;
       me.jobs.forEach(function(j){
@@ -1142,7 +1167,7 @@
         if(j.notes) c.appendChild(el("p","details",j.notes));
         if(j.receipts.length) c.appendChild(thumbsFor(j.receipts,"receipt","Receipt"));
         if(j.queued || j.pending) c.appendChild(el("div","pending","⏳ Saved on this phone, waiting to send"+(j.localReceipts ? " ("+j.localReceipts+" receipt"+(j.localReceipts===1?"":"s")+")" : "")));
-        var row=el("div","row");
+        var row=el("div","row"); if(!me.mine){ list.appendChild(c); return; }
         if(open){
           var out=el("button","primary","Time out now"); out.type="button";
           out.onclick=function(){
@@ -1338,7 +1363,7 @@
     $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
     $("tab-orders").hidden=!features.orders;
-    $("tab-jobs").hidden=!features.jobs;
+    $("tab-jobs").hidden=!(features.jobs || isBoss);   // managers can look at anyone's address jobs
     $("tab-mine").hidden=features.hours===false;
     if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);

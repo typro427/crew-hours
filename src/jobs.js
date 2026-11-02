@@ -144,6 +144,21 @@ async function addresses(companyId) {
     .sort((x, y) => x.address.localeCompare(y.address, 'en', { numeric: true }));
 }
 
+/** Running totals for one person: this week and this month (jobs, hours on site, costs, and what it bills at the current rates). */
+async function totalsFor(company, crewId) {
+  const H = require('./hours'), JB = require('./jobbilling');
+  const today = T.localNow(company.timezone).date, set = await JB.settings(company.id);
+  const bill = j => (set.laborRate && j.hours ? j.hours * set.laborRate : 0) + (j.chemCost || 0) * (1 + (set.chemMarkup || 0) / 100)
+    + (j.materialCost || 0) * (1 + (set.matMarkup || 0) / 100) + (set.visitCharge || 0);
+  const r2 = n => Math.round(n * 100) / 100;
+  async function range(from, to) {
+    const { jobs, totals } = await forOwner(company.id, { from, to, crew: crewId });
+    return { ...totals, billed: r2(jobs.reduce((a, j) => a + bill(j), 0)), open: jobs.filter(j => j.timeIn && !j.timeOut).length, from, to };
+  }
+  const ws = H.weekOf(company, today);
+  return { week: await range(ws, T.shift(ws, 6)), month: await range(today.slice(0, 8) + '01', today), rates: !!(set.laborRate || set.visitCharge) };
+}
+
 function csv(list) {
   const q = v => { let s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
   const out = [['Date', 'Crew', 'Address', 'Owner', 'Time in', 'Time out', 'Hours', 'Chemical cost', 'Material cost', 'Total cost', 'Receipts', 'Notes'].map(q).join(',')];
@@ -151,4 +166,4 @@ function csv(list) {
   return out.join('\r\n') + '\r\n';
 }
 
-module.exports = { forCrew, forOwner, create, update, remove, removeReceipt, receipt, addresses, csv, minutes, MAX_RECEIPTS };
+module.exports = { totalsFor, forCrew, forOwner, create, update, remove, removeReceipt, receipt, addresses, csv, minutes, MAX_RECEIPTS };

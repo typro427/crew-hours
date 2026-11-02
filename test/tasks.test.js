@@ -785,3 +785,27 @@ test('job invoices: made as drafts from the crew member, approve each and it goe
   assert.strictEqual((await O2('GET', '/api/admin/job-invoices?month=' + month)).body.invoices.length, 0, 'other company');
   assert.strictEqual((await O2('GET', `/api/admin/job-invoices/${pat.id}/view`)).status, 404);
 });
+
+test('address jobs: running totals for the person; managers can view someone else (read-only)', async () => {
+  const sam1 = (await O('GET', '/api/admin/crew')).body.crew.find(x => x.name === 'Sam');
+  const jake1 = (await O('GET', '/api/admin/crew')).body.crew.find(x => x.name === 'Jake');
+  await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, jobs: true } });
+  let r = await sam('GET', '/jobs');
+  assert.strictEqual(r.status, 200);
+  const t = r.body.totals;
+  assert.ok(t.month.jobs >= 3, JSON.stringify(t)); assert.ok(t.month.hours > 0); assert.ok(t.month.billed > 0, 'rates are set');
+  assert.ok(t.week.jobs >= 1); assert.strictEqual(r.body.people, undefined, 'not a manager');
+  assert.strictEqual((await sam('GET', '/jobs?crew=' + jake1.id)).status, 403, 'only managers look at others');
+  // make Jake a manager without address jobs: he lands on Sam's jobs, read-only
+  await O('PUT', '/api/admin/crew/' + jake1.id, { manager: true, features: { ...jake1.features, jobs: false } });
+  r = await jake('GET', '/jobs');
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.viewing, sam1.id); assert.strictEqual(r.body.mine, false);
+  assert.ok(r.body.people.some(p => p.name === 'Sam'));
+  assert.strictEqual(r.body.totals.month.jobs, t.month.jobs);
+  const j = r.body.jobs[0];
+  assert.strictEqual((await jake('PUT', '/jobs/' + j.id, { notes: 'x' })).status, 403, 'view only');
+  if (j.receipts.length) assert.strictEqual((await jake('GET', '/receipts/' + j.receipts[0])).status, 200);
+  await O('PUT', '/api/admin/crew/' + jake1.id, { manager: false });
+  await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, jobs: false } });
+});

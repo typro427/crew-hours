@@ -241,3 +241,13 @@ tfoot td{font-weight:700;border-bottom:0}
 #outbox-st:empty{display:none}
 .pending{font-size:14px;font-weight:600;color:var(--ink);background:color-mix(in srgb, var(--accent) 18%, transparent);border-radius:6px;padding:4px 8px;align-self:flex-start}
 .mrow .info .pending{padding:0 6px}
+/* Address jobs totals */
+.jobwho{font:600 16px var(--f-body);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-height:44px}
+.jobtots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.jobtots .jt{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:2px}
+.jobtots .jt-h{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.jobtots .jt-big{font:700 26px var(--f-num);color:var(--ink)}
+.jobtots .jt-sub{font-size:13px;color:var(--muted);margin-bottom:6px}
+.jobtots .jt-grid{display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:13px;color:var(--muted)}
+.jobtots .jt-grid b{color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
+.jobtots .late{font-size:13px;margin-top:4px}

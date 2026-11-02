@@ -155,15 +155,34 @@ r.post('/:slug/meters/:id/read', A.requireCrew, F.need('w_meters'), async (req, 
 
 // Address jobs (time in/out, costs, receipts): a separate log, for people the boss switches it on for.
 const J = require('../jobs');
-const jobsOut = async req => ({ jobs: await J.forCrew(req.company.id, req.crew.id), today: require('../time').localNow(req.company.timezone).date, maxReceipts: J.MAX_RECEIPTS });
-r.get('/:slug/jobs', A.requireCrew, F.need('jobs'), async (req, res) => res.json(await jobsOut(req)));
-r.get('/:slug/jobs/addresses', A.requireCrew, F.need('jobs'), async (req, res) => { res.set('Cache-Control', 'private, max-age=600'); res.json({ addresses: await J.addresses(req.company.id) }); });
+// Managers can look at anyone's jobs and totals (read-only); everyone else sees their own.
+async function jobsOut(req, who) {
+  if (!who && !F.can(req.crew, 'jobs')) {   // a manager without their own address jobs: start on the first person who has them
+    const first = (await db.q('SELECT id, features FROM crew WHERE company_id=$1 AND active ORDER BY lower(name)', [req.company.id])).find(c => F.can(c, 'jobs'));
+    if (first) who = first.id;
+  }
+  const id = who || req.crew.id, out = { jobs: await J.forCrew(req.company.id, id), totals: await J.totalsFor(req.company, id),
+    today: require('../time').localNow(req.company.timezone).date, maxReceipts: J.MAX_RECEIPTS, viewing: id, mine: id === req.crew.id };
+  if (req.crew.is_manager) out.people = (await db.q('SELECT id, name, features FROM crew WHERE company_id=$1 AND active ORDER BY lower(name)', [req.company.id]))
+    .filter(c => F.can(c, 'jobs') || (c.id === req.crew.id && F.can(req.crew, 'jobs'))).map(c => ({ id: c.id, name: c.name }));
+  return out;
+}
+const jobsOrManager = (req, res, next) => (req.crew.is_manager || F.can(req.crew, 'jobs')) ? next() : off(res);
+r.get('/:slug/jobs', A.requireCrew, jobsOrManager, async (req, res) => {
+  let who = Number(req.query.crew) || null;
+  if (who && who !== req.crew.id) {
+    if (!req.crew.is_manager) return off(res);
+    if (!(await db.one('SELECT 1 FROM crew WHERE id=$1 AND company_id=$2', [who, req.company.id]))) return res.status(404).json({ error: 'Not found.' });
+  }
+  res.json(await jobsOut(req, who));
+});
+r.get('/:slug/jobs/addresses', A.requireCrew, jobsOrManager, async (req, res) => { res.set('Cache-Control', 'private, max-age=600'); res.json({ addresses: await J.addresses(req.company.id) }); });
 r.post('/:slug/jobs', A.requireCrew, F.need('jobs'), async (req, res) => { await J.create(req.company, req.crew, req.body || {}); res.json(await jobsOut(req)); });
 r.put('/:slug/jobs/:id', A.requireCrew, F.need('jobs'), async (req, res) => { await J.update(req.company, req.crew, Number(req.params.id), req.body || {}); res.json(await jobsOut(req)); });
 r.delete('/:slug/jobs/:id', A.requireCrew, F.need('jobs'), async (req, res) => { await J.remove(req.company.id, Number(req.params.id), req.crew); res.json(await jobsOut(req)); });
 r.delete('/:slug/receipts/:id', A.requireCrew, F.need('jobs'), async (req, res) => { await J.removeReceipt(req.company.id, Number(req.params.id), req.crew); res.json(await jobsOut(req)); });
-r.get('/:slug/receipts/:id', A.requireCrew, F.need('jobs'), async (req, res) => {
-  const p = await J.receipt(req.company.id, Number(req.params.id), req.crew.id);
+r.get('/:slug/receipts/:id', A.requireCrew, jobsOrManager, async (req, res) => {
+  const p = await J.receipt(req.company.id, Number(req.params.id), req.crew.is_manager ? null : req.crew.id);
   p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
 });
 
