@@ -41,8 +41,29 @@ function settingsOut(c) {
 r.get('/me', async (req, res) => res.json({
   owner: { name: req.owner.name, email: req.owner.email },
   settings: settingsOut(req.company), billing: await billing(req.company),
-  crewLink: `${config.appUrl}/c/${req.company.slug}`, today: H.today(req.company), productName: config.productName
+  crewLink: `${config.appUrl}/c/${req.company.slug}`, today: H.today(req.company), productName: config.productName,
+  gdrive: require('../gdrive').status(req.company)
 }));
+
+/* ---------------------------- Google Drive backup ---------------------------- */
+const GD = require('../gdrive');
+r.get('/google/connect', async (req, res) => {
+  if (!GD.enabled()) return res.redirect('/admin#gdrive-off');
+  res.redirect(GD.authUrl(req.company.id));
+});
+r.get('/google/callback', async (req, res) => {
+  if (req.query.error) return res.redirect('/admin#gdrive-error=' + encodeURIComponent(req.query.error === 'access_denied' ? 'You cancelled the Google sign-in.' : String(req.query.error)));
+  try {
+    await GD.finishConnect(req.company.id, String(req.query.code || ''), String(req.query.state || ''));
+    GD.backupNow(req.company.id).catch(e => console.error('[gdrive] first backup', e.message));   // first copy right away
+    res.redirect('/admin#gdrive-ok');
+  } catch (e) { res.redirect('/admin#gdrive-error=' + encodeURIComponent(e.message)); }
+});
+r.post('/google/disconnect', async (req, res) => { await GD.disconnect(req.company.id); res.json({ ok: true }); });
+r.post('/google/backup', async (req, res) => {
+  try { res.json(await GD.backupNow(req.company.id)); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
 
 r.put('/settings', async (req, res) => {
   const b = req.body || {}, c = req.company;

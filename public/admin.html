@@ -204,6 +204,13 @@
       </div>
       <div class="row"><button class="btn" type="submit">Save settings</button><span class="status" id="s-status" role="status"></span></div>
     </form>
+    <div class="card" id="gdrive-card">
+      <h2>Google Drive backup</h2>
+      <p class="muted">Every night at 2 AM, a copy of everything (hours, tasks, roads, water readings, meters, members) and any new photos goes to a <b>Crew Hours Backups</b> folder in your Google Drive. The app can only see the files it puts there.</p>
+      <p id="gd-state"></p>
+      <div class="row"><button class="btn" type="button" id="gd-connect">Connect Google Drive</button><button class="btn ghost" type="button" id="gd-now" hidden>Back up now</button><button class="btn ghost" type="button" id="gd-off" hidden>Disconnect</button></div>
+      <span class="status" id="gd-status" role="status"></span>
+    </div>
     <div class="card" id="import-card">
       <h2>Import from another system</h2>
       <p class="muted">Bring in crew, PINs and past hours from a Crew Hours import file. Safe to run twice: people and days already here are left alone.</p>

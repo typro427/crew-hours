@@ -44,7 +44,7 @@
       me = r;
       $('co-name').textContent = r.settings.name; $('owner-email').textContent = r.owner.email;
       $('crew-link').textContent = r.crewLink; $('open-link').href = r.crewLink;
-      drawPlan(); fillSettings();
+      drawPlan(); fillSettings(); drawDrive();
     });
   }
   $('copy-link').onclick = function () {
@@ -318,6 +318,14 @@
     else if (h === '#roads') showTab('roads');
     else if (h === '#water') showTab('water');
     else if (h === '#members') showTab('members');
+    else if (/^#gdrive/.test(h)) {
+      showTab('settings'); var gm = /^#gdrive-error=(.*)$/.exec(h);
+      if (h === '#gdrive-ok') status('gd-status', 'Google Drive connected. The first backup is running now.', 'ok');
+      else if (gm) status('gd-status', decodeURIComponent(gm[1]), 'err');
+      else if (h === '#gdrive-off') status('gd-status', 'Google Drive backup isn’t switched on yet (the Google keys aren’t in Render).', 'err');
+      setTimeout(function () { $('gdrive-card').scrollIntoView({ behavior: 'smooth' }); }, 200);
+      history.replaceState(null, '', '/admin#settings');
+    }
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
@@ -811,5 +819,30 @@
       return api('POST', '/api/admin/meters/import', { meters: b.meters });
     }).then(function (r) { status('mr-status', 'Imported ' + r.meters + ' meters.', 'ok'); $('mr-file').value = ''; return loadMeterAdmin(); })
       .catch(function (e) { status('mr-status', e.message, 'err'); });
+  };
+
+  /* --------------------------- Google Drive backup --------------------------- */
+  function drawDrive() {
+    var g = me.gdrive || {}, st = $('gd-state'); st.innerHTML = '';
+    if (!g.available) { st.appendChild(el('span', 'hint', 'Not switched on yet: the app needs its Google keys (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Render). See LAUNCH.md, step 8.')); }
+    else if (g.connected) {
+      st.appendChild(el('span', '', 'Connected to ' + (g.email || 'Google Drive') + '. '));
+      st.appendChild(el('span', g.error ? 'warn' : 'muted', g.error ? 'Last backup failed: ' + g.error : g.lastAt ? 'Last backup: ' + new Date(g.lastAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '.' : 'First backup is running.'));
+    } else st.appendChild(el('span', 'muted', 'Not connected.'));
+    $('gd-connect').hidden = !g.available || (g.connected && !g.error);
+    $('gd-connect').textContent = g.connected ? 'Reconnect Google Drive' : 'Connect Google Drive';
+    $('gd-now').hidden = !g.connected; $('gd-off').hidden = !g.connected;
+  }
+  $('gd-connect').onclick = function () { location.href = '/api/admin/google/connect'; };
+  $('gd-now').onclick = function () {
+    status('gd-status', 'Backing up… (photos can take a minute)');
+    api('POST', '/api/admin/google/backup').then(function (r) { status('gd-status', 'Done. Saved ' + r.file + (r.photos ? ' and ' + r.photos + ' new photos.' : '.'), 'ok'); return loadMe(); })
+      .catch(function (e) { status('gd-status', e.message, 'err'); loadMe(); });
+  };
+  var gdArmed = false;
+  $('gd-off').onclick = function () {
+    if (!gdArmed) { gdArmed = true; $('gd-off').textContent = 'Tap again to disconnect'; setTimeout(function () { gdArmed = false; $('gd-off').textContent = 'Disconnect'; }, 3000); return; }
+    gdArmed = false; api('POST', '/api/admin/google/disconnect').then(function () { status('gd-status', 'Disconnected. Backups already in your Drive stay there.', 'ok'); return loadMe(); })
+      .catch(function (e) { status('gd-status', e.message, 'err'); });
   };
 })();

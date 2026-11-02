@@ -29,7 +29,8 @@ const config = {
     logOnly: !env.SMTP_URL
   },
   // Lets your home computer download a nightly backup: GET /api/backup with this as a Bearer token.
-  backupToken: env.BACKUP_TOKEN || ''
+  backupToken: env.BACKUP_TOKEN || '',
+  google: { clientId: env.GOOGLE_CLIENT_ID || '', clientSecret: env.GOOGLE_CLIENT_SECRET || '' }
 };
 
 if (config.isProd && config.secret === 'dev-only-secret-change-me') {

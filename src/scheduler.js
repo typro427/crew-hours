@@ -5,6 +5,8 @@ const db = require('./db');
 const T = require('./time');
 const H = require('./hours');
 const R = require('./reports');
+const GD = require('./gdrive');
+const BACKUP_HOUR = 2;   // 2 AM in the company's time zone
 
 async function claim(companyId, kind, period) {
   const r = await db.q(`INSERT INTO email_log (company_id, kind, period) VALUES ($1,$2,$3)
@@ -21,16 +23,21 @@ async function sendOrRelease(companyId, kind, period, fn) {
 async function tick(now = new Date()) {
   const companies = await db.q('SELECT * FROM companies');
   for (const c of companies) {
-    if (!H.planOk(c)) continue;
+    if (!H.planOk(c) && !c.gdrive_token) continue;   // paused accounts still get their nightly backup
+    const paused = !H.planOk(c);
     try {
       const { date, hour } = T.localNow(c.timezone, now);
       const ws = T.weekStartOf(date, c.week_start);
-      if (date === ws && hour >= c.summary_hour) {
+      if (!paused && date === ws && hour >= c.summary_hour) {
         const last = T.shift(ws, -7);
         if (await claim(c.id, 'weekly', last)) await sendOrRelease(c.id, 'weekly', last, () => R.sendWeekly(c, last));
       }
-      if (date === T.shift(ws, 6) && hour >= c.missing_hour) {
+      if (!paused && date === T.shift(ws, 6) && hour >= c.missing_hour) {
         if (await claim(c.id, 'missing', ws)) await sendOrRelease(c.id, 'missing', ws, () => R.sendMissing(c));
+      }
+      // Nightly Google Drive backup. A failure is shown in the dashboard; it tries again the next night (or "Back up now").
+      if (c.gdrive_token && GD.enabled() && hour >= BACKUP_HOUR && await claim(c.id, 'gdrive', date)) {
+        GD.backupNow(c.id).catch(e => console.error(`[gdrive] company ${c.id}:`, e.message));
       }
     } catch (e) { console.error(`[scheduler] company ${c.id}:`, e.message); }
   }

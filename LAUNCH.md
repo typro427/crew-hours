@@ -62,6 +62,20 @@ Two plans: **Starter** ($14.99/month, up to 20 active crew) and **Pro** ($29.99/
 - **Business:** set up an LLC (or similar) and a business bank account, and complete your Stripe business profile.
 - **Backups:** Render's paid database plans keep automatic backups. For a second copy on your home storage, use `tools/backup.ps1` (Windows Task Scheduler) or `tools/backup.sh` (Mac, Linux or NAS cron). Get the token from Render → Environment → `BACKUP_TOKEN`.
 
+## 8. Nightly backup to Google Drive (15 min, once)
+Every night at 2 AM the app saves a copy of everything (and any new photos) to a **Crew Hours Backups** folder in the Google Drive you connect. It can only see the files it creates there.
+
+Google needs the app registered once:
+1. Go to **console.cloud.google.com**, signed in as the Google account whose Drive should get the backups. Create a project called **Crew Hours**.
+2. **APIs & Services → Library**: search **Google Drive API** and click **Enable**.
+3. **Google Auth Platform** (or **OAuth consent screen**) → **Get started**: app name **Crew Hours**, support email, audience **External**, then finish.
+4. **Audience**: click **Publish app** so it's **In production**. (Left in "Testing", Google cuts the connection after 7 days.)
+5. **Clients → Create client**: type **Web application**. Under **Authorized redirect URIs** add `https://mycrewhours.com/api/admin/google/callback` (your APP_URL followed by `/api/admin/google/callback`). Create, then copy the **Client ID** and **Client secret**.
+6. In Render → **Environment**, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` with those values. Save (Render redeploys).
+7. In your dashboard → **Settings** → **Google Drive backup**, click **Connect Google Drive** and allow access. The first backup runs straight away; **Back up now** runs one any time.
+
+Backup files older than 90 days are deleted from the folder; photos are kept. If a backup fails, the dashboard shows why.
+
 ## 7. Move Deerfield onto it
 1. Sign up on your new site with your company.
 2. In **Settings**: set the week to start on **Thursday**, the main tab to **Deerfield Time**, and the second tab's choices to Water System, McCloud Venue and MtCloud Maintenance.

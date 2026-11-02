@@ -195,6 +195,19 @@ DELETE FROM meter_reads a USING meter_reads b
     AND substr(a.month,1,4)=substr(b.month,1,4) AND (substr(a.month,6,2)::int-1)/3=(substr(b.month,6,2)::int-1)/3
     AND (a.month < b.month OR (a.month=b.month AND a.id<b.id));
 UPDATE meter_reads SET month = substr(month,1,4) || '-Q' || ((substr(month,6,2)::int-1)/3+1) WHERE month ~ '^[0-9]{4}-[0-9]{2}$';
+-- Nightly backup to the owner's Google Drive.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gdrive_token TEXT;          -- encrypted refresh token
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gdrive_email TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gdrive_folder TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gdrive_photos_folder TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gdrive_last_at TIMESTAMPTZ;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gdrive_error TEXT;
+CREATE TABLE IF NOT EXISTS gdrive_uploaded (
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  photo_id   INTEGER NOT NULL,
+  PRIMARY KEY (company_id, kind, photo_id)
+);
 -- Water system readings: the boss picks what to record; the crew logs values.
 CREATE TABLE IF NOT EXISTS reading_types (
   id         SERIAL PRIMARY KEY,
