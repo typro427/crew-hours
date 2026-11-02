@@ -90,6 +90,44 @@ const landing = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
 app.get('/', (req, res) => res.type('html').send(landing));
 ['signup', 'login', 'forgot', 'reset', 'admin', 'terms', 'privacy'].forEach(p => app.get('/' + p, page(p + '.html')));
 
+// Address-job invoice approval: the link in the boss's monthly email. The secret link is the permission;
+// opening it only shows the invoice, sending takes a tap on the button (so email link-checkers can't send it).
+const JI = require('./jobinvoices');
+const invPage = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>${title}</title></head><body style="margin:0;background:#f3f2ee;font-family:Arial,Helvetica,sans-serif;color:#222">${body}</body></html>`;
+async function invFor(req) {
+  const id = Number(req.params.id);
+  const row = Number.isFinite(id) && await db.one('SELECT id, company_id FROM job_invoices WHERE id=$1', [id]);
+  if (!row || !JI.okToken(row, req.params.token)) return null;
+  return { inv: await JI.getFull(row.company_id, id), company: await db.one('SELECT * FROM companies WHERE id=$1', [row.company_id]) };
+}
+function invView(x, msg, err) {
+  const { esc } = require('./email');
+  return require('./jobbilling').settings(x.company.id).then(s => {
+    const i = x.inv, money = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const bar = i.status === 'sent' ? `<p style="margin:0;font-size:17px"><b>✓ Sent</b> to ${esc(i.sent_to)} on ${esc(new Date(i.sent_at).toLocaleString('en-US', { timeZone: x.company.timezone || 'America/New_York' }))}.</p>`
+      : i.status === 'void' ? '<p style="margin:0"><b>This invoice was cancelled.</b></p>'
+      : `<form method="post" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:0">
+          <label style="flex:1 1 260px;font-weight:bold;font-size:14px">Send to (client's email)<br><input name="email" type="email" required value="${esc(i.email)}" placeholder="client@example.com" style="width:100%;box-sizing:border-box;font-size:17px;padding:10px;border:1px solid #bbb;border-radius:8px;margin-top:4px"></label>
+          <button style="font-size:17px;font-weight:bold;padding:12px 18px;border:0;border-radius:8px;background:#e3a008;color:#1f2328;cursor:pointer">Approve &amp; send ${money(i.total)}</button></form>`;
+    return invPage(`Invoice ${esc(i.number)}`, `<div style="max-width:808px;margin:0 auto;padding:16px">
+      <div style="background:#fff;border:1px solid #ddd;border-radius:12px;padding:16px;margin-bottom:14px">${msg ? `<p style="margin:0 0 10px;color:${err ? '#b42318' : '#1a7f37'};font-weight:bold">${esc(msg)}</p>` : ''}${bar}
+      <p style="margin:10px 0 0;color:#666;font-size:13px">This is exactly what the client gets, from ${esc(i.from_name)}${s.fromEmail ? ' (' + esc(s.fromEmail) + ')' : ''}.</p></div>
+      <div style="background:#fff;border:1px solid #ddd;border-radius:12px">${JI.invoiceHtml(i, s.payTo, s.fromEmail || i.crew_email)}</div></div>`);
+  });
+}
+app.get('/inv/:id/:token', async (req, res, next) => {
+  try { const x = await invFor(req); if (!x) return res.status(404).type('html').send(invPage('Not found', '<p style="padding:24px">That invoice link is not valid.</p>'));
+    res.set('Cache-Control', 'no-store').type('html').send(await invView(x)); } catch (e) { next(e); }
+});
+app.post('/inv/:id/:token', express.urlencoded({ extended: false, limit: '10kb' }), async (req, res, next) => {
+  try {
+    const x = await invFor(req); if (!x) return res.status(404).type('html').send(invPage('Not found', '<p style="padding:24px">That invoice link is not valid.</p>'));
+    try { await JI.approveSend(x.company, x.inv.id, 'email link', (req.body || {}).email); x.inv = await JI.getFull(x.company.id, x.inv.id); res.type('html').send(await invView(x, 'Approved and sent.')); }
+    catch (e) { if (!e.expose && !(e instanceof T.InputError)) throw e; x.inv = await JI.getFull(x.company.id, x.inv.id); res.status(400).type('html').send(await invView(x, e.message, true)); }
+  } catch (e) { next(e); }
+});
+
 // Each company's crew app lives at /c/<link>, installable on a phone's home screen.
 const crewHtml = fs.readFileSync(path.join(PUB, 'crew.html'), 'utf8');
 app.get('/c/:slug', async (req, res, next) => {

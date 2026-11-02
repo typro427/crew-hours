@@ -8,7 +8,7 @@ const M = require('./meters');
 
 const PER_FILE = 100;   // QuickBooks takes up to 100 invoices per import file
 const DEFAULTS = { laborRate: null, chemMarkup: 0, matMarkup: 0, visitCharge: null,
-  laborItem: 'Labor', chemItem: 'Chemicals', matItem: 'Materials', visitItem: 'Service call', dueDays: 30, prefix: 'J' };
+  laborItem: 'Labor', chemItem: 'Chemicals', matItem: 'Materials', visitItem: 'Service call', dueDays: 30, prefix: 'J', fromName: '', fromEmail: '', payTo: '' };
 
 async function settings(companyId) {
   const c = await db.one('SELECT job_billing FROM companies WHERE id=$1', [companyId]);
@@ -31,7 +31,10 @@ async function save(companyId, b) {
     laborItem: s(b.laborItem, DEFAULTS.laborItem, 100), chemItem: s(b.chemItem, DEFAULTS.chemItem, 100),
     matItem: s(b.matItem, DEFAULTS.matItem, 100), visitItem: s(b.visitItem, DEFAULTS.visitItem, 100),
     dueDays: b.dueDays !== undefined ? V.int(b.dueDays, 'Days until due', 0, 365) : cur.dueDays,
-    prefix: b.prefix !== undefined ? String(b.prefix || '').trim().replace(/[^A-Za-z0-9-]/g, '').slice(0, 8) : cur.prefix
+    prefix: b.prefix !== undefined ? String(b.prefix || '').trim().replace(/[^A-Za-z0-9-]/g, '').slice(0, 8) : cur.prefix,
+    fromName: b.fromName !== undefined ? String(b.fromName || '').trim().replace(/\s+/g, ' ').slice(0, 80) : cur.fromName,
+    payTo: b.payTo !== undefined ? String(b.payTo || '').trim().slice(0, 1000) : cur.payTo,
+    fromEmail: b.fromEmail !== undefined ? (String(b.fromEmail || '').trim() ? V.email(b.fromEmail) : '') : cur.fromEmail
   };
   await db.q('UPDATE companies SET job_billing=$1 WHERE id=$2', [JSON.stringify(out), companyId]);
   return out;

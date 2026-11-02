@@ -157,6 +157,29 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_phone TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_checked BOOLEAN NOT NULL DEFAULT FALSE;
 -- Address jobs billing settings: labor rate, markups, visit charge, QuickBooks item names.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS job_billing JSONB;
+-- Address-job invoices: drafts made monthly, approved by the boss, then emailed to the client.
+CREATE TABLE IF NOT EXISTS job_invoices (
+  id           SERIAL PRIMARY KEY,
+  company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id      INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  month        TEXT NOT NULL,
+  number       TEXT NOT NULL,
+  address      TEXT NOT NULL DEFAULT '',
+  customer     TEXT NOT NULL DEFAULT '',
+  email        TEXT NOT NULL DEFAULT '',
+  from_name    TEXT NOT NULL DEFAULT '',
+  detail       JSONB NOT NULL DEFAULT '{}',
+  total        NUMERIC NOT NULL DEFAULT 0,
+  invoice_date DATE,
+  due_date     DATE,
+  status       TEXT NOT NULL DEFAULT 'draft',
+  sent_at      TIMESTAMPTZ,
+  sent_to      TEXT NOT NULL DEFAULT '',
+  approved_by  TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS job_invoices_month ON job_invoices (company_id, month);
 -- A crew member's own email: they get a weekly email of their hours and address jobs.
 ALTER TABLE crew ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '';
 -- Needs to order: ordered (status done) -> arrived, with the real cost.

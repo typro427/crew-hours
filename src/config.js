@@ -26,7 +26,10 @@ const config = {
     smtpUrl: env.SMTP_URL || '',
     from: env.MAIL_FROM || 'Crew Hours <no-reply@example.com>',
     // In development, emails are written to the console instead of sent.
-    logOnly: !env.SMTP_URL
+    logOnly: !env.SMTP_URL,
+    // Optional second mailbox for address-job invoices (e.g. Bill's own Gmail), so they come from his address:
+    // smtps://newtenn310%40gmail.com:APP_PASSWORD@smtp.gmail.com:465
+    invoiceSmtpUrl: env.INVOICE_SMTP_URL || ''
   },
   // Lets your home computer download a nightly backup: GET /api/backup with this as a Bearer token.
   backupToken: env.BACKUP_TOKEN || '',

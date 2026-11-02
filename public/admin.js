@@ -612,6 +612,8 @@
     var s = b.settings, set = function (id, v) { if (document.activeElement !== $(id)) $(id).value = v == null ? '' : v; };
     set('ji-rate', s.laborRate); set('ji-visit', s.visitCharge); set('ji-chem', s.chemMarkup || ''); set('ji-mat', s.matMarkup || ''); set('ji-due', s.dueDays); set('ji-prefix', s.prefix);
     set('ji-litem', s.laborItem); set('ji-citem', s.chemItem); set('ji-mitem', s.matItem); set('ji-vitem', s.visitItem);
+    set('ji-from', s.fromName); set('ji-femail', s.fromEmail); set('ji-pay', s.payTo);
+    loadInvoices(b.month);
     var t = b.totals, crewQ = '&crew=' + encodeURIComponent($('jb-crew').value);
     $('ji-sum').textContent = b.label + ': ' + money2(t.total) + ' to bill · ' + t.clients + ' client' + (t.clients === 1 ? '' : 's') + ' · ' + t.visits + ' visit' + (t.visits === 1 ? '' : 's') + ' · ' + t.hours + ' h' + (t.open ? ' · ' + t.open + ' with no time out' : '');
     $('ji-csv').href = '/api/admin/jobs/month.csv?month=' + b.month + crewQ;
@@ -641,8 +643,44 @@
   $('ji-form').onsubmit = function (e) {
     e.preventDefault();
     api('PUT', '/api/admin/job-billing', { month: jiMonth(), crew: $('jb-crew').value, laborRate: $('ji-rate').value, visitCharge: $('ji-visit').value, chemMarkup: $('ji-chem').value, matMarkup: $('ji-mat').value,
-      dueDays: $('ji-due').value || 30, prefix: $('ji-prefix').value, laborItem: $('ji-litem').value, chemItem: $('ji-citem').value, matItem: $('ji-mitem').value, visitItem: $('ji-vitem').value })
+      dueDays: $('ji-due').value || 30, prefix: $('ji-prefix').value, fromName: $('ji-from').value, fromEmail: $('ji-femail').value, payTo: $('ji-pay').value, laborItem: $('ji-litem').value, chemItem: $('ji-citem').value, matItem: $('ji-mitem').value, visitItem: $('ji-vitem').value })
       .then(function (b) { drawJobMonth(b); status('ji-status', 'Saved.', 'ok'); }).catch(function (e2) { status('ji-status', e2.message, 'err'); });
+  };
+  function loadInvoices(m) { return api('GET', '/api/admin/job-invoices?month=' + (m || jiMonth())).then(drawInvoices).catch(function (e) { status('ji-status', e.message, 'err'); }); }
+  function drawInvoices(L) {
+    if (L.mailbox !== undefined) jb.mailbox = L.mailbox;
+    var fe = $('ji-femail').value.trim().toLowerCase();
+    $('ji-mbox').textContent = !fe ? '' : jb.mailbox === fe ? ' ✓ connected: sent from this address' : ' Not connected yet: sent from the app\'s address in this name, and replies go here.';
+    var t = L.totals, body = $('ji-ibody'); body.innerHTML = '';
+    $('ji-isum').textContent = L.invoices.length ? t.drafts + ' waiting to send (' + money2(t.toSend) + ') · ' + t.sent + ' sent (' + money2(t.sentTotal) + ')' + (t.noEmail ? ' · ' + t.noEmail + ' need a client email' : '') : 'No invoices made for ' + L.label + ' yet. They are made on the 1st for the month before, or tap Make / update invoices.';
+    L.invoices.forEach(function (i) {
+      var tr = el('tr');
+      tr.appendChild(el('td', '', i.number));
+      var cl = el('td'); cl.appendChild(el('b', '', i.customer)); cl.appendChild(el('div', 'hint', i.address + ' · ' + i.visits + ' visit' + (i.visits === 1 ? '' : 's'))); tr.appendChild(cl);
+      var et = el('td');
+      if (i.status === 'draft') { var ei = el('input'); ei.type = 'email'; ei.value = i.email; ei.placeholder = 'client@example.com'; ei.style.minWidth = '200px';
+        ei.onchange = function () { api('PUT', '/api/admin/job-invoices/' + i.id, { email: ei.value, month: L.month }).then(drawInvoices).catch(function (e) { status('ji-status', e.message, 'err'); }); }; et.appendChild(ei); }
+      else et.appendChild(document.createTextNode(i.sentTo || i.email));
+      tr.appendChild(et);
+      tr.appendChild(el('td', '', i.fromName));
+      tr.appendChild(el('td', 'num', money2(i.total)));
+      tr.appendChild(el('td', i.status === 'sent' ? 'ok' : '', i.status === 'sent' ? '✓ Sent ' + new Date(i.sentAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : i.status === 'void' ? 'Cancelled' : 'Waiting for you'));
+      var at = el('td'), v = el('a', 'btn ghost small', 'View'); v.href = '/api/admin/job-invoices/' + i.id + '/view'; v.target = '_blank'; v.rel = 'noopener'; at.appendChild(v);
+      function act(label, cls, fn) { var b = el('button', cls, label); b.type = 'button'; b.onclick = fn; at.appendChild(b); return b; }
+      if (i.status === 'draft') {
+        var sb = act('Approve & send', 'btn small', function () {
+          if (sb.textContent !== 'Tap again to send') { sb.textContent = 'Tap again to send'; setTimeout(function () { sb.textContent = 'Approve & send'; }, 3000); return; }
+          status('ji-status', 'Sending ' + i.number + '…');
+          api('POST', '/api/admin/job-invoices/' + i.id + '/send', { month: L.month }).then(function (r) { drawInvoices(r); status('ji-status', 'Sent ' + i.number + ' to ' + i.customer + '.', 'ok'); }).catch(function (e) { status('ji-status', e.message, 'err'); });
+        });
+        act('Cancel', 'btn ghost small', function () { api('POST', '/api/admin/job-invoices/' + i.id + '/void', { month: L.month }).then(drawInvoices).catch(function (e) { status('ji-status', e.message, 'err'); }); });
+      } else if (i.status === 'void') act('Undo', 'btn ghost small', function () { api('POST', '/api/admin/job-invoices/' + i.id + '/void', { undo: true, month: L.month }).then(drawInvoices).catch(function (e) { status('ji-status', e.message, 'err'); }); });
+      body.appendChild(tr);
+    });
+  }
+  $('ji-build').onclick = function () {
+    status('ji-status', 'Making invoices…');
+    api('POST', '/api/admin/job-invoices/build', { month: jiMonth() }).then(function (r) { drawInvoices(r); status('ji-status', 'Invoices are ready. Check each one, then Approve & send.', 'ok'); }).catch(function (e) { status('ji-status', e.message, 'err'); });
   };
   $('ji-email').onclick = function () {
     status('ji-status', 'Sending…');

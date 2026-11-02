@@ -733,8 +733,55 @@ test('address jobs invoices: monthly, one per client, everything broken out; Qui
   send.outbox.length = 0;
   const r = await O('POST', '/api/admin/jobs/month/email', { month });
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
-  const m = send.outbox.find(x => /^Address jobs, /.test(x.subject));
-  assert.ok(m); assert.match(m.html, /Pat Meadows · \$308.70/);
+  const m = send.outbox.find(x => /ready to approve/.test(x.subject));
+  assert.ok(m); assert.match(m.html, /Pat Meadows/); assert.match(m.html, /\$308.70/);
   assert.strictEqual((await O('GET', '/api/admin/jobs/month?month=1999-01')).body.clients.length, 0);
   assert.strictEqual((await O2('GET', '/api/admin/jobs/month?month=' + month)).body.clients.length, 0, 'other company');
+});
+
+test('job invoices: made as drafts from the crew member, approve each and it goes to the client, once', async () => {
+  const { send } = require('../src/email');
+  const db2 = require('../src/db'), H2 = require('../src/hours');
+  const c = await db2.one("SELECT * FROM companies WHERE name='Deerfield'");
+  const month = H2.today(c).slice(0, 7);
+  // client email from the members list
+  await O('POST', '/api/admin/members/import', { columns: ['Status', 'Last name', 'First name(s)', 'Deerfield address', 'Email 1'], rows: [
+    { Status: 'Active', 'Last name': 'Meadows', 'First name(s)': 'Pat', 'Deerfield address': '141 Deer Meadow Dr', 'Email 1': 'Pat@Example.com' },
+    { Status: 'Active', 'Last name': 'Tail', 'First name(s)': 'Wendy', 'Deerfield address': '305 Whitetail Lane' }] });
+  await O('PUT', '/api/admin/job-billing', { fromName: 'Bill Newhaul', fromEmail: 'newtenn310@gmail.com', payTo: 'Checks to Bill Newhaul' });
+  send.outbox.length = 0;
+  let r = await O('POST', '/api/admin/jobs/month/email', { month });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const boss = send.outbox.find(m => /invoices? ready to approve/.test(m.subject));
+  assert.ok(boss, send.outbox.map(m => m.subject).join(' | '));
+  assert.match(boss.html, /Review &amp; send/);
+  assert.ok(!send.outbox.some(m => m.to.includes('pat@example.com')), 'nothing goes to a client before approval');
+  let L = (await O('GET', '/api/admin/job-invoices?month=' + month)).body;
+  const pat = L.invoices.find(i => i.address === '141 Deer Meadow Dr');
+  assert.strictEqual(pat.status, 'draft'); assert.strictEqual(pat.fromName, 'Bill Newhaul'); assert.strictEqual(pat.email, 'pat@example.com');
+  const wendy = L.invoices.find(i => i.address === '305 Whitetail Lane');
+  assert.strictEqual(wendy.email, '', 'no email on the list');
+  // the link from the email: GET only shows it; POST approves and sends
+  const path = new URL(pat.link).pathname;
+  let g = await fetch(base + path); assert.strictEqual(g.status, 200);
+  let page = await g.text(); assert.match(page, /Approve &amp; send/); assert.match(page, /Bill Newhaul/); assert.match(page, /INVOICE/);
+  assert.strictEqual((await fetch(base + path.replace(/[0-9a-f]{32}$/, '0'.repeat(32)))).status, 404, 'bad token');
+  send.outbox.length = 0;
+  g = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'email=pat%40example.com' });
+  page = await g.text(); assert.strictEqual(g.status, 200, page.slice(0, 300)); assert.match(page, /Approved and sent/);
+  const out = send.outbox.find(m => m.to.includes('pat@example.com'));
+  assert.ok(out); assert.strictEqual(out.fromName, 'Bill Newhaul'); assert.strictEqual(out.fromAddress, 'newtenn310@gmail.com');
+  assert.match(out.subject, /^Invoice J\d{6}-\d{3} from Bill Newhaul: \$/); assert.match(out.html, /Checks to Bill Newhaul/); assert.match(out.html, /Bill to/);
+  // only once
+  g = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'email=pat%40example.com' });
+  assert.strictEqual(g.status, 400); assert.match(await g.text(), /Already sent/);
+  // dashboard: needs an email, then approve & send; rebuilding never touches sent ones
+  assert.strictEqual((await O('POST', `/api/admin/job-invoices/${wendy.id}/send`, { month })).status, 400);
+  r = await O('PUT', `/api/admin/job-invoices/${wendy.id}`, { email: 'wendy@example.com', month });
+  r = await O('POST', `/api/admin/job-invoices/${wendy.id}/send`, { month });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  L = (await O('POST', '/api/admin/job-invoices/build', { month })).body;
+  assert.ok(L.invoices.filter(i => i.address === '141 Deer Meadow Dr').every(i => i.status === 'sent'));
+  assert.strictEqual((await O2('GET', '/api/admin/job-invoices?month=' + month)).body.invoices.length, 0, 'other company');
+  assert.strictEqual((await O2('GET', `/api/admin/job-invoices/${pat.id}/view`)).status, 404);
 });

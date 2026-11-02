@@ -250,11 +250,22 @@ r.get('/jobs/invoices.csv', async (req, res) => {
   const f = await JB.invoicesCsv(req.company, await jbOut(req, req.query.month, req.query.crew), req.query.part);
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${f.name}"`, 'Cache-Control': 'no-store' }).send(f.body);
 });
+const JI = require('../jobinvoices');
+r.get('/job-invoices', async (req, res) => res.json({ ...(await JI.list(req.company, req.query.month)), mailbox: require('../email').invoiceMailbox() }));
+r.post('/job-invoices/build', async (req, res) => res.json(await JI.build(req.company, (req.body || {}).month)));
+r.put('/job-invoices/:id', async (req, res) => { await JI.edit(req.company.id, Number(req.params.id), req.body || {}); res.json(await JI.list(req.company, (req.body || {}).month)); });
+r.post('/job-invoices/:id/send', async (req, res) => { await JI.approveSend(req.company, Number(req.params.id), req.owner.name || req.owner.email, (req.body || {}).email); res.json(await JI.list(req.company, (req.body || {}).month)); });
+r.post('/job-invoices/:id/void', async (req, res) => { await JI.voidInvoice(req.company.id, Number(req.params.id), !!(req.body || {}).undo); res.json(await JI.list(req.company, (req.body || {}).month)); });
+r.get('/job-invoices/:id/view', async (req, res) => {
+  const inv = await JI.getFull(req.company.id, Number(req.params.id));
+  if (!inv) return res.status(404).send('Not found');
+  res.type('html').send('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ' + inv.number + '</title><body style="margin:0;background:#fff">' + JI.invoiceHtml(inv, ...(s => [s.payTo, s.fromEmail || inv.crew_email])(await require('../jobbilling').settings(req.company.id))));
+});
 r.post('/jobs/month/email', async (req, res) => {
   if (A.limited('jobmail:' + req.company.id, 10, 60 * 60e3)) return res.status(429).json({ error: 'Too many emails. Try again in an hour.' });
   A.fail('jobmail:' + req.company.id, 60 * 60e3);
-  const e = await JB.sendMonth(req.company, (req.body || {}).month);
-  if (!e) V.bad('No address jobs that month.');
+  const e = await JI.sendMonthly(req.company, (req.body || {}).month);
+  if (!e) V.bad('No invoices to make that month. Check the rates and that there are address jobs.');
   res.json({ ok: true, to: await R.recipients(req.company) });
 });
 r.get('/jobs.csv', async (req, res) => {

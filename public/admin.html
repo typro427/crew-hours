@@ -100,7 +100,7 @@
     <form class="card" id="ji-form" novalidate>
       <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div><h3>Monthly invoices by client</h3><p class="hint" id="ji-sum" style="margin:0"></p></div>
-        <div class="row" style="gap:8px;flex-wrap:wrap"><input type="month" id="ji-month" aria-label="Month"><button class="btn ghost small" type="button" id="ji-email">Email me this month</button><a class="btn ghost small" id="ji-csv">Download breakdown (CSV)</a></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><input type="month" id="ji-month" aria-label="Month"><button class="btn ghost small" type="button" id="ji-email">Email me the invoices to approve</button><a class="btn ghost small" id="ji-csv">Download breakdown (CSV)</a></div>
       </div>
       <div class="mb-grid">
         <div><label for="ji-rate">Labor rate ($ per hour on site)</label><input id="ji-rate" inputmode="decimal" placeholder="e.g. 65"></div>
@@ -113,11 +113,18 @@
         <div><label for="ji-citem">QuickBooks item: chemicals</label><input id="ji-citem" maxlength="100" placeholder="Chemicals"></div>
         <div><label for="ji-mitem">QuickBooks item: materials</label><input id="ji-mitem" maxlength="100" placeholder="Materials"></div>
         <div><label for="ji-vitem">QuickBooks item: visit charge</label><input id="ji-vitem" maxlength="100" placeholder="Service call"></div>
+        <div><label for="ji-from">Invoices come from (name)</label><input id="ji-from" maxlength="80" placeholder="The crew member's name, e.g. Bill Newhaul"></div>
+        <div><label for="ji-femail">Invoices come from (email)</label><input id="ji-femail" type="email" maxlength="200" placeholder="e.g. newtenn310@gmail.com"><span class="hint" id="ji-mbox"></span></div>
       </div>
+      <label for="ji-pay">How to pay <span class="hint">(printed at the bottom of every invoice)</span></label><textarea id="ji-pay" rows="2" maxlength="1000" placeholder="Make checks payable to Bill Newhaul. Mail to … or pay by Venmo @…"></textarea>
       <div class="row"><button class="btn small" type="submit">Save rates</button><span class="status" id="ji-status" role="status"></span></div>
       <div id="ji-files" class="row" style="flex-wrap:wrap;gap:8px"></div>
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:6px"><h3 style="margin:0">Invoices to send</h3><button class="btn small" type="button" id="ji-build">Make / update invoices for this month</button></div>
+      <p class="hint" id="ji-isum" style="margin:0"></p>
+      <div class="tablebox"><table class="roads"><thead><tr><th>Invoice</th><th>Client</th><th>Client email</th><th>From</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody id="ji-ibody"></tbody></table></div>
+      <h3 style="margin:14px 0 0">Breakdown by client</h3>
       <div id="ji-clients"></div>
-      <p class="hint">Each property is one client and one invoice. The QuickBooks customer is the name on the meter at that address when it has one, otherwise the owner from the members list. Labor is hours on site × your rate; a visit with no time out has no labor. In QuickBooks: <b>Settings ⚙ → Import data → Invoices</b>. On the 1st of each month you get last month's breakdown by email.</p>
+      <p class="hint">Each property is one client and one invoice. The QuickBooks customer is the name on the meter at that address when it has one, otherwise the owner from the members list. Labor is hours on site × your rate; a visit with no time out has no labor. In QuickBooks: <b>Settings ⚙ → Import data → Invoices</b>. On the 1st of each month, last month’s invoices are made and emailed to you with a Review &amp; send button on each. Nothing goes to a client until you approve it.</p>
     </form>
     <form class="card" id="jf-form" hidden novalidate>
       <div class="row" style="justify-content:space-between"><h3 id="jf-title">Add a job</h3><button class="btn ghost small" type="button" id="jf-cancel">Cancel</button></div>
