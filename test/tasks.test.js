@@ -654,3 +654,21 @@ test('needs to order: ordered -> arrived with the real cost; monthly spending', 
   assert.strictEqual((await O('POST', `/api/admin/tasks/${item.id}/arrived`, { actualCost: 'x' })).status, 400);
   assert.strictEqual((await O2('POST', `/api/admin/tasks/${item.id}/arrived`, {})).status, 400, 'other company');
 });
+
+test('weekly email: adds roads, leaks, meters, orders and address jobs; leaves out people without a time sheet', async () => {
+  const R = require('../src/reports'), H2 = require('../src/hours'), db2 = require('../src/db');
+  const c = await db2.one("SELECT * FROM companies WHERE name='Deerfield'");
+  const sam1 = (await O('GET', '/api/admin/crew')).body.crew.find(x => x.name === 'Sam');
+  await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, hours: false, jobs: true } });
+  const today = H2.today(c);
+  await sam('POST', '/jobs', { address: '141 Deer Meadow Dr', day: today, timeIn: '09:00', timeOut: '10:00', chemCost: '12', materialCost: '3' });
+  const r = await R.weeklySummary(c, H2.weekOf(c, today), { final: false });
+  assert.match(r.html, /This week at a glance/);
+  assert.match(r.html, /Leaks &amp; repairs:<\/b> \d+ reported, \d+ fixed this week/);
+  assert.match(r.html, /Meters \(Q\d \d{4}/);
+  assert.match(r.html, /high use \(possible leak\)/);
+  assert.match(r.html, /Needs to order:/);
+  assert.match(r.html, /Address jobs \(Sam\):<\/b> \d+ jobs? · chemicals \$\d/);
+  assert.ok(!/Sam: no hours logged/.test(r.html), 'Sam has no time sheet');
+  await O('PUT', '/api/admin/crew/' + sam1.id, { features: { ...sam1.features, hours: true, jobs: false } });
+});

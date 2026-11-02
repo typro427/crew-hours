@@ -17,9 +17,48 @@ function blockLine(label, start, end, out, back, note, hours) {
   return `${esc(label)}: ${span}${away}${end ? ', ' + hours.toFixed(2) + ' h' : ''}${note ? ' · ' + esc(note) : ''}`;
 }
 
+/** The rest of the week: roads, water system, leaks, orders, address jobs. Only the parts this company uses. */
+async function operations(company, from, to) {
+  const tz = company.timezone || 'America/New_York', id = company.id;
+  const inWeek = col => `(${col} AT TIME ZONE $2)::date BETWEEN $3 AND $4`;
+  const a = [id, tz, from, to];
+  const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const out = [];
+  const roads = await db.one(`SELECT (SELECT count(*)::int FROM roads WHERE company_id=$1 AND kind='road' AND active) AS total,
+      (SELECT count(DISTINCT m.road_id)::int FROM road_mows m JOIN roads r ON r.id=m.road_id WHERE m.company_id=$1 AND r.kind='road' AND m.day BETWEEN $2 AND $3) AS mowed,
+      (SELECT string_agg(DISTINCT r.name, ', ') FROM road_mows m JOIN roads r ON r.id=m.road_id WHERE m.company_id=$1 AND r.kind='road' AND m.day BETWEEN $2 AND $3) AS names,
+      (SELECT count(*)::int FROM roads r WHERE r.company_id=$1 AND r.kind='road' AND r.active AND NOT EXISTS (SELECT 1 FROM road_mows m WHERE m.road_id=r.id AND m.day > $3::date - 30)) AS stale,
+      (SELECT count(*)::int FROM road_mows m JOIN roads r ON r.id=m.road_id WHERE m.company_id=$1 AND r.kind='water' AND m.day BETWEEN $2 AND $3) AS checks,
+      (SELECT count(*)::int FROM roads WHERE company_id=$1 AND kind='water' AND active) AS sites`, [id, from, to]);
+  if (roads.total) out.push(`<li><b>Roads mowed:</b> ${roads.mowed} of ${roads.total}${roads.names ? ' (' + esc(roads.names) + ')' : ''}${roads.stale ? ` · ${roads.stale} not mowed in 30+ days` : ''}</li>`);
+  if (roads.sites) out.push(`<li><b>Water sites checked:</b> ${roads.checks} check${roads.checks === 1 ? '' : 's'}</li>`);
+  const lk = await db.one(`SELECT count(*) FILTER (WHERE ${inWeek('created_at')})::int AS opened, count(*) FILTER (WHERE status='done' AND ${inWeek('done_at')})::int AS fixed,
+      count(*) FILTER (WHERE status='open')::int AS open FROM tasks WHERE company_id=$1 AND kind='repair'`, a);
+  if (lk.opened || lk.fixed || lk.open) out.push(`<li><b>Leaks &amp; repairs:</b> ${lk.opened} reported, ${lk.fixed} fixed this week · ${lk.open} still open</li>`);
+  const meters = (await db.one('SELECT count(*)::int AS n FROM meters WHERE company_id=$1 AND active', [id])).n;
+  if (meters) {
+    const rt = await require('./meters').route(company);
+    const high = rt.meters.filter(m => m.active && m.alert && m.alert.level === 'high');
+    out.push(`<li><b>Meters (${esc(rt.label)}):</b> ${rt.read} of ${rt.toRead} read${high.length ? ` · <b style="color:#b42318">${high.length} high use (possible leak)</b>: ` +
+      high.slice(0, 5).map(m => esc(m.address || m.name) + (m.alert.times ? ` (${m.alert.times}×)` : '')).join(', ') + (high.length > 5 ? ', …' : '') : ''}</li>`);
+  }
+  const od = await db.one(`SELECT count(*) FILTER (WHERE status='open')::int AS open, COALESCE(sum(cost) FILTER (WHERE status='open'),0)::float AS est,
+      count(*) FILTER (WHERE status='done' AND arrived_at IS NULL)::int AS waiting,
+      count(*) FILTER (WHERE ${inWeek('arrived_at')})::int AS arrived, COALESCE(sum(actual_cost) FILTER (WHERE ${inWeek('arrived_at')}),0)::float AS spent
+    FROM tasks WHERE company_id=$1 AND kind='order'`, a);
+  if (od.open || od.waiting || od.arrived) out.push(`<li><b>Needs to order:</b> ${od.open} to order${od.est ? ' (about ' + money(od.est) + ')' : ''} · ${od.waiting} ordered, waiting to arrive${od.arrived ? ` · ${od.arrived} arrived this week, ${money(od.spent)} spent` : ''}</li>`);
+  const jb = await db.q(`SELECT c.name, count(*)::int AS n, COALESCE(sum(j.chem_cost),0)::float AS chem, COALESCE(sum(j.material_cost),0)::float AS mat
+    FROM jobs j LEFT JOIN crew c ON c.id=j.crew_id WHERE j.company_id=$1 AND j.day BETWEEN $2 AND $3 GROUP BY c.name ORDER BY c.name`, [id, from, to]);
+  jb.forEach(j => out.push(`<li><b>Address jobs${j.name ? ' (' + esc(j.name) + ')' : ''}:</b> ${j.n} job${j.n === 1 ? '' : 's'} · chemicals ${money(j.chem)} · materials ${money(j.mat)}</li>`));
+  return out.length ? `<h3 style="margin:20px 0 6px">This week at a glance</h3><ul style="margin:0;padding-left:18px">${out.join('')}</ul>` : '';
+}
+
 /** Summary of one week: table of hours, things that need attention, what everyone did. */
 async function weeklySummary(company, weekStart, { final = true } = {}) {
   const w = await H.crewWeek(company, weekStart);
+  // people with the time sheet switched off (e.g. address jobs only) aren't in the hours table
+  const noSheet = new Set((await db.q("SELECT name FROM crew WHERE company_id=$1 AND features->>'hours' = 'false'", [company.id])).map(r => r.name));
+  w.people = w.people.filter(p => !noSheet.has(p.name) || p.total > 0);
   const range = `${T.pretty(w.dates[0])} – ${T.pretty(w.dates[6])}`;
   const attention = [];
   w.people.forEach(p => {
@@ -39,6 +78,7 @@ async function weeklySummary(company, weekStart, { final = true } = {}) {
       + `<td style="${td};font-weight:bold">${p.total.toFixed(2)}</td></tr>`;
   });
   html += '</table></div>';
+  html += await operations(company, w.dates[0], w.dates[6]);
   if (attention.length) html += `<h3 style="margin:20px 0 6px">Needs attention</h3><ul style="margin:0;padding-left:18px">${attention.map(a => `<li>${esc(a)}</li>`).join('')}</ul>`;
   html += '<h3 style="margin:20px 0 6px">What everyone did</h3>';
   w.people.forEach(p => {
@@ -80,4 +120,4 @@ async function missingHours(company) {
 async function sendWeekly(company, weekStart, opts) { const r = await weeklySummary(company, weekStart, opts); await send({ to: await recipients(company), ...r }); return r; }
 async function sendMissing(company) { const r = await missingHours(company); await send({ to: await recipients(company), subject: r.subject, html: r.html }); return r; }
 
-module.exports = { weeklySummary, missingHours, sendWeekly, sendMissing, recipients };
+module.exports = { operations, weeklySummary, missingHours, sendWeekly, sendMissing, recipients };
