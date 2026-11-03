@@ -174,6 +174,7 @@ async function run(company) {
     if (!claim.length) continue;
     const note = describe(r.metric, o, company.timezone) + ` in the next ${r.hours} hours (Weather Service forecast).`;
     await K.create(company.id, { kind: 'task', title: r.title, details: [note, r.details].filter(Boolean).join('\n'), due: today, assignedTo: r.assignedTo, priority: r.priority });
+    require('./push').notify(company, r.assignedTo ? [r.assignedTo] : null, { title: `🌡 ${r.title}`, body: note, tab: 'tasks', tag: 'weather-' + r.id });
     const to = [].concat(await R.recipients(company));
     if (r.emailCrew) (await db.q("SELECT email FROM crew WHERE company_id=$1 AND active AND email<>''", [company.id])).forEach(c => to.push(c.email));
     send({ to: [...new Set(to)], subject: `Weather: ${r.title} (${describe(r.metric, o, company.timezone)})`,

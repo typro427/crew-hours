@@ -261,3 +261,7 @@ tfoot td{font-weight:700;border-bottom:0}
 .pri-urgent{background:#b42318}
 .pri-high{background:#c4560c}
 .pri-low{background:#6b7280}
+/* Phone notifications */
+.pushask{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--accent)}
+.pushask .row{gap:8px}
+#bell{background:none;border:0;font-size:18px;padding:4px 6px;cursor:pointer;min-height:36px}

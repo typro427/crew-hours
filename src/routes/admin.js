@@ -169,7 +169,15 @@ const K = require('../tasks');
 const tasksOut = async (req, kind) => ({ tasks: await K.forOwner(req.company.id, kind), kind: K.kindOf(kind) });
 r.get('/tasks', async (req, res) => res.json(await tasksOut(req, req.query.kind)));
 r.post('/tasks/bulk', async (req, res) => { const n = await K.bulk(req.company.id, req.body || {}); res.json({ ...(await tasksOut(req, (req.body || {}).kind)), added: n }); });
-r.post('/tasks', async (req, res) => { await K.create(req.company.id, req.body || {}); res.json(await tasksOut(req, (req.body || {}).kind)); });
+r.post('/tasks', async (req, res) => {
+  const b = req.body || {}, kind = K.kindOf(b.kind);
+  await K.create(req.company.id, b);
+  // phones: a task from the boss (to that person, or everyone), or an urgent / high leak (the water crew)
+  const P = require('../push'), title = String(b.title || '').trim().slice(0, 100);
+  if (kind === 'task') P.notify(req.company, b.assignedTo ? [Number(b.assignedTo)] : null, { title: `New task: ${title}`, body: String(b.details || '').trim().slice(0, 200) || 'Open the app to see it.', tab: 'tasks' });
+  if (kind === 'repair' && ['urgent', 'high'].includes(b.priority)) P.notify(req.company, null, { feature: 'w_repairs', title: `${b.priority === 'urgent' ? '🚨 Urgent' : '⚠ High'}: ${title}`, body: b.address ? String(b.address) : 'Open Leaks & repairs to see it.', tab: 'water' });
+  res.json(await tasksOut(req, kind));
+});
 r.put('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await tasksOut(req, k)); });
 r.post('/tasks/:id/progress', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.progress(req.company.id, Number(req.params.id), { boss: req.owner.name || 'Boss' }, req.body || {}); res.json(await tasksOut(req, k)); });
 r.post('/tasks/:id/arrived', async (req, res) => { await K.arrived(req.company.id, Number(req.params.id), null, req.body || {}); res.json({ ...(await tasksOut(req, 'order')), spending: await K.spending(req.company.id, req.company.timezone) }); });

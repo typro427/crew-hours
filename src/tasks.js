@@ -177,6 +177,8 @@ async function createByCrew(company, crew, b) {
     return r.id;
   });
   await fromMeter(company.id, b, id, require('./meters').quarterOf(company));
+  if (kind === 'repair' && ['urgent', 'high'].includes(cleanPriority(b.priority)))   // an urgent leak: buzz the rest of the water crew
+    require('./push').notify(company, null, { feature: 'w_repairs', except: crew.id, title: `${cleanPriority(b.priority) === 'urgent' ? '🚨 Urgent' : '⚠ High'}: ${title}`, body: `${crew.name} reported it${b.address ? ' at ' + cleanAddress(b.address) : ''}.`, tab: 'water' });
   notifyNew(company, crew.name, (b.priority && cleanPriority(b.priority) !== 'normal' ? cleanPriority(b.priority).toUpperCase() + ': ' : '') + title, details, !!b.forMe, kind, due, roughCost(b.cost), cleanQty(b.qty)).catch(() => {});   // logged in email.js
 }
 

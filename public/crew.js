@@ -191,6 +191,56 @@
     if(!$("order-screen").hidden) orderBoard.load();
   }
   window.addEventListener("online", function(){ drawOutbox(); flushSoon(); });
+
+  // ---- phone notifications (Web Push) ----
+  var pushReg=null;
+  var isIOS=/iP(hone|ad|od)/.test(navigator.userAgent), standalone=window.matchMedia && window.matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
+  function pushSupported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+  function b64key(s){ var p="=".repeat((4-s.length%4)%4), raw=atob((s+p).replace(/-/g,"+").replace(/_/g,"/")), a=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
+  function later(){ try{ return Number(localStorage.getItem("pushLater:"+SLUG)||0) > Date.now(); }catch(e){ return false; } }
+  function setBell(on){ var b=$("bell"); b.hidden=false; b.textContent = on ? "🔔" : "🔕"; b.title = on ? "Notifications are on. Tap to turn off." : "Turn on notifications"; b.dataset.on = on ? "1" : ""; }
+  function pushCheck(){
+    if(!token) return;
+    if(!pushSupported()){
+      $("bell").hidden=true;
+      if(isIOS && !standalone && !later()){ $("pushask").hidden=false; $("push-on").hidden=true; $("pushask-text").textContent="On iPhone: tap the Share button, then Add to Home Screen. Open Crew Hours from your home screen and turn on notifications there."; }
+      return;
+    }
+    navigator.serviceWorker.ready.then(function(reg){ pushReg=reg; return reg.pushManager.getSubscription(); }).then(function(sub){
+      setBell(!!sub && Notification.permission==="granted");
+      if(sub){ api("POST","/push",{ subscription: sub.toJSON() }).catch(function(){}); $("pushask").hidden=true; return; }   // keep it linked to whoever is signed in
+      $("pushask").hidden = later() || Notification.permission==="denied";
+      if(Notification.permission==="denied") $("bell").title="Notifications are blocked in this phone's settings.";
+    }).catch(function(){});
+  }
+  function api(method, path, body){ return fetch(API+path,{ method:method, headers:{ "x-ch":"1", "Content-Type":"application/json", Authorization:"Bearer "+token }, body: body ? JSON.stringify(body) : undefined }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||"Something went wrong."); return j; }); }); }
+  function pushOn(){
+    if(!pushSupported()) return;
+    say($("push-status"),"Turning on…");
+    Notification.requestPermission().then(function(p){
+      if(p!=="granted") throw new Error(p==="denied" ? "Notifications are blocked. Turn them on for this app in your phone's settings." : "Tap Allow to get notifications.");
+      return Promise.all([navigator.serviceWorker.ready, api("GET","/push")]);
+    }).then(function(x){ pushReg=x[0]; return x[0].pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64key(x[1].key) }); })
+      .then(function(sub){ return api("POST","/push",{ subscription: sub.toJSON(), test:true }); })
+      .then(function(){ $("pushask").hidden=true; setBell(true); say($("push-status"),""); say($("outbox-st"),"Notifications are on. You should get a test one now.","ok"); })
+      .catch(function(e){ say($("push-status"),e.message,"err"); });
+  }
+  function pushForget(){
+    if(!pushReg || !token) return;
+    var t=token;
+    pushReg.pushManager.getSubscription().then(function(sub){ if(!sub) return;
+      fetch(API+"/push/off",{ method:"POST", headers:{ "x-ch":"1", "Content-Type":"application/json", Authorization:"Bearer "+t }, body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(function(){});
+      return sub.unsubscribe(); }).catch(function(){});
+    $("bell").hidden=true;
+  }
+  // a notification tapped while the app is already open only changes the #tab part of the address
+  window.addEventListener("hashchange", function(){ if(token && /^#(tasks|water|orders|jobs|roads)$/.test(location.hash)) showScreen(homeScreen()); });
+  $("push-on").onclick=pushOn;
+  $("push-later").onclick=function(){ try{ localStorage.setItem("pushLater:"+SLUG, String(Date.now()+14*864e5)); }catch(e){} $("pushask").hidden=true; };
+  $("bell").onclick=function(){
+    if($("bell").dataset.on){ pushForget(); setBell(false); say($("outbox-st"),"Notifications are off on this phone.","ok"); }
+    else pushOn();
+  };
   window.addEventListener("offline", drawOutbox);
   var LONGD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   function applySettings(s){
@@ -233,23 +283,26 @@
 
   // Where to land: the boss sees the crew week; someone without a time sheet lands on their first tab.
   function homeScreen(){
+    // opened from a phone notification: go to that tab if they can use it
+    var h=(location.hash||"").slice(1), TABS={ tasks:"tab-tasks", water:"tab-water", orders:"tab-orders", jobs:"tab-jobs", roads:"tab-roads" };
+    if(TABS[h] && !$(TABS[h]).hidden){ try{ history.replaceState(null,"",location.pathname); }catch(e){} return h; }
     if(isBoss) return "crew";
     if(features.hours!==false) return "mine";
     return features.jobs ? "jobs" : features.tasks ? "tasks" : features.orders ? "orders" : "water";
   }
   function signOut(msg){
-    IDB.clearCache(); outboxFailed=[];
+    IDB.clearCache(); outboxFailed=[]; $("bell").hidden=true; $("pushask").hidden=true;
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
     $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
-  $("logout").onclick = function(){ signOut(""); };
+  $("logout").onclick = function(){ pushForget(); signOut(""); };   // someone else will use this phone: stop this person's notifications here
 
   // ---- log screen ----
   function enterLog(name){
     $("who-name").textContent = name; $("who").hidden=false;
-    $("pin-screen").hidden=true; showScreen(homeScreen()); drawOutbox(); flushSoon();
+    $("pin-screen").hidden=true; showScreen(homeScreen()); drawOutbox(); flushSoon(); pushCheck();
     loadWeek(weekStartOf(today || new Date().toISOString().slice(0,10)), today);
   }
   function setOptions(list){
@@ -1412,7 +1465,7 @@
   if(token){
     $("pin-screen").hidden=true; $("log-screen").hidden=false;
     call("getMyWeek",[token, ""],
-      function(res){ applyWeek(res, res.today); showScreen(homeScreen()); drawOutbox(); flushSoon(); },
+      function(res){ applyWeek(res, res.today); showScreen(homeScreen()); drawOutbox(); flushSoon(); pushCheck(); },
       function(msg){
         if(/internet|reach/i.test(msg)){   // no signal and nothing saved: stay signed in, try again when it's back
           $("log-screen").hidden=true; $("pin-screen").hidden=false; setStatus("pin-status","No signal. This opens by itself when you're back in range.");

@@ -19,9 +19,15 @@
 <div class="wrap">
   <header>
     <div><h1><span>Crew</span>Hours</h1><div class="co">__COMPANY__</div></div>
-    <div class="who" id="who" hidden><span id="who-name"></span> · <button id="logout">Not you?</button></div>
+    <div class="who" id="who" hidden><span id="who-name"></span> · <button id="bell" hidden aria-label="Phone notifications"></button><button id="logout">Not you?</button></div>
   </header>
 
+  <div class="pushask" id="pushask" hidden>
+    <b>🔔 Get alerts on your phone</b>
+    <span id="pushask-text">Weather reminders (like freezing nights), new tasks and urgent leaks.</span>
+    <div class="row"><button class="primary" type="button" id="push-on">Turn on notifications</button><button class="ghost" type="button" id="push-later">Not now</button></div>
+    <span class="status" id="push-status" role="status"></span>
+  </div>
   <div class="outbox" id="outbox" hidden role="status"></div>
   <div class="status" id="outbox-st" role="status"></div>
   <nav class="tabs" id="tabs" role="tablist" hidden>

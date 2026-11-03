@@ -345,6 +345,20 @@ CREATE TABLE IF NOT EXISTS portal_docs (
   size       INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- App-wide settings (e.g. the phone-notification keys), and the phones that turned notifications on.
+CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS push_subs (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id    INTEGER NOT NULL REFERENCES crew(id) ON DELETE CASCADE,
+  endpoint   TEXT NOT NULL UNIQUE,
+  p256dh     TEXT NOT NULL,
+  auth       TEXT NOT NULL,
+  ua         TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_ok    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS push_subs_crew ON push_subs (crew_id);
 -- Weather reminders: the company's location, and rules (low below 40°F -> check the well house heaters...).
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_lat NUMERIC;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_lon NUMERIC;
