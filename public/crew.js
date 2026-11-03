@@ -382,7 +382,20 @@
           function(msg){ busy=false; setStatus("dp-status",msg,"err"); });
       }).catch(function(err){ busy=false; setStatus("dp-status",err.message,"err"); });
   };
-  function dayTotal(e){ return (Number(e.hours)||0)+(Number(e.oHours)||0); }
+  function dayTotal(e){ return e.total!=null ? Number(e.total) : (Number(e.hours)||0)+(Number(e.oHours)||0); }
+  // overlapping time on the two tabs only counts once (the server clocks you out of the main job for it)
+  function hm(t){ return /^\d{2}:\d{2}$/.test(t||"") ? Number(t.slice(0,2))*60+Number(t.slice(3,5)) : null; }
+  function stretches(s0,e0,o0,b0){
+    var s=hm(s0), e=hm(e0); if(s===null||e===null) return [];
+    var up=function(t){ var m=hm(t); return m===null ? null : (m<s ? m+1440 : m); };
+    if(e<=s) e+=1440; var o=up(o0), b=up(b0);
+    return (o!==null && b!==null && o<b) ? [[s,o],[b,e]] : [[s,e]];
+  }
+  function overlapH(){
+    var a=stretches($("start-in").value,$("end-in").value,$("out-in").value,$("back-in").value), b=stretches($("ostart-in").value,$("oend-in").value,$("oout-in").value,$("oback-in").value), n=0;
+    a.forEach(function(x){ b.forEach(function(y){ n+=Math.max(0, Math.min(x[1],y[1])-Math.max(x[0],y[0])); }); });
+    return n/60;
+  }
   function showCalc(){
     var w=workHours($("start-in").value,$("end-in").value,$("out-in").value,$("back-in").value);
     var o=workHours($("ostart-in").value,$("oend-in").value,$("oout-in").value,$("oback-in").value);
@@ -391,8 +404,11 @@
     var wOpen = $("start-in").value && !$("end-in").value, oOpen = $("ostart-in").value && !$("oend-in").value;
     $("seg-work-h").textContent = wOpen ? "on" : w ? fmt(w) : "";
     $("seg-other-h").textContent = oOpen ? "on" : o ? fmt(o) : "";
+    var ov = (!wOpen && !oOpen) ? overlapH() : 0;
+    if(ov && w) w=Math.max(0, w-ov);
+    $("seg-work-h").textContent = wOpen ? "on" : w ? fmt(w) : "";
     var sum = (w||0)+(o||0);
-    $("hours-out").textContent = (wOpen||oOpen) ? (sum ? fmt(sum)+" + in progress" : "In progress") : (w===null && o===null) ? "–" : fmt(sum);
+    $("hours-out").textContent = ov ? fmt(sum)+" (overlap counted once)" : (wOpen||oOpen) ? (sum ? fmt(sum)+" + in progress" : "In progress") : (w===null && o===null) ? "–" : fmt(sum);
   }
   function showTab(which){
     $("seg-work").setAttribute("aria-selected", which==="work");
@@ -467,7 +483,7 @@
     var d=sel;
     call("saveDay",[token, d, start, end, summary, oStart, oEnd, oSummary, outT, inT, oOutT, oInT, oJob], function(res){
       busy=false; $("save").disabled=false; applyWeek(res, d);
-      var sn = switched.length ? " We "+switched.join(" and ")+"." : "";
+      var sn = (switched.length ? " We "+switched.join(" and ")+"." : "")+(res.adjusted ? " "+res.adjusted : "");
       setStatus("save-status", ((wOpen||oOpen) ? "Saved. Add your end time when you finish." : "Saved.")+sn,"ok");
     }, function(msg){ busy=false; $("save").disabled=false; setStatus("save-status",msg,"err"); });
   };

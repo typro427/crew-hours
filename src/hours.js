@@ -22,12 +22,45 @@ function planOk(c) {
   return false;
 }
 
+// ---- Overlapping time on the two tabs is only counted once ----
+const mins = t => (T.isTime(t) ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null);
+/** The worked stretches of a block, in minutes from midnight (end past midnight runs on past 1440), with the time clocked out removed. */
+function stretches(start, end, out, back) {
+  const s = mins(start), e0 = mins(end); if (s == null || e0 == null) return [];
+  const up = t => { const m = mins(t); return m == null ? null : (m < s ? m + 1440 : m); };
+  const e = e0 <= s ? e0 + 1440 : e0, o = up(out), b = up(back);
+  return o != null && b != null && o < b ? [[s, o], [b, e]] : [[s, e]];
+}
+function overlapMinutes(a, b) {
+  let n = 0; a.forEach(([s1, e1]) => b.forEach(([s2, e2]) => { n += Math.max(0, Math.min(e1, e2) - Math.max(s1, s2)); })); return n;
+}
+const overlapHours = r => overlapMinutes(stretches(r.start_t, r.end_t, r.out_t, r.back_t), stretches(r.o_start, r.o_end, r.o_out, r.o_back)) / 60;
+
+/**
+ * Both tabs finished and overlapping (e.g. Deerfield 12–6, Other 2–4): clock them out of the main job while
+ * they were on the other one, so the day counts 6 hours, not 8. Returns a note for the crew member, or ''.
+ */
+function trimOverlap(w, o, company) {
+  if (!(w.start && w.end && o.start && o.end) || ![w.start, w.end, o.start, o.end].every(T.isTime)) return '';
+  const ws = mins(w.start), we = mins(w.end), os = mins(o.start), oe = mins(o.end);
+  if (we <= ws || oe <= os) return '';                       // past midnight: leave it
+  if (oe <= ws || os >= we) return '';                       // no overlap
+  const main = company.main_label, other = company.other_label;
+  if (w.out && w.back && mins(w.out) <= os && mins(w.back) >= oe) return '';   // already clocked out for it
+  if (w.out || w.back) throw new T.InputError(`${main} and ${other} overlap. Make ${main}'s clocked out / back in times match ${other}, or change the times.`);
+  if (os <= ws && oe >= we) throw new T.InputError(`All of the ${main} hours are inside the ${other} hours. Clear one of them, or fix the times.`);
+  if (os > ws && oe < we) { w.out = o.start; w.back = o.end; return `${main}: clocked out ${T.clock(o.start)}–${T.clock(o.end)} for ${other}.`; }
+  if (os <= ws) { w.start = o.end; return `${main} now starts at ${T.clock(o.end)}, when ${other} ended.`; }
+  w.end = o.start; return `${main} now ends at ${T.clock(o.start)}, when ${other} started.`;
+}
+
 function shape(r) {
   const hours = Number(r.hours) || 0, oHours = Number(r.o_hours) || 0;
+  const overlap = r.end_t && r.o_end ? overlapHours(r) : 0;   // older days saved before the fix
   return {
     date: r.day, start: r.start_t, end: r.end_t, outT: r.out_t, inT: r.back_t, summary: r.summary, hours,
     oJob: r.o_job, oStart: r.o_start, oEnd: r.o_end, oOutT: r.o_out, oInT: r.o_back, oSummary: r.o_summary, oHours,
-    total: T.round2(hours + oHours),
+    total: T.round2(Math.max(0, hours + oHours - overlap)),
     open: !!(r.start_t && !r.end_t), oOpen: !!(r.o_start && !r.o_end),
     updatedAt: r.updated_at
   };
@@ -84,6 +117,7 @@ async function saveDay(company, crew, body) {
     throw new T.InputError('This week was approved by the boss and is locked. Ask the boss if something needs fixing.');
   // Switching jobs: clocking in on the second tab clocks them out of the main tab, and coming back does the reverse.
   if (company.other_enabled) autoSwitch(body.work = { ...(body.work || {}) }, body.other = { ...(body.other || {}) });
+  const adjusted = company.other_enabled ? trimOverlap(body.work, body.other, company) : '';
   const work = T.timeBlock(body.work || {}, company.main_label);
   const other = company.other_enabled ? T.timeBlock(body.other || {}, company.other_label) : null;
   if (!work && !other) throw new T.InputError('Enter a start time.');
@@ -103,7 +137,7 @@ async function saveDay(company, crew, body) {
        o_summary=EXCLUDED.o_summary, hours=EXCLUDED.hours, o_hours=EXCLUDED.o_hours, updated_at=now()`,
     [company.id, crew.id, date, w.start || '', w.end || '', w.out || '', w.back || '', summary, oJob,
      o.start || '', o.end || '', o.out || '', o.back || '', oSummary, w.hours || 0, o.hours || 0]);
-  return myWeek(company, crew, date);
+  return { ...(await myWeek(company, crew, date)), adjusted };
 }
 
 async function clearDay(company, crew, date) {
@@ -171,4 +205,4 @@ async function setApproved(company, weekStart, approved, byName) {
   return crewWeek(company, ws);
 }
 
-module.exports = { addDayPhotos, removeDayPhoto, dayPhoto, MAX_DAY_PHOTOS, autoSwitch, publicSettings, planOk, myWeek, saveDay, clearDay, crewWeek, setApproved, weekOf, today, shape };
+module.exports = { trimOverlap, addDayPhotos, removeDayPhoto, dayPhoto, MAX_DAY_PHOTOS, autoSwitch, publicSettings, planOk, myWeek, saveDay, clearDay, crewWeek, setApproved, weekOf, today, shape };
