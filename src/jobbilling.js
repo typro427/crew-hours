@@ -7,7 +7,7 @@ const J = require('./jobs');
 const M = require('./meters');
 
 const PER_FILE = 100;   // QuickBooks takes up to 100 invoices per import file
-const DEFAULTS = { laborRate: null, chemMarkup: 0, matMarkup: 0, visitCharge: null,
+const DEFAULTS = { billStep: 15, billRound: 'up', laborRate: null, chemMarkup: 0, matMarkup: 0, visitCharge: null,
   laborItem: 'Labor', chemItem: 'Chemicals', matItem: 'Materials', visitItem: 'Service call', dueDays: 30, prefix: 'J', fromName: '', fromEmail: '', payTo: '' };
 
 async function settings(companyId) {
@@ -25,6 +25,8 @@ async function save(companyId, b) {
   const s = (v, d, n) => (v === undefined ? d : String(v || '').trim().slice(0, n) || d);
   const out = {
     laborRate: b.laborRate !== undefined ? num(b.laborRate, 'labor rate', 10000) : cur.laborRate,
+    billStep: b.billStep !== undefined ? ([0, 1, 5, 6, 10, 15, 30, 60].includes(Number(b.billStep)) ? Number(b.billStep) : V.bad('Pick how time is billed.')) : cur.billStep,
+    billRound: b.billRound !== undefined ? (b.billRound === 'nearest' ? 'nearest' : 'up') : cur.billRound,
     chemMarkup: b.chemMarkup !== undefined ? num(b.chemMarkup, 'chemical markup', 1000) || 0 : cur.chemMarkup,
     matMarkup: b.matMarkup !== undefined ? num(b.matMarkup, 'material markup', 1000) || 0 : cur.matMarkup,
     visitCharge: b.visitCharge !== undefined ? num(b.visitCharge, 'charge per visit', 100000) : cur.visitCharge,
@@ -41,6 +43,15 @@ async function save(companyId, b) {
 }
 
 const cents = n => Math.round(n * 100) / 100;
+/** Hours billed for one visit: time on site in steps (default 15 minutes, rounded up). No time out = nothing billed yet. */
+function billedHours(j, set) {
+  const m = require('./jobs').minutes(j.timeIn, j.timeOut);
+  if (m == null) return null;
+  const step = Number(set.billStep) || 0;
+  if (!step) return Math.round(m / 60 * 100) / 100;
+  const n = set.billRound === 'nearest' ? Math.round(m / step) : Math.ceil(m / step);
+  return Math.round(n * step / 60 * 100) / 100;
+}
 const validMonth = m => /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(String(m || ''));
 function monthRange(m) {
   const y = Number(m.slice(0, 4)), mo = Number(m.slice(5, 7));
@@ -73,11 +84,12 @@ async function month(company, m, crew) {
       const c = look(j.address);
       by.set(key, { address: j.address, owner: j.owner, customer: c.qb || j.owner || j.address, qbMatched: !!c.qb, visits: [] });
     }
-    const labor = set.laborRate && j.hours ? cents(j.hours * set.laborRate) : 0;
+    const billed = billedHours(j, set);
+    const labor = set.laborRate && billed ? cents(billed * set.laborRate) : 0;
     const chem = j.chemCost ? cents(j.chemCost * (1 + (set.chemMarkup || 0) / 100)) : 0;
     const mat = j.materialCost ? cents(j.materialCost * (1 + (set.matMarkup || 0) / 100)) : 0;
     const visit = set.visitCharge || 0;
-    by.get(key).visits.push({ id: j.id, day: j.day, crew: j.crewName || '', timeIn: j.timeIn, timeOut: j.timeOut, hours: j.hours, notes: j.notes,
+    by.get(key).visits.push({ id: j.id, day: j.day, crew: j.crewName || '', timeIn: j.timeIn, timeOut: j.timeOut, hours: billed, onSite: j.hours, notes: j.notes,
       receipts: j.receipts.length, chemCost: j.chemCost, materialCost: j.materialCost, labor, chem, mat, visit, total: cents(labor + chem + mat + visit), open: !!(j.timeIn && !j.timeOut) });
   }
   const sum = (xs, k) => cents(xs.reduce((a, x) => a + (x[k] || 0), 0));
@@ -163,4 +175,4 @@ async function sendMonth(company, m) {
   return e;
 }
 
-module.exports = { settings, save, month, breakdownCsv, invoicesCsv, emailHtml, sendMonth, prevMonth, validMonth, PER_FILE };
+module.exports = { billedHours, settings, save, month, breakdownCsv, invoicesCsv, emailHtml, sendMonth, prevMonth, validMonth, PER_FILE };

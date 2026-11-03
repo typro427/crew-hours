@@ -60,3 +60,15 @@ test('days saved before the fix: the overlap is counted once in the total', () =
   const n = H.shape({ start_t: '08:00', end_t: '12:00', out_t: '', back_t: '', hours: 4, o_start: '13:00', o_end: '15:00', o_out: '', o_back: '', o_hours: 2 });
   assert.strictEqual(n.total, 6);
 });
+
+test("Bill's time is billed in 15-minute steps, rounded up (or to the nearest, or exact)", () => {
+  const JB = require('../src/jobbilling');
+  const v = (a, b) => ({ timeIn: a, timeOut: b });
+  assert.strictEqual(JB.billedHours(v('08:00', '09:05'), { billStep: 15, billRound: 'up' }), 1.25);
+  assert.strictEqual(JB.billedHours(v('08:00', '09:00'), { billStep: 15, billRound: 'up' }), 1);
+  assert.strictEqual(JB.billedHours(v('08:00', '08:01'), { billStep: 15, billRound: 'up' }), 0.25);
+  assert.strictEqual(JB.billedHours(v('08:00', '09:05'), { billStep: 15, billRound: 'nearest' }), 1);
+  assert.strictEqual(JB.billedHours(v('08:00', '09:08'), { billStep: 15, billRound: 'nearest' }), 1.25);
+  assert.strictEqual(JB.billedHours(v('08:00', '09:05'), { billStep: 0 }), 1.08);
+  assert.strictEqual(JB.billedHours(v('08:00', ''), { billStep: 15 }), null, 'no time out yet');
+});

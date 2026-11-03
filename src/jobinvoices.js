@@ -41,7 +41,7 @@ async function build(company, month) {
       if (!c.totals.total) continue;
       const have = await db.one('SELECT * FROM job_invoices WHERE company_id=$1 AND crew_id=$2 AND month=$3 AND lower(address)=lower($4)', [company.id, person.id, m, c.address]);
       const detail = { visits: c.visits, totals: c.totals, owner: c.owner, label: b.label,
-        rates: { laborRate: set.laborRate, chemMarkup: set.chemMarkup, matMarkup: set.matMarkup, visitCharge: set.visitCharge } };
+        rates: { billStep: set.billStep, laborRate: set.laborRate, chemMarkup: set.chemMarkup, matMarkup: set.matMarkup, visitCharge: set.visitCharge } };
       if (have) {
         kept.add(have.id);
         if (have.status !== 'draft') continue;
@@ -101,7 +101,7 @@ function invoiceHtml(inv, payTo, fromEmail) {
     <tr><td style="${td};font-weight:bold" colspan="2">${t.visits} visit${t.visits === 1 ? '' : 's'}</td><td style="${tr};font-weight:bold">${t.hours}</td>${showL ? `<td style="${tr};font-weight:bold">${money(t.labor)}</td>` : ''}
     ${showC ? `<td style="${tr};font-weight:bold">${money(t.chem)}</td>` : ''}${showM ? `<td style="${tr};font-weight:bold">${money(t.mat)}</td>` : ''}${showVisit ? `<td style="${tr};font-weight:bold">${money(t.visit)}</td>` : ''}<td style="${tr};font-size:17px;font-weight:bold">${money(t.total)}</td></tr>
   </table></div>
-  ${r.laborRate && showL ? `<p style="color:#666;font-size:12px;margin:8px 0 0">Labor at ${money(r.laborRate)} per hour on site.</p>` : ''}
+  ${r.laborRate && showL ? `<p style="color:#666;font-size:12px;margin:8px 0 0">Labor at ${money(r.laborRate)} per hour${r.billStep ? `, billed in ${r.billStep}-minute increments` : ''}.</p>` : ''}
   <p style="font-size:20px;text-align:right;margin:18px 0"><b>Amount due: ${money(t.total)}</b></p>
   ${payTo ? `<div style="border-top:1px solid #ddd;padding-top:12px;white-space:pre-wrap">${esc(payTo)}</div>` : ''}
   ${payTo && /reply/i.test(payTo) ? '' : '<p style="color:#777;font-size:12px;margin-top:18px">Questions? Reply to this email.</p>'}</div>`;

@@ -625,6 +625,7 @@
   $('ji-month').onchange = loadJobMonth;
   function drawJobMonth(b) {
     var s = b.settings, set = function (id, v) { if (document.activeElement !== $(id)) $(id).value = v == null ? '' : v; };
+    $('ji-step').value = (s.billStep == null ? 15 : s.billStep) + '|' + (s.billRound || 'up'); if (!$('ji-step').value) $('ji-step').value = '15|up';
     set('ji-rate', s.laborRate); set('ji-visit', s.visitCharge); set('ji-chem', s.chemMarkup || ''); set('ji-mat', s.matMarkup || ''); set('ji-due', s.dueDays); set('ji-prefix', s.prefix);
     set('ji-litem', s.laborItem); set('ji-citem', s.chemItem); set('ji-mitem', s.matItem); set('ji-vitem', s.visitItem);
     set('ji-from', s.fromName); set('ji-femail', s.fromEmail); set('ji-pay', s.payTo);
@@ -657,7 +658,7 @@
   }
   $('ji-form').onsubmit = function (e) {
     e.preventDefault();
-    api('PUT', '/api/admin/job-billing', { month: jiMonth(), crew: $('jb-crew').value, laborRate: $('ji-rate').value, visitCharge: $('ji-visit').value, chemMarkup: $('ji-chem').value, matMarkup: $('ji-mat').value,
+    api('PUT', '/api/admin/job-billing', { month: jiMonth(), crew: $('jb-crew').value, billStep: Number($('ji-step').value.split('|')[0]), billRound: $('ji-step').value.split('|')[1], laborRate: $('ji-rate').value, visitCharge: $('ji-visit').value, chemMarkup: $('ji-chem').value, matMarkup: $('ji-mat').value,
       dueDays: $('ji-due').value || 30, prefix: $('ji-prefix').value, fromName: $('ji-from').value, fromEmail: $('ji-femail').value, payTo: $('ji-pay').value, laborItem: $('ji-litem').value, chemItem: $('ji-citem').value, matItem: $('ji-mitem').value, visitItem: $('ji-vitem').value })
       .then(function (b) { drawJobMonth(b); status('ji-status', 'Saved.', 'ok'); }).catch(function (e2) { status('ji-status', e2.message, 'err'); });
   };

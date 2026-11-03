@@ -104,6 +104,7 @@
       </div>
       <div class="mb-grid">
         <div><label for="ji-rate">Labor rate ($ per hour on site)</label><input id="ji-rate" inputmode="decimal" placeholder="e.g. 65"></div>
+        <div><label for="ji-step">Bill time in</label><select id="ji-step"><option value="15|up">15-minute steps, rounded up</option><option value="15|nearest">15-minute steps, to the nearest</option><option value="30|up">30-minute steps, rounded up</option><option value="60|up">Whole hours, rounded up</option><option value="6|up">6-minute steps (tenths), rounded up</option><option value="0|up">Exact minutes</option></select></div>
         <div><label for="ji-visit">Charge per visit ($) <span class="hint">(optional)</span></label><input id="ji-visit" inputmode="decimal" placeholder="e.g. 25"></div>
         <div><label for="ji-chem">Markup on chemicals (%)</label><input id="ji-chem" inputmode="decimal" placeholder="0"></div>
         <div><label for="ji-mat">Markup on materials (%)</label><input id="ji-mat" inputmode="decimal" placeholder="0"></div>
@@ -124,7 +125,7 @@
       <div class="tablebox"><table class="roads"><thead><tr><th>Invoice</th><th>Client</th><th>Client email</th><th>From</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody id="ji-ibody"></tbody></table></div>
       <h3 style="margin:14px 0 0">Breakdown by client</h3>
       <div id="ji-clients"></div>
-      <p class="hint">Each property is one client and one invoice. The QuickBooks customer is the name on the meter at that address when it has one, otherwise the owner from the members list. Labor is hours on site × your rate; a visit with no time out has no labor. In QuickBooks: <b>Settings ⚙ → Import data → Invoices</b>. On the 1st of each month, last month’s invoices are made and emailed to you with a Review &amp; send button on each. Nothing goes to a client until you approve it.</p>
+      <p class="hint">Each property is one client and one invoice. The QuickBooks customer is the name on the meter at that address when it has one, otherwise the owner from the members list. Labor is each visit’s time on site, in the steps you pick (15 minutes, rounded up, unless you change it), × your rate; a visit with no time out has no labor. In QuickBooks: <b>Settings ⚙ → Import data → Invoices</b>. On the 1st of each month, last month’s invoices are made and emailed to you with a Review &amp; send button on each. Nothing goes to a client until you approve it.</p>
     </form>
     <form class="card" id="jf-form" hidden novalidate>
       <div class="row" style="justify-content:space-between"><h3 id="jf-title">Add a job</h3><button class="btn ghost small" type="button" id="jf-cancel">Cancel</button></div>

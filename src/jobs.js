@@ -148,7 +148,7 @@ async function addresses(companyId) {
 async function totalsFor(company, crewId) {
   const H = require('./hours'), JB = require('./jobbilling');
   const today = T.localNow(company.timezone).date, set = await JB.settings(company.id);
-  const bill = j => (set.laborRate && j.hours ? j.hours * set.laborRate : 0) + (j.chemCost || 0) * (1 + (set.chemMarkup || 0) / 100)
+  const bill = j => (set.laborRate && j.hours != null ? (JB.billedHours(j, set) || 0) * set.laborRate : 0) + (j.chemCost || 0) * (1 + (set.chemMarkup || 0) / 100)
     + (j.materialCost || 0) * (1 + (set.matMarkup || 0) / 100) + (set.visitCharge || 0);
   const r2 = n => Math.round(n * 100) / 100;
   async function range(from, to) {
