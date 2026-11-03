@@ -274,6 +274,27 @@ r.get('/jobs.csv', async (req, res) => {
     .send(J.csv(await J.forOwner(req.company.id, req.query)));
 });
 
+/* ------------------------------- QuickBooks Online ------------------------------- */
+const QB = require('../qbo');
+r.get('/quickbooks', async (req, res) => res.json(await QB.status(req.company.id)));
+r.get('/quickbooks/connect', async (req, res) => {
+  if (!QB.enabled()) return res.redirect('/admin#portal');
+  res.redirect(QB.authUrl(req.company.id));
+});
+r.get('/quickbooks/callback', async (req, res) => {
+  if (req.query.error) return res.redirect('/admin#qbo-error=' + encodeURIComponent(req.query.error === 'access_denied' ? 'You cancelled the QuickBooks sign-in.' : String(req.query.error)));
+  try {
+    await QB.finishConnect(req.company.id, String(req.query.code || ''), String(req.query.realmId || ''), String(req.query.state || ''));
+    await QB.sync(req.company.id).catch(e => console.error('[qbo] first sync', e.message));
+    res.redirect('/admin#qbo-ok');
+  } catch (e) { res.redirect('/admin#qbo-error=' + encodeURIComponent(e.message)); }
+});
+r.post('/quickbooks/sync', async (req, res) => {
+  try { res.json(await QB.sync(req.company.id)); } catch (e) { V.bad(e.message); }
+});
+r.put('/quickbooks/link', async (req, res) => { const b = req.body || {}; await QB.link(req.company.id, Number(b.meterId), b.qboId || null); res.json(await QB.status(req.company.id)); });
+r.post('/quickbooks/disconnect', async (req, res) => { await QB.disconnect(req.company.id); res.json(await QB.status(req.company.id)); });
+
 /* ------------------------------- owner portal ------------------------------- */
 const PO = require('../portal');
 r.get('/portal', async (req, res) => res.json(await PO.adminView(req.company)));

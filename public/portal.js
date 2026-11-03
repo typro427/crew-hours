@@ -130,7 +130,40 @@
       card.appendChild(ch);
     }
     box.appendChild(card);
+    if (p.qbo) box.appendChild(accountCard(p));
     drawReports(p); drawDocs(p);
+  }
+  // Balance, invoices and payments from QuickBooks
+  function accountCard(p) {
+    var a = p.qbo, card = el('section', 'card');
+    card.appendChild(el('h2', '', 'Your account'));
+    if (a.error) { card.appendChild(el('p', 'hint', "We couldn't reach the billing system just now. Try again later.")); return card; }
+    var bal = el('div', 'pt-bal' + (a.balance > 0 ? ' due' : ''));
+    bal.appendChild(el('span', 'pt-meta', a.balance > 0 ? 'Balance due' : 'Balance'));
+    bal.appendChild(el('div', 'pt-big', money(a.balance)));
+    if (!(a.balance > 0)) bal.appendChild(el('span', 'pt-meta', 'You\'re all paid up. Thank you!'));
+    card.appendChild(bal);
+    if (a.invoices.length) {
+      card.appendChild(el('div', 'pt-meta', 'Invoices'));
+      var l = el('div', 'pt-list');
+      a.invoices.forEach(function (i) {
+        var row = el('div', 'row'), left = el('div'), link = el('a', '', 'Invoice ' + (i.number || i.id));
+        link.href = API + '/invoice/' + p.meterId + '/' + i.id; link.target = '_blank'; link.rel = 'noopener';
+        left.appendChild(link); left.appendChild(el('span', '', pretty(i.date) + ' ' + i.date.slice(0, 4) + ' · ' + money(i.total) + (i.status !== 'paid' && i.due ? ' · due ' + pretty(i.due) : '')));
+        row.appendChild(left);
+        row.appendChild(el('span', 'pt-pill ' + (i.status === 'paid' ? 'done' : i.status === 'overdue' ? 'late' : 'open'), i.status === 'paid' ? 'Paid' : i.status === 'overdue' ? 'Past due ' + money(i.balance) : 'Open ' + money(i.balance)));
+        l.appendChild(row);
+      });
+      card.appendChild(l);
+    }
+    if (a.payments.length) {
+      card.appendChild(el('div', 'pt-meta', 'Payments received'));
+      var pl = el('div', 'pt-list');
+      a.payments.slice(0, 6).forEach(function (x) { var row = el('div', 'row'); row.appendChild(el('div', '', pretty(x.date) + ' ' + x.date.slice(0, 4))); row.appendChild(el('span', '', money(x.amount))); pl.appendChild(row); });
+      card.appendChild(pl);
+    }
+    card.appendChild(el('p', 'hint', 'From our QuickBooks records. Payments can take a day or two to show.'));
+    return card;
   }
   function drawReports(p) {
     var box = $('reports'); box.innerHTML = '';

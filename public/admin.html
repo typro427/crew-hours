@@ -158,6 +158,18 @@
         <p class="hint" style="margin:0">How owners sign in: they type their address, and a sign-in link goes to the email on the members list for that address. No email on file? They enter the account number from their bill (Act #) and you approve them below.</p>
         <span class="status" id="po-status" role="status"></span>
       </div>
+      <div class="card" id="qb-card">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div><h3>QuickBooks</h3><p class="hint" id="qb-sum" style="margin:0"></p></div>
+          <div class="row" style="gap:8px"><a class="btn small" id="qb-connect" href="/api/admin/quickbooks/connect">Connect to QuickBooks</a><button class="btn ghost small" type="button" id="qb-sync" hidden>Refresh now</button><button class="btn ghost small" type="button" id="qb-off" hidden>Disconnect</button></div>
+        </div>
+        <p class="hint" id="qb-setup" hidden style="margin:0"></p>
+        <p class="hint" style="margin:0">Owners see their balance, invoices (as PDFs) and payments on their portal page, straight from QuickBooks Online. Read-only: the app never changes anything in QuickBooks. Each meter is matched to a QuickBooks customer by the “QuickBooks customer” name on the meter; fix any that didn't match below.</p>
+        <span class="status" id="qb-status" role="status"></span>
+        <details id="qb-unl" hidden><summary id="qb-unl-sum"></summary>
+          <div class="tablebox"><table class="roads"><thead><tr><th>Seq</th><th>Customer on the meter</th><th>Address</th><th>QuickBooks customer</th></tr></thead><tbody id="qb-unl-body"></tbody></table></div>
+        </details>
+      </div>
       <div class="card">
         <h3>Waiting for you</h3>
         <div class="tablebox"><table class="roads"><thead><tr><th>Asked</th><th>Name</th><th>Email / phone</th><th>Address</th><th></th></tr></thead><tbody id="po-req"></tbody></table></div>

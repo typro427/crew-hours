@@ -339,6 +339,12 @@
       setTimeout(function () { $('gdrive-card').scrollIntoView({ behavior: 'smooth' }); }, 200);
       history.replaceState(null, '', '/admin#settings');
     }
+    else if (h === '#portal' || h === '#jobs') showTab(h.slice(1));
+    else if (/^#qbo/.test(h)) {
+      showTab('portal'); var qm = /^#qbo-error=(.*)$/.exec(h);
+      setTimeout(function () { if (h === '#qbo-ok') status('qb-status', 'QuickBooks connected. Customers are matched to meters below.', 'ok'); else if (qm) status('qb-status', decodeURIComponent(qm[1]), 'err'); $('qb-card').scrollIntoView({ behavior: 'smooth' }); }, 400);
+      history.replaceState(null, '', '/admin#portal');
+    }
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
@@ -574,8 +580,34 @@
   function loadPortal() {
     if (!po.addrs) { po.addrs = []; api('GET', '/api/admin/meters').then(function (r) { po.addrs = r.meters.filter(function (m) { return m.active && m.address; }).map(function (m) { return { id: m.id, address: m.address }; });
       var dl = $('po-addrs'); dl.innerHTML = ''; po.addrs.forEach(function (a) { var o = el('option'); o.value = a.address; dl.appendChild(o); }); }).catch(function () { po.addrs = null; }); }
+    loadQb();
     return api('GET', '/api/admin/portal').then(drawPortal).catch(function (e) { status('po-status', e.message, 'err'); });
   }
+  // ---- QuickBooks ----
+  function loadQb() { return api('GET', '/api/admin/quickbooks').then(drawQb).catch(function (e) { status('qb-status', e.message, 'err'); }); }
+  function drawQb(q) {
+    $('qb-connect').hidden = !q.setUp || q.connected; $('qb-sync').hidden = $('qb-off').hidden = !q.connected;
+    $('qb-setup').hidden = q.setUp;
+    $('qb-setup').textContent = 'Not set up yet: add QBO_CLIENT_ID and QBO_CLIENT_SECRET in Render (from developer.intuit.com), with this Redirect URI on the Intuit app: ' + q.redirectUri;
+    $('qb-sum').textContent = !q.connected ? 'Not connected.' : 'Connected to ' + (q.company || 'QuickBooks') + ' · ' + q.linked + ' of ' + q.total + ' meters matched' +
+      (q.syncedAt ? ' · updated ' + new Date(q.syncedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+    if (q.error) status('qb-status', q.error, 'err');
+    var box = $('qb-unl'), body = $('qb-unl-body'); body.innerHTML = '';
+    box.hidden = !q.connected || !q.unlinked.length;
+    $('qb-unl-sum').textContent = q.unlinked.length + ' meter' + (q.unlinked.length === 1 ? '' : 's') + ' not matched to a QuickBooks customer';
+    q.unlinked.forEach(function (m) {
+      var tr = el('tr'); [String(m.seq), m.qbCustomer || m.name, m.address].forEach(function (v) { tr.appendChild(el('td', '', v)); });
+      var td = el('td'), sel = el('select'), o = el('option', '', 'Pick…'); o.value = ''; sel.appendChild(o);
+      q.customers.forEach(function (c) { var x = el('option', '', c.name); x.value = c.id; sel.appendChild(x); });
+      sel.onchange = function () { api('PUT', '/api/admin/quickbooks/link', { meterId: m.id, qboId: sel.value }).then(function (r) { drawQb(r); status('qb-status', 'Matched.', 'ok'); }).catch(function (e) { status('qb-status', e.message, 'err'); }); };
+      td.appendChild(sel); tr.appendChild(td); body.appendChild(tr);
+    });
+  }
+  $('qb-sync').onclick = function () { status('qb-status', 'Refreshing from QuickBooks…'); api('POST', '/api/admin/quickbooks/sync').then(function (q) { drawQb(q); status('qb-status', 'Up to date.', 'ok'); }).catch(function (e) { status('qb-status', e.message, 'err'); }); };
+  $('qb-off').onclick = function () {
+    if ($('qb-off').textContent !== 'Tap again to disconnect') { $('qb-off').textContent = 'Tap again to disconnect'; setTimeout(function () { $('qb-off').textContent = 'Disconnect'; }, 3000); return; }
+    api('POST', '/api/admin/quickbooks/disconnect').then(function (q) { drawQb(q); status('qb-status', 'Disconnected. Owners no longer see balances.', 'ok'); }).catch(function (e) { status('qb-status', e.message, 'err'); });
+  };
   function meterFor(addr) { var a = (po.addrs || []).filter(function (x) { return x.address.toLowerCase() === String(addr || '').trim().toLowerCase(); })[0]; return a && a.id; }
   function when(t) { return t ? new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : ''; }
   function drawPortal(d) {

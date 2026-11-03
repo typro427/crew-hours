@@ -141,7 +141,8 @@ async function home(company, user) {
     const reports = (await db.q(`SELECT id, title, status, to_char(created_at,'YYYY-MM-DD') AS reported, to_char(done_at,'YYYY-MM-DD') AS fixed
       FROM tasks WHERE company_id=$1 AND kind='repair' AND portal_meter_id=$2 ORDER BY id DESC LIMIT 20`, [company.id, id]));
     const docs = await db.q("SELECT id, title, mime, size, to_char(created_at,'YYYY-MM-DD') AS added FROM portal_docs WHERE company_id=$1 AND meter_id=$2 ORDER BY id DESC", [company.id, id]);
-    props.push({ meterId: id, address: m.address, account: m.account, meterNo: m.meterNo || m.meter_no, quarters: quarters.slice(-8), current: cur, thisQuarter: M.label(thisQ), alert, reports, docs });
+    const qbo = await require('./qbo').forMeter(company.id, id);   // balance, invoices, payments from QuickBooks (null if not linked)
+    props.push({ meterId: id, address: m.address, account: m.account, meterNo: m.meterNo || m.meter_no, quarters: quarters.slice(-8), current: cur, thisQuarter: M.label(thisQ), alert, reports, docs, qbo });
   }
   const today = T.localNow(company.timezone).date;
   const notices = await db.q(`SELECT id, title, body, kind, to_char(starts,'YYYY-MM-DD') AS starts, to_char(ends,'YYYY-MM-DD') AS ends FROM portal_notices

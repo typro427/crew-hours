@@ -54,3 +54,7 @@
 .thumbs .x button{position:absolute;top:-6px;right:-6px;width:26px;height:26px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);cursor:pointer}
 .photo-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px dashed var(--line);border-radius:8px;font-weight:600;cursor:pointer;min-height:48px}
 .photo-btn input{display:none}
+.pt-bal{display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:10px;background:color-mix(in srgb, var(--ok) 10%, var(--surface))}
+.pt-bal.due{background:color-mix(in srgb, var(--accent) 16%, var(--surface))}
+.pt-pill.late{background:#b42318;color:#fff}
+.pt-list .row > div{display:flex;flex-direction:column;gap:2px;min-width:0}

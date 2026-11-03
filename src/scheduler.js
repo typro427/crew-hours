@@ -45,6 +45,10 @@ async function tick(now = new Date()) {
         const JB = require('./jobbilling'), pm = JB.prevMonth(date);
         if (await claim(c.id, 'jobs-month', pm + '-01')) await sendOrRelease(c.id, 'jobs-month', pm + '-01', () => require('./jobinvoices').sendMonthly(c, pm));
       }
+      // Nightly: refresh the QuickBooks customer list (names, balances) and meter links.
+      if (c.qbo_realm && hour >= BACKUP_HOUR && await claim(c.id, 'qbo-sync', date)) {
+        require('./qbo').sync(c.id).catch(e => console.error(`[qbo] company ${c.id}:`, e.message));
+      }
       // Nightly Google Drive backup. A failure is shown in the dashboard; it tries again the next night (or "Back up now").
       if (c.gdrive_token && GD.enabled() && hour >= BACKUP_HOUR && await claim(c.id, 'gdrive', date)) {
         GD.backupNow(c.id).catch(e => console.error(`[gdrive] company ${c.id}:`, e.message));

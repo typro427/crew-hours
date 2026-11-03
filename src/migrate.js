@@ -345,6 +345,24 @@ CREATE TABLE IF NOT EXISTS portal_docs (
   size       INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- QuickBooks Online: the connection (tokens sealed), customers (name + balance), and which customer each meter is.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_realm TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_refresh TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_access TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_access_exp TIMESTAMPTZ;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_company TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_synced_at TIMESTAMPTZ;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_error TEXT;
+CREATE TABLE IF NOT EXISTS qbo_customers (
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  qb_id      TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  balance    NUMERIC NOT NULL DEFAULT 0,
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  PRIMARY KEY (company_id, qb_id)
+);
+ALTER TABLE meters ADD COLUMN IF NOT EXISTS qbo_id TEXT;
+ALTER TABLE meters ADD COLUMN IF NOT EXISTS qbo_manual BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS portal_meter_id INTEGER REFERENCES meters(id) ON DELETE SET NULL;
 -- Meters are read quarterly: turn any monthly keys (YYYY-MM) into quarters (YYYY-Q#), keeping the latest read per quarter.
 DELETE FROM meter_reads a USING meter_reads b

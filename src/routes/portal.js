@@ -48,6 +48,16 @@ r.get('/:slug/report-photo/:id', company, P.requireUser, async (req, res) => {  
     WHERE p.id=$1 AND t.company_id=$2 AND a.user_id=$3`, [Number(req.params.id), req.company.id, req.portalUser.id]);
   p ? res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data) : res.status(404).end();
 });
+// A QuickBooks invoice PDF, only for one of their own properties and that property's customer.
+r.get('/:slug/invoice/:meterId/:invoiceId', company, P.requireUser, async (req, res) => {
+  const meterId = Number(req.params.meterId);
+  if (!(await db.one('SELECT 1 FROM portal_access WHERE user_id=$1 AND meter_id=$2', [req.portalUser.id, meterId]))) return res.status(404).end();
+  try {
+    const pdf = await require('../qbo').invoicePdf(req.company.id, meterId, String(req.params.invoiceId));
+    if (!pdf) return res.status(404).end();
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="invoice-${String(req.params.invoiceId).replace(/[^0-9]/g, '')}.pdf"`, 'Cache-Control': 'private, max-age=600' }).send(pdf);
+  } catch (e) { res.status(502).json({ error: "QuickBooks didn't answer. Try again in a minute." }); }
+});
 r.post('/:slug/logout', company, async (req, res) => { await P.signOut(req, res); res.json({ ok: true }); });
 
 module.exports = r;

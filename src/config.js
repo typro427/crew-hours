@@ -33,7 +33,16 @@ const config = {
   },
   // Lets your home computer download a nightly backup: GET /api/backup with this as a Bearer token.
   backupToken: env.BACKUP_TOKEN || '',
-  google: { clientId: env.GOOGLE_CLIENT_ID || '', clientSecret: env.GOOGLE_CLIENT_SECRET || '' }
+  google: { clientId: env.GOOGLE_CLIENT_ID || '', clientSecret: env.GOOGLE_CLIENT_SECRET || '' },
+  // QuickBooks Online (owners see their balance and invoices in the owner portal). Keys from developer.intuit.com.
+  // QBO_SANDBOX=1 uses Intuit's test companies.
+  qbo: {
+    clientId: env.QBO_CLIENT_ID || '', clientSecret: env.QBO_CLIENT_SECRET || '',
+    authUrl: env.QBO_AUTH_URL || 'https://appcenter.intuit.com/connect/oauth2',
+    tokenUrl: env.QBO_TOKEN_URL || 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
+    revokeUrl: env.QBO_REVOKE_URL || 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke',
+    apiBase: env.QBO_API_BASE || (env.QBO_SANDBOX === '1' ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com')
+  }
 };
 
 if (config.isProd && config.secret === 'dev-only-secret-change-me') {
