@@ -77,6 +77,7 @@ async function usageHistory(companyId, quarter, rows) {
 function alertFor(m, typical) {
   if (m.usage == null) return null;
   if (m.usage < 0) return { level: 'low' };
+  if (!m.previousQuarter) return null;   // first reading after the old sheet covers years: it's the starting point
   const perQ = m.usage / Math.max(1, m.gap || 1), jump = typical || 0;
   if (m.usual != null) {
     if (m.usual > 0 ? perQ >= 2 * m.usual && perQ - m.usual >= jump : jump > 0 && perQ >= jump)

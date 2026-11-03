@@ -6,7 +6,8 @@ const T = require('./time');
 const MT = require('./meters');
 
 const PER_FILE = 100;
-const DEFAULTS = { rate: null, item: 'Water usage', base: null, baseItem: 'Water base charge', dueDays: 30, prefix: 'W' };
+const DEFAULTS = { rate: null, item: 'Water usage', base: null, baseItem: 'Water base charge', dueDays: 30, prefix: 'W',
+  allowance: null, overRate: null, overItem: 'Water overage', unitGallons: 1 };   // e.g. $75 a quarter includes 5,000 gallons; over that, per gallon
 
 async function settings(companyId) {
   const c = await db.one('SELECT billing FROM companies WHERE id=$1', [companyId]);
@@ -29,7 +30,11 @@ async function save(companyId, b) {
     base: b.base !== undefined ? money(b.base, 'base charge') : cur.base,
     baseItem: s(b.baseItem, DEFAULTS.baseItem, 100),
     dueDays: b.dueDays !== undefined ? V.int(b.dueDays, 'Days until due', 0, 365) : cur.dueDays,
-    prefix: b.prefix !== undefined ? String(b.prefix || '').trim().replace(/[^A-Za-z0-9-]/g, '').slice(0, 8) : cur.prefix
+    prefix: b.prefix !== undefined ? String(b.prefix || '').trim().replace(/[^A-Za-z0-9-]/g, '').slice(0, 8) : cur.prefix,
+    allowance: b.allowance !== undefined ? (b.allowance === '' || b.allowance == null ? null : V.int(String(b.allowance).replace(/[,\s]/g, ''), 'Gallons included', 0, 10000000)) : cur.allowance,
+    overRate: b.overRate !== undefined ? money(b.overRate, 'overage rate') : cur.overRate,
+    overItem: s(b.overItem, DEFAULTS.overItem, 100),
+    unitGallons: b.unitGallons !== undefined ? (Number(b.unitGallons) > 0 && Number(b.unitGallons) <= 1000 ? Number(b.unitGallons) : V.bad('1 meter unit must be between 0.001 and 1000 gallons.')) : cur.unitGallons
   };
   await db.q('UPDATE companies SET billing=$1 WHERE id=$2', [JSON.stringify(out), companyId]);
   return out;
@@ -49,21 +54,30 @@ async function invoices(company, quarter) {
   const date = T.localNow(company.timezone).date, due = addDays(date, set.dueDays);
   const tag = rt.quarter.slice(2, 4) + rt.quarter.slice(5);   // 2026-Q4 -> 26Q4
   const list = [], skipped = [];
+  let overNoRate = 0, starting = 0;
+  const gal = n => Math.round(n * (Number(set.unitGallons) || 1));
   for (const m of rt.meters) {
     if (!m.meterNo) continue;
     const who = m.qbCustomer || m.name;
     if (m.current == null) { skipped.push({ seq: m.seq, name: who, why: 'Not read' }); continue; }
     if (m.usage == null || m.usage < 0) { skipped.push({ seq: m.seq, name: who, why: m.usage < 0 ? 'Lower than last reading' : 'No last reading' }); continue; }
-    const lines = [];
-    if (set.rate) lines.push({ item: set.item, desc: `${rt.label}: ${m.previous} to ${m.current}, meter ${m.meterNo}`, qty: m.usage, rate: set.rate, amount: cents(m.usage * set.rate) });
-    if (set.base) lines.push({ item: set.baseItem, desc: `${rt.label} base charge`, qty: 1, rate: set.base, amount: cents(set.base) });
+    const lines = [], gallons = gal(m.usage);
+    // The first reading after the old sheet covers years, not a quarter: it's the starting point (base charge only).
+    const first = !m.previousQuarter;
+    if (first) starting++;
+    if (set.rate && !first) lines.push({ item: set.item, desc: `${rt.label}: ${m.previous} to ${m.current}, meter ${m.meterNo}`, qty: m.usage, rate: set.rate, amount: cents(m.usage * set.rate) });
+    if (set.base) lines.push({ item: set.baseItem, desc: first ? `${rt.label}: starting reading ${m.current}, meter ${m.meterNo}` : `${rt.label}${set.allowance != null ? `, includes ${set.allowance.toLocaleString('en-US')} gallons` : ' base charge'}: ${gallons.toLocaleString('en-US')} gallons used`, qty: 1, rate: set.base, amount: cents(set.base) });
+    const over = !first && set.allowance != null ? Math.max(0, gallons - set.allowance) : 0;
+    if (over && set.overRate) lines.push({ item: set.overItem, desc: `${rt.label}: ${over.toLocaleString('en-US')} gallons over ${set.allowance.toLocaleString('en-US')}`, qty: over, rate: set.overRate, amount: cents(over * set.overRate) });
+    else if (over) overNoRate++;
     const total = cents(lines.reduce((a, l) => a + l.amount, 0));
     if (!total) { skipped.push({ seq: m.seq, name: who, why: 'Nothing to charge' }); continue; }
-    list.push({ no: `${set.prefix}${tag}-${String(m.seq).padStart(4, '0')}`, customer: who, qbMatched: !!m.qbCustomer, seq: m.seq, address: m.address, date, due, usage: m.usage, lines, total });
+    list.push({ no: `${set.prefix}${tag}-${String(m.seq).padStart(4, '0')}`, customer: who, qbMatched: !!m.qbCustomer, seq: m.seq, address: m.address, date, due, usage: m.usage, gallons, over, first, lines, total });
   }
   const parts = Math.ceil(list.length / PER_FILE);
   return { quarter: rt.quarter, label: rt.label, settings: set, ready: !!(set.rate || set.base), invoices: list, skipped, parts,
-           total: cents(list.reduce((a, i) => a + i.total, 0)), notMatched: list.filter(i => !i.qbMatched).length };
+           total: cents(list.reduce((a, i) => a + i.total, 0)), notMatched: list.filter(i => !i.qbMatched).length,
+           overNoRate, starting, overCount: list.filter(i => i.over > 0).length };
 }
 
 /** One part (1-based) as a CSV for QuickBooks. */

@@ -556,11 +556,17 @@ test('high water use: flagged against the meter\'s usual use, report a leak from
   await O('POST', `/api/admin/meters/${ms[1].id}/read`, { reading: '1700', quarter: q });
   d = (await O('GET', '/api/admin/meters')).body;
   assert.strictEqual(by(ms[1].id).alert.level, 'high');
-  // a meter with no history: compared with a typical meter (4x)
+  // the first reading after the old sheet is the starting point (it covers years): never flagged
   const fresh = (await O('POST', '/api/admin/meters', { name: 'New, Nina', address: '500 Deer Meadow', meterNo: 'N1', startReading: '0' })).body.id;
   await O('POST', `/api/admin/meters/${fresh}/read`, { reading: '900', quarter: q });
   d = (await O('GET', '/api/admin/meters')).body;
-  assert.strictEqual(by(fresh).alert.basis, 'typical');
+  assert.strictEqual(by(fresh).alert, null);
+  // a meter with one reading last quarter and no usual use yet: compared with a typical meter (4x)
+  const fresh2 = (await O('POST', '/api/admin/meters', { name: 'New, Ned', address: '501 Deer Meadow', meterNo: 'N2' })).body.id;
+  await O('POST', `/api/admin/meters/${fresh2}/read`, { reading: '100', quarter: back(q, 1) });
+  await O('POST', `/api/admin/meters/${fresh2}/read`, { reading: '900', quarter: q });
+  d = (await O('GET', '/api/admin/meters')).body;
+  assert.strictEqual(by(fresh2).alert.basis, 'typical');
   // old quarter not allowed from the crew app: falls back to this quarter
   r = await jake('POST', `/meters/${ms[3].id}/read`, { reading: '1300', quarter: '2020-Q1' });
   assert.strictEqual(r.status, 200);
@@ -587,6 +593,18 @@ test('QuickBooks billing: invoices per read meter, split 100 per file, settings 
   assert.match(text, /"Owner 0",".{10}",".{10}",.*"Water usage",.*"90","0.5","45.00"/);
   assert.match(text, /"Water base charge",.*"1","10","10.00"/);
   assert.strictEqual((await O2('GET', '/api/admin/billing')).body.invoices.length, 0, 'other company');
+  // from January: $75 a quarter includes 5,000 gallons; over that, per gallon (rate set later). Meters read in gallons x 10 here.
+  b = (await O('PUT', '/api/admin/billing', { rate: '', base: '75', allowance: '5,000', overRate: '', unitGallons: 10 })).body;
+  const o0 = b.invoices.find(i => i.customer === 'Owner 0');   // used 90 units = 900 gallons
+  assert.strictEqual(o0.gallons, 900); assert.strictEqual(o0.total, 75); assert.strictEqual(o0.over, 0);
+  const nina = b.invoices.find(i => i.customer === 'New, Nina');   // first reading: the starting point, base charge only
+  assert.ok(nina.first); assert.strictEqual(nina.total, 75);
+  const ned = b.invoices.find(i => i.customer === 'New, Ned');   // 800 units = 8,000 gallons: 3,000 over, no rate yet
+  assert.strictEqual(ned.over, 3000); assert.strictEqual(ned.total, 75); assert.ok(b.overNoRate >= 1);
+  b = (await O('PUT', '/api/admin/billing', { overRate: '0.01' })).body;
+  const ned2 = b.invoices.find(i => i.customer === 'New, Ned');
+  assert.strictEqual(ned2.total, 105); assert.strictEqual(ned2.lines[1].item, 'Water overage'); assert.strictEqual(ned2.lines[1].qty, 3000);
+  assert.match((await O('GET', '/api/admin/billing.csv')).body.toString(), /"Water overage",".*3,000 gallons over 5,000","3000","0.01","30.00"/);
 });
 
 test('address jobs: off by default, time in/out, costs, receipts, owner from the members list; hours can be switched off', async () => {

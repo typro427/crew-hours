@@ -177,10 +177,14 @@
           <div><h3>QuickBooks billing</h3><p class="hint" id="bl-sum" style="margin:0"></p></div>
         </div>
         <div class="mb-grid">
-          <div><label for="bl-rate">Rate per unit used ($)</label><input id="bl-rate" inputmode="decimal" placeholder="e.g. 0.012"></div>
+          <div><label for="bl-rate">Rate on all water used ($ per meter unit) <span class="hint">(leave blank for base + overage)</span></label><input id="bl-rate" inputmode="decimal" placeholder="blank"></div>
           <div><label for="bl-item">QuickBooks product/service</label><input id="bl-item" maxlength="100" placeholder="Water usage"></div>
-          <div><label for="bl-base">Base charge per quarter ($) <span class="hint">(optional)</span></label><input id="bl-base" inputmode="decimal" placeholder="e.g. 45"></div>
+          <div><label for="bl-base">Base charge per quarter ($)</label><input id="bl-base" inputmode="decimal" placeholder="e.g. 75"></div>
           <div><label for="bl-baseitem">Base charge product/service</label><input id="bl-baseitem" maxlength="100" placeholder="Water base charge"></div>
+          <div><label for="bl-allow">Gallons included in the base charge</label><input id="bl-allow" inputmode="numeric" placeholder="e.g. 5,000"></div>
+          <div><label for="bl-over">Overage rate ($ per gallon over)</label><input id="bl-over" inputmode="decimal" placeholder="not set yet"></div>
+          <div><label for="bl-overitem">Overage product/service</label><input id="bl-overitem" maxlength="100" placeholder="Water overage"></div>
+          <div><label for="bl-unit">1 meter unit = how many gallons</label><input id="bl-unit" inputmode="decimal" placeholder="1"></div>
           <div><label for="bl-due">Days until due</label><input id="bl-due" inputmode="numeric" placeholder="30"></div>
           <div><label for="bl-prefix">Invoice # starts with</label><input id="bl-prefix" maxlength="8" placeholder="W"></div>
         </div>
