@@ -45,6 +45,13 @@ async function tick(now = new Date()) {
         const JB = require('./jobbilling'), pm = JB.prevMonth(date);
         if (await claim(c.id, 'jobs-month', pm + '-01')) await sendOrRelease(c.id, 'jobs-month', pm + '-01', () => require('./jobinvoices').sendMonthly(c, pm));
       }
+      // Weather reminders: check the forecast at 6 AM and 3 PM.
+      if (!paused && c.weather_lat != null) {
+        const WX = require('./weather');
+        for (const h of WX.CHECK_HOURS) {
+          if (hour >= h && hour < h + 3 && await claim(c.id, 'weather-' + h, date)) WX.run(c).catch(e => console.error(`[weather] company ${c.id}:`, e.message));
+        }
+      }
       // Nightly: refresh the QuickBooks customer list (names, balances) and meter links.
       if (c.qbo_realm && hour >= BACKUP_HOUR && await claim(c.id, 'qbo-sync', date)) {
         require('./qbo').sync(c.id).catch(e => console.error(`[qbo] company ${c.id}:`, e.message));

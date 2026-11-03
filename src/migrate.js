@@ -345,6 +345,28 @@ CREATE TABLE IF NOT EXISTS portal_docs (
   size       INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Weather reminders: the company's location, and rules (low below 40°F -> check the well house heaters...).
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_lat NUMERIC;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_lon NUMERIC;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_label TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_grid TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_seeded BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS weather_rules (
+  id            SERIAL PRIMARY KEY,
+  company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  metric        TEXT NOT NULL,
+  threshold     NUMERIC NOT NULL,
+  hours         INTEGER NOT NULL DEFAULT 24,
+  title         TEXT NOT NULL,
+  details       TEXT NOT NULL DEFAULT '',
+  assigned_to   INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  priority      TEXT NOT NULL DEFAULT 'high',
+  email_crew    BOOLEAN NOT NULL DEFAULT FALSE,
+  active        BOOLEAN NOT NULL DEFAULT TRUE,
+  position      INTEGER NOT NULL DEFAULT 0,
+  last_fired_at TIMESTAMPTZ,
+  last_note     TEXT NOT NULL DEFAULT ''
+);
 -- QuickBooks Online: the connection (tokens sealed), customers (name + balance), and which customer each meter is.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_realm TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS qbo_refresh TEXT;

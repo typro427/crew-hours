@@ -274,6 +274,22 @@ r.get('/jobs.csv', async (req, res) => {
     .send(J.csv(await J.forOwner(req.company.id, req.query)));
 });
 
+/* ------------------------------- weather reminders ------------------------------- */
+const WX = require('../weather');
+r.get('/weather', async (req, res) => res.json(await WX.status(req.company)));
+r.put('/weather/location', async (req, res) => { await WX.setLocation(req.company, req.body || {}); res.json(await WX.status(req.company)); });
+r.post('/weather/rules', async (req, res) => { await WX.saveRule(req.company.id, null, req.body || {}); res.json(await WX.status(req.company)); });
+r.put('/weather/rules/:id', async (req, res) => { await WX.saveRule(req.company.id, Number(req.params.id), req.body || {}); res.json(await WX.status(req.company)); });
+r.delete('/weather/rules/:id', async (req, res) => { await WX.removeRule(req.company.id, Number(req.params.id)); res.json(await WX.status(req.company)); });
+r.get('/weather/forecast', async (req, res) => {
+  try { res.json(await WX.preview(req.company)); } catch (e) { if (e instanceof T.InputError) throw e; V.bad("Couldn't get the forecast right now: " + e.message); }
+});
+r.post('/weather/run', async (req, res) => {   // check now and act (same as the 6 AM / 3 PM check)
+  if (A.limited('wxrun:' + req.company.id, 10, 60 * 60e3)) return res.status(429).json({ error: 'Too many checks. Try again in an hour.' });
+  A.fail('wxrun:' + req.company.id, 60 * 60e3);
+  try { res.json({ fired: await WX.run(req.company), ...(await WX.status(req.company)) }); } catch (e) { if (e instanceof T.InputError) throw e; V.bad("Couldn't get the forecast right now: " + e.message); }
+});
+
 /* ------------------------------- QuickBooks Online ------------------------------- */
 const QB = require('../qbo');
 r.get('/quickbooks', async (req, res) => res.json(await QB.status(req.company.id)));

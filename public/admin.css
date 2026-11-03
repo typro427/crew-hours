@@ -141,3 +141,13 @@ table.roads td.num{font-variant-numeric:tabular-nums}
 .pri-low{background:#6b7280}
 details.bulk summary{cursor:pointer;font-weight:700}
 details.bulk textarea{width:100%;margin:10px 0}
+.wx-table td{vertical-align:top}.wx-table select,.wx-table input:not([type=checkbox]){min-width:0}.wx-table tr.wx-new td{background:color-mix(in srgb, var(--accent) 6%, transparent)}.wx-hit{color:var(--err);font-weight:700}
+.wx-rules{display:flex;flex-direction:column}
+.wx-rule{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-top:1px solid var(--line)}
+.wx-rule.wx-new{background:color-mix(in srgb, var(--accent) 6%, transparent);padding:12px;border-radius:10px;border-top:0;margin-top:6px}
+.wx-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.wx-line select,.wx-line input:not([type=checkbox]){width:auto}
+.wx-w{color:var(--muted);font-size:14px}
+.wx-title{flex:1 1 280px;display:flex;flex-direction:column;gap:2px}
+.wx-title input{width:100%}
+.wx-acts{display:flex;gap:6px;margin-left:auto}

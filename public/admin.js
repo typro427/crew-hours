@@ -28,7 +28,7 @@
     document.querySelectorAll('.tabs button').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-tab') === name); });
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
     if (name === 'crew') loadCrew();
-    if (name === 'tasks') loadTasks();
+    if (name === 'tasks') { loadTasks(); loadWeather(); }
     if (name === 'roads') loadRoads();
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
@@ -574,6 +574,74 @@
     return me;
   }
   function me_today() { return me.today; }
+
+  /* --------------------------- weather reminders --------------------------- */
+  var wx = { data: null, crew: [] };
+  function loadWeather() {
+    return Promise.all([api('GET', '/api/admin/weather'), api('GET', '/api/admin/crew')]).then(function (r) { wx.crew = r[1].crew.filter(function (c) { return c.active; }); drawWeather(r[0]); if (r[0].location) loadForecast(); })
+      .catch(function (e) { status('wx-status', e.message, 'err'); });
+  }
+  function loadForecast() {
+    $('wx-now').textContent = 'Getting the forecast…';
+    api('GET', '/api/admin/weather/forecast').then(function (f) {
+      var parts = ['low_below', 'high_above', 'rain_above', 'snow_above', 'gust_above'].map(function (k) { return f.next24[k] && f.next24[k].text; }).filter(Boolean);
+      $('wx-now').textContent = 'Next 24 hours: ' + (parts.join(' · ') || 'no forecast yet');
+      f.rules.forEach(function (x) { var c = document.querySelector('[data-wx-now="' + x.id + '"]'); if (c) { c.textContent = x.now + (x.would ? ' → goes off' : ''); c.className = 'hint' + (x.would ? ' wx-hit' : ''); } });
+    }).catch(function (e) { $('wx-now').textContent = e.message; });
+  }
+  function drawWeather(d) {
+    wx.data = d;
+    $('wx-where').textContent = d.location ? '(now: ' + d.location.label + ')' : '(not set yet)';
+    $('wx-run').disabled = !d.location;
+    var body = $('wx-rules'); body.innerHTML = '';
+    d.rules.concat([null]).forEach(function (r) {
+      var tr = el('div', 'wx-rule' + (r ? '' : ' wx-new')), l1 = el('div', 'wx-line'), l2 = el('div', 'wx-line'), cur = l1;
+      if (!r) tr.appendChild(el('b', 'wx-add', 'Add a reminder'));
+      tr.appendChild(l1); tr.appendChild(l2);
+      function word(t) { cur.appendChild(el('span', 'wx-w', t)); }
+      function cell(n) { cur.appendChild(n); return n; }
+      word('When the forecast shows');
+      var met = cell(el('select')); Object.keys(d.metrics).forEach(function (k) { var o = el('option', '', d.metrics[k].label); o.value = k; met.appendChild(o); });
+      var thr = el('input'); thr.inputMode = 'decimal'; thr.style.width = '70px'; var tw = el('span'); tw.appendChild(thr); var unit = el('span', 'hint', ''); tw.appendChild(unit); cell(tw);
+      function setUnit() { unit.textContent = ' ' + d.metrics[met.value].unit; } met.onchange = setUnit;
+      word('in the next');
+      var hrs = cell(el('select')); [12, 24, 36, 48, 72].forEach(function (h) { var o = el('option', '', h + ' hours'); o.value = h; hrs.appendChild(o); });
+      cur = l2; word('The crew should');
+      var tt = el('div', 'wx-title'), title = el('input'); title.maxLength = 120; title.placeholder = 'e.g. Check the heaters in all the well houses'; tt.appendChild(title);
+      var now = el('div', 'hint'); if (r) now.setAttribute('data-wx-now', r.id); tt.appendChild(now);
+      if (r && r.lastFiredAt) tt.appendChild(el('div', 'hint', 'Last went off ' + new Date(r.lastFiredAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + (r.lastNote ? ': ' + r.lastNote : '')));
+      cell(tt); word('for');
+      var who = cell(el('select')); var o0 = el('option', '', 'Anyone'); o0.value = ''; who.appendChild(o0); wx.crew.forEach(function (c) { var o = el('option', '', c.name); o.value = c.id; who.appendChild(o); });
+      word('priority');
+      var pri = cell(el('select')); [['urgent', 'Urgent'], ['high', 'High'], ['normal', 'Normal'], ['low', 'Low']].forEach(function (p) { var o = el('option', '', p[1]); o.value = p[0]; pri.appendChild(o); });
+      var em = el('input'); em.type = 'checkbox'; var eml = el('label', 'check'); eml.appendChild(em); eml.appendChild(document.createTextNode(' Email crew')); cell(eml);
+      var on = el('input'); on.type = 'checkbox'; var onl = el('label', 'check'); onl.appendChild(on); onl.appendChild(document.createTextNode(' On')); cell(onl);
+      met.value = r ? r.metric : 'low_below'; thr.value = r ? r.threshold : ''; hrs.value = r ? r.hours : 24; title.value = r ? r.title : '';
+      who.value = r && r.assignedTo ? r.assignedTo : ''; pri.value = r ? r.priority : 'high'; em.checked = !!(r && r.emailCrew); on.checked = r ? r.active : true; setUnit();
+      var act = el('span', 'wx-acts'), sv = el('button', 'btn small', r ? 'Save' : 'Add'); sv.type = 'button'; act.appendChild(sv);
+      sv.onclick = function () {
+        api(r ? 'PUT' : 'POST', '/api/admin/weather/rules' + (r ? '/' + r.id : ''), { metric: met.value, threshold: thr.value, hours: Number(hrs.value), title: title.value, assignedTo: who.value || null, priority: pri.value, emailCrew: em.checked, active: on.checked })
+          .then(function (x) { drawWeather(x); status('wx-status', r ? 'Saved.' : 'Added.', 'ok'); if (x.location) loadForecast(); }).catch(function (e) { status('wx-status', e.message, 'err'); });
+      };
+      if (r) { var del = el('button', 'btn ghost small', 'Delete'); del.type = 'button'; act.appendChild(del);
+        del.onclick = function () { if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+          api('DELETE', '/api/admin/weather/rules/' + r.id).then(drawWeather).catch(function (e) { status('wx-status', e.message, 'err'); }); }; }
+      l2.appendChild(act); body.appendChild(tr);
+    });
+  }
+  $('wx-loc').onsubmit = function (e) {
+    e.preventDefault(); status('wx-status', 'Looking it up…');
+    api('PUT', '/api/admin/weather/location', { address: $('wx-addr').value, lat: $('wx-lat').value, lon: $('wx-lon').value })
+      .then(function (d) { drawWeather(d); status('wx-status', 'Location set: ' + d.location.label, 'ok'); $('wx-addr').value = ''; $('wx-lat').value = ''; $('wx-lon').value = ''; loadForecast(); })
+      .catch(function (e2) { status('wx-status', e2.message, 'err'); });
+  };
+  $('wx-run').onclick = function () {
+    status('wx-status', 'Checking…');
+    api('POST', '/api/admin/weather/run').then(function (d) {
+      drawWeather(d); loadForecast(); if (typeof loadTasks === 'function') loadTasks();
+      status('wx-status', d.fired.length ? d.fired.length + ' reminder' + (d.fired.length === 1 ? '' : 's') + ' went off and ' + (d.fired.length === 1 ? 'is' : 'are') + ' on the Tasks tab: ' + d.fired.map(function (f) { return f.title; }).join('; ') : 'Nothing to do: the forecast doesn\'t cross any reminder (or it already went off today).', 'ok');
+    }).catch(function (e) { status('wx-status', e.message, 'err'); });
+  };
 
   /* --------------------------- owner portal --------------------------- */
   var po = { data: null, addrs: null, editing: null };

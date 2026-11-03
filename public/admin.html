@@ -80,6 +80,24 @@
 
   <!-- TASKS (drawn by admin.js) -->
   <section data-panel="tasks" class="panel" hidden id="tasks-panel"></section>
+  <section data-panel="tasks" class="panel" hidden>
+    <div class="card" id="wx-card">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><h3>Weather reminders</h3><p class="hint" style="margin:0">At 6 AM and 3 PM the app checks the National Weather Service forecast. When a reminder below is crossed, it puts a task on the crew's Tasks tab (due today) and emails you.</p></div>
+        <button class="btn small" type="button" id="wx-run">Check the forecast now</button>
+      </div>
+      <form class="row" id="wx-loc" novalidate style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1 1 320px"><label for="wx-addr">Location <span class="hint" id="wx-where"></span></label><input id="wx-addr" placeholder="Street address, town, state, ZIP (e.g. 1517 Deerfield Way, LaFollette, TN 37766)"></div>
+        <div style="flex:0 1 120px"><label for="wx-lat">or latitude</label><input id="wx-lat" inputmode="decimal" placeholder="36.42"></div>
+        <div style="flex:0 1 120px"><label for="wx-lon">longitude</label><input id="wx-lon" inputmode="decimal" placeholder="-84.05"></div>
+        <button class="btn ghost small" type="submit">Set location</button>
+      </form>
+      <div id="wx-now" class="hint"></div>
+      <span class="status" id="wx-status" role="status"></span>
+      <div id="wx-rules" class="wx-rules"></div>
+      <p class="hint" style="margin:0">A reminder goes off at most once a day. Crew members get the email only if they have an email in Crew &amp; PINs and “Email crew” is ticked.</p>
+    </div>
+  </section>
 
   <!-- ADDRESS JOBS -->
   <section data-panel="jobs" class="panel" hidden>
