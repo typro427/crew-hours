@@ -37,6 +37,8 @@ app.use('/api/admin/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/members/import', express.json({ limit: '20mb' }));
 app.use('/api/admin/meters/import', express.json({ limit: '5mb' }));
 app.use('/api/admin/meters/import-xlsx', express.raw({ type: () => true, limit: '15mb' }));
+app.use('/api/admin/portal/docs', express.raw({ type: () => true, limit: '13mb' }));
+app.use(/^\/api\/p\/[^/]+\/report$/, express.json({ limit: '25mb' }));   // photos
 app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
 app.use(/^\/api\/admin\/(tasks|jobs)(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
 app.use(express.json({ limit: '100kb' }));
@@ -53,6 +55,7 @@ app.use('/api', require('./routes/account'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/billing', billing.router);
 app.use('/api/c', require('./routes/crew'));
+app.use('/api/p', require('./routes/portal'));
 
 // Nightly backup for your own computer: curl -H "Authorization: Bearer $BACKUP_TOKEN" https://.../api/backup
 app.get('/api/backup', async (req, res, next) => {
@@ -68,6 +71,9 @@ app.get('/api/backup', async (req, res, next) => {
       tasks: await db.q('SELECT * FROM tasks ORDER BY company_id, id'),
       taskUpdates: await db.q('SELECT * FROM task_updates ORDER BY company_id, id'),
       jobs: await db.q('SELECT * FROM jobs ORDER BY company_id, id'),
+      portalUsers: await db.q('SELECT u.id, u.company_id, u.email, u.name, u.created_at, u.last_seen, COALESCE(json_agg(a.meter_id) FILTER (WHERE a.meter_id IS NOT NULL), \'[]\') AS meters FROM portal_users u LEFT JOIN portal_access a ON a.user_id=u.id GROUP BY u.id ORDER BY u.company_id, u.id'),
+      portalNotices: await db.q('SELECT * FROM portal_notices ORDER BY company_id, id'),
+      portalDocs: await db.q('SELECT id, company_id, meter_id, title, mime, size, created_at FROM portal_docs ORDER BY company_id, id'),
       members: await db.q('SELECT company_id, data FROM members ORDER BY company_id, position, id'),
       roads: await db.q('SELECT id, company_id, kind, name, position, active, length_mi, p_road, p_ditch, p_trees, surface, notes, reading_ids FROM roads ORDER BY company_id, kind, position'),
       roadChecks: await db.q("SELECT id, company_id, road_id, crew_id, to_char(day, 'YYYY-MM-DD') AS day, notes, created_at FROM road_mows ORDER BY company_id, id"),
@@ -125,6 +131,34 @@ app.post('/inv/:id/:token', express.urlencoded({ extended: false, limit: '10kb' 
     const x = await invFor(req); if (!x) return res.status(404).type('html').send(invPage('Not found', '<p style="padding:24px">That invoice link is not valid.</p>'));
     try { await JI.approveSend(x.company, x.inv.id, 'email link', (req.body || {}).email); x.inv = await JI.getFull(x.company.id, x.inv.id); res.type('html').send(await invView(x, 'Approved and sent.')); }
     catch (e) { if (!e.expose && !(e instanceof T.InputError)) throw e; x.inv = await JI.getFull(x.company.id, x.inv.id); res.status(400).type('html').send(await invView(x, e.message, true)); }
+  } catch (e) { next(e); }
+});
+
+// Owner portal pages: /p/<link>/ (sign in or home), /p/<link>/in/<token> (the emailed sign-in link).
+const portalHtml = fs.readFileSync(path.join(PUB, 'portal.html'), 'utf8');
+app.get('/p/:slug', async (req, res, next) => {
+  try {
+    const c = await db.one('SELECT name, slug, portal_on FROM companies WHERE slug=$1', [String(req.params.slug).toLowerCase()]);
+    if (!c || !c.portal_on) return res.status(404).type('html').send('<p style="font-family:sans-serif;padding:24px">This owner portal is not open yet.</p>');
+    if (!req.path.endsWith('/')) return res.redirect(301, `/p/${c.slug}/`);
+    const esc = s => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    res.set('Cache-Control', 'no-store').type('html').send(portalHtml.replace(/__COMPANY__/g, esc(c.name)).replace(/__SLUG__/g, c.slug));
+  } catch (e) { next(e); }
+});
+app.get('/p/:slug/in/:token', async (req, res, next) => {
+  try {
+    const c = await db.one('SELECT * FROM companies WHERE slug=$1', [String(req.params.slug).toLowerCase()]);
+    if (!c || !c.portal_on) return res.status(404).send('Not found');
+    const PO = require('./portal');
+    // Email link-checkers open links too, so the sign-in happens on a tap, not on the page load.
+    if (req.query.go !== '1') return res.set('Cache-Control', 'no-store').type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Sign in</title>
+      <body style="font-family:Arial,sans-serif;background:#f3f2ee;margin:0"><div style="max-width:420px;margin:15vh auto;background:#fff;border:1px solid #ddd;border-radius:12px;padding:24px;text-align:center">
+      <h2 style="margin:0 0 8px">${c.name.replace(/[&<>"]/g, '')}</h2><p style="color:#555">Owner portal</p>
+      <form method="get"><input type="hidden" name="go" value="1"><button style="font-size:18px;font-weight:bold;padding:14px 22px;border:0;border-radius:8px;background:#e3a008;color:#1f2328;cursor:pointer">Sign in</button></form></div></body>`);
+    const s = await PO.useLink(c, String(req.params.token));
+    if (!s) return res.status(400).type('html').send(`<p style="font-family:sans-serif;padding:24px">That sign-in link was already used or has expired. <a href="/p/${c.slug}/">Get a new one</a>.</p>`);
+    PO.cookie(res, s);
+    res.redirect(303, `/p/${c.slug}/`);
   } catch (e) { next(e); }
 });
 

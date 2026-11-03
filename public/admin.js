@@ -34,6 +34,7 @@
     if (name === 'members') loadMembers();
     if (name === 'orders') orderPanel.load();
     if (name === 'jobs') loadJobs();
+    if (name === 'portal') loadPortal();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -567,6 +568,88 @@
     return me;
   }
   function me_today() { return me.today; }
+
+  /* --------------------------- owner portal --------------------------- */
+  var po = { data: null, addrs: null, editing: null };
+  function loadPortal() {
+    if (!po.addrs) { po.addrs = []; api('GET', '/api/admin/meters').then(function (r) { po.addrs = r.meters.filter(function (m) { return m.active && m.address; }).map(function (m) { return { id: m.id, address: m.address }; });
+      var dl = $('po-addrs'); dl.innerHTML = ''; po.addrs.forEach(function (a) { var o = el('option'); o.value = a.address; dl.appendChild(o); }); }).catch(function () { po.addrs = null; }); }
+    return api('GET', '/api/admin/portal').then(drawPortal).catch(function (e) { status('po-status', e.message, 'err'); });
+  }
+  function meterFor(addr) { var a = (po.addrs || []).filter(function (x) { return x.address.toLowerCase() === String(addr || '').trim().toLowerCase(); })[0]; return a && a.id; }
+  function when(t) { return t ? new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : ''; }
+  function drawPortal(d) {
+    po.data = d;
+    $('po-on').checked = d.on; $('po-link').textContent = d.link; $('po-open').href = d.link; $('po-open').hidden = !d.on;
+    var rb = $('po-req'); rb.innerHTML = ''; var pending = d.requests.filter(function (x) { return x.status === 'pending'; });
+    $('po-req-empty').hidden = pending.length > 0;
+    pending.forEach(function (x) {
+      var tr = el('tr'); [when(x.createdAt), x.name, x.email + (x.phone ? ' · ' + x.phone : ''), x.address + (x.account ? ' (Act # ' + x.account + ')' : '')].forEach(function (v) { tr.appendChild(el('td', '', v)); });
+      var td = el('td'), ok = el('button', 'btn small', 'Approve'), no = el('button', 'btn ghost small', 'Deny'); ok.type = no.type = 'button';
+      ok.onclick = function () { api('POST', '/api/admin/portal/requests/' + x.id, { approve: true }).then(function (r) { drawPortal(r); status('po-status', 'Approved. ' + x.email + ' got a sign-in link.', 'ok'); }).catch(function (e) { status('po-status', e.message, 'err'); }); };
+      no.onclick = function () { api('POST', '/api/admin/portal/requests/' + x.id, { approve: false }).then(drawPortal).catch(function (e) { status('po-status', e.message, 'err'); }); };
+      td.appendChild(ok); td.appendChild(no); tr.appendChild(td); rb.appendChild(tr);
+    });
+    var KIND = { info: 'Notice', shutoff: 'Shutoff', boil: 'Boil water', alert: 'Important' };
+    var nb = $('po-notices'); nb.innerHTML = '';
+    d.notices.forEach(function (n) {
+      var tr = el('tr'); [KIND[n.kind] || n.kind, n.title, n.starts + (n.ends ? ' – ' + n.ends : ' →'), n.emailedTo == null ? '' : n.emailedTo + ' owners'].forEach(function (v) { tr.appendChild(el('td', '', v)); });
+      var td = el('td'), ed = el('button', 'btn ghost small', 'Edit'), del = el('button', 'btn ghost small', 'Delete'); ed.type = del.type = 'button';
+      ed.onclick = function () { po.editing = n.id; $('po-n-kind').value = n.kind; $('po-n-starts').value = n.starts; $('po-n-ends').value = n.ends || ''; $('po-n-head').value = n.title; $('po-n-body').value = n.body; $('po-n-email').checked = false; $('po-n-save').textContent = 'Save notice'; $('po-n-cancel').hidden = false; $('po-n-title').textContent = 'Edit notice'; $('po-n-head').focus(); };
+      del.onclick = function () { if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+        api('DELETE', '/api/admin/portal/notices/' + n.id).then(drawPortal).catch(function (e) { status('po-n-status', e.message, 'err'); }); };
+      td.appendChild(ed); td.appendChild(del); tr.appendChild(td); nb.appendChild(tr);
+    });
+    var db_ = $('po-docs'); db_.innerHTML = '';
+    d.docs.forEach(function (x) {
+      var tr = el('tr'), t = el('td'), a = el('a', '', x.title); a.href = '/api/admin/portal/docs/' + x.id; a.target = '_blank'; a.rel = 'noopener'; t.appendChild(a); tr.appendChild(t);
+      [x.address || 'Everyone', Math.max(1, Math.round(x.size / 1024)) + ' KB', x.added].forEach(function (v) { tr.appendChild(el('td', '', v)); });
+      var td = el('td'), del = el('button', 'btn ghost small', 'Delete'); del.type = 'button';
+      del.onclick = function () { if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Delete'; }, 3000); return; }
+        api('DELETE', '/api/admin/portal/docs/' + x.id).then(drawPortal).catch(function (e) { status('po-d-status', e.message, 'err'); }); };
+      td.appendChild(del); tr.appendChild(td); db_.appendChild(tr);
+    });
+    var ub = $('po-users'); ub.innerHTML = ''; $('po-users-empty').hidden = d.users.length > 0;
+    d.users.forEach(function (u) {
+      var tr = el('tr'); tr.appendChild(el('td', '', u.email)); tr.appendChild(el('td', '', u.name || ''));
+      var pt = el('td'); u.properties.forEach(function (p) { var s = el('div', '', p.address + ' '); var x = el('button', 'linkish', 'remove'); x.type = 'button';
+        x.onclick = function () { api('DELETE', '/api/admin/portal/users/' + u.id + '?meter=' + p.meterId).then(drawPortal).catch(function (e) { status('po-i-status', e.message, 'err'); }); }; s.appendChild(x); pt.appendChild(s); });
+      tr.appendChild(pt); tr.appendChild(el('td', '', when(u.lastSeen)));
+      var td = el('td'), del = el('button', 'btn ghost small', 'Remove'); del.type = 'button';
+      del.onclick = function () { if (del.textContent !== 'Tap again') { del.textContent = 'Tap again'; setTimeout(function () { del.textContent = 'Remove'; }, 3000); return; }
+        api('DELETE', '/api/admin/portal/users/' + u.id).then(drawPortal).catch(function (e) { status('po-i-status', e.message, 'err'); }); };
+      td.appendChild(del); tr.appendChild(td); ub.appendChild(tr);
+    });
+  }
+  $('po-on').onchange = function () { api('PUT', '/api/admin/portal', { on: $('po-on').checked }).then(function (d) { drawPortal(d); status('po-status', d.on ? 'The portal is open.' : 'The portal is closed.', 'ok'); }).catch(function (e) { status('po-status', e.message, 'err'); }); };
+  $('po-copy').onclick = function () { if (navigator.clipboard) navigator.clipboard.writeText($('po-link').textContent).then(function () { status('po-status', 'Copied.', 'ok'); }); };
+  function resetNotice() { po.editing = null; $('po-notice').reset(); $('po-n-save').textContent = 'Post notice'; $('po-n-cancel').hidden = true; $('po-n-title').textContent = 'Post a notice'; }
+  $('po-n-cancel').onclick = resetNotice;
+  $('po-notice').onsubmit = function (e) {
+    e.preventDefault();
+    var b = { kind: $('po-n-kind').value, title: $('po-n-head').value, body: $('po-n-body').value, starts: $('po-n-starts').value, ends: $('po-n-ends').value, email: $('po-n-email').checked };
+    status('po-n-status', b.email ? 'Posting and emailing…' : 'Posting…');
+    api(po.editing ? 'PUT' : 'POST', '/api/admin/portal/notices' + (po.editing ? '/' + po.editing : ''), b)
+      .then(function (d) { drawPortal(d); resetNotice(); status('po-n-status', 'Posted.', 'ok'); }).catch(function (e2) { status('po-n-status', e2.message, 'err'); });
+  };
+  $('po-doc').onsubmit = function (e) {
+    e.preventDefault();
+    var f = $('po-d-file').files[0], who = $('po-d-for').value.trim(), mid = who ? meterFor(who) : '';
+    if (!f) return status('po-d-status', 'Pick a file.', 'err');
+    if (who && !mid) return status('po-d-status', 'Pick the address from the list, or leave it blank for everyone.', 'err');
+    status('po-d-status', 'Uploading…');
+    f.arrayBuffer().then(function (buf) {
+      return fetch('/api/admin/portal/docs?title=' + encodeURIComponent($('po-d-title').value) + (mid ? '&meterId=' + mid : ''), { method: 'POST', credentials: 'same-origin', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream' }, body: buf });
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Upload failed.'); return j; }); })
+      .then(function (d) { drawPortal(d); $('po-doc').reset(); status('po-d-status', 'Uploaded.', 'ok'); }).catch(function (e2) { status('po-d-status', e2.message, 'err'); });
+  };
+  $('po-invite').onsubmit = function (e) {
+    e.preventDefault();
+    var mid = meterFor($('po-i-addr').value);
+    if (!mid) return status('po-i-status', 'Pick the address from the list.', 'err');
+    api('POST', '/api/admin/portal/invite', { meterId: mid, email: $('po-i-email').value }).then(function (d) { drawPortal(d); status('po-i-status', 'Sign-in link sent to ' + $('po-i-email').value + '.', 'ok'); $('po-invite').reset(); })
+      .catch(function (e2) { status('po-i-status', e2.message, 'err'); });
+  };
 
   /* --------------------------- address jobs --------------------------- */
   var jb = { data: null, editing: null, pics: [], crew: [], addrs: null };

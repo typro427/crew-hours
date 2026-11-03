@@ -23,6 +23,7 @@
     <button role="tab" data-tab="orders" aria-selected="false">Needs to order</button>
     <button role="tab" data-tab="jobs" aria-selected="false">Bill’s Billables</button>
     <button role="tab" data-tab="members" aria-selected="false">Members</button>
+    <button role="tab" data-tab="portal" aria-selected="false">Owner portal</button>
     <button role="tab" data-tab="crew" aria-selected="false">Crew &amp; PINs</button>
     <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
     <button role="tab" data-tab="billing" aria-selected="false">Billing</button>
@@ -143,6 +144,61 @@
       <div class="t-thumbs" id="jf-thumbs"></div>
       <div class="row"><button class="btn" type="submit">Save</button><span class="status" id="jf-status" role="status"></span></div>
     </form>
+  </section>
+
+  <!-- OWNER PORTAL -->
+  <section data-panel="portal" class="panel" hidden>
+    <div class="stack">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div><h3>Owner portal</h3><p class="hint" style="margin:0">Water customers sign in to see their water use, high-use alerts, your notices and their documents, and to report a problem. Billing stays in QuickBooks.</p></div>
+          <label class="check"><input type="checkbox" id="po-on"> Portal is open</label>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><code id="po-link"></code><button class="btn ghost small" type="button" id="po-copy">Copy link</button><a class="btn ghost small" id="po-open" target="_blank" rel="noopener">Open</a></div>
+        <p class="hint" style="margin:0">How owners sign in: they type their address, and a sign-in link goes to the email on the members list for that address. No email on file? They enter the account number from their bill (Act #) and you approve them below.</p>
+        <span class="status" id="po-status" role="status"></span>
+      </div>
+      <div class="card">
+        <h3>Waiting for you</h3>
+        <div class="tablebox"><table class="roads"><thead><tr><th>Asked</th><th>Name</th><th>Email / phone</th><th>Address</th><th></th></tr></thead><tbody id="po-req"></tbody></table></div>
+        <p class="hint" id="po-req-empty">No one is waiting.</p>
+      </div>
+      <form class="card" id="po-notice" novalidate>
+        <h3 id="po-n-title">Post a notice</h3>
+        <div class="mb-grid">
+          <div><label for="po-n-kind">Type</label><select id="po-n-kind"><option value="info">Notice</option><option value="shutoff">Planned water shutoff</option><option value="boil">Boil water notice</option><option value="alert">Important</option></select></div>
+          <div><label for="po-n-starts">Shows from</label><input type="date" id="po-n-starts"></div>
+          <div><label for="po-n-ends">Until <span class="hint">(optional)</span></label><input type="date" id="po-n-ends"></div>
+        </div>
+        <label for="po-n-head">Title</label><input id="po-n-head" maxlength="120" placeholder="e.g. Water off on Deer Run Point Tuesday 9 AM – noon">
+        <label for="po-n-body">Details <span class="hint">(optional)</span></label><textarea id="po-n-body" rows="3" maxlength="4000"></textarea>
+        <label class="check"><input type="checkbox" id="po-n-email"> Also email everyone signed up to the portal</label>
+        <div class="row"><button class="btn" type="submit" id="po-n-save">Post notice</button><button class="btn ghost" type="button" id="po-n-cancel" hidden>Cancel</button><span class="status" id="po-n-status"></span></div>
+        <div class="tablebox"><table class="roads"><thead><tr><th>Type</th><th>Title</th><th>Dates</th><th>Emailed</th><th></th></tr></thead><tbody id="po-notices"></tbody></table></div>
+      </form>
+      <form class="card" id="po-doc" novalidate>
+        <h3>Documents</h3>
+        <p class="hint" style="margin:0">CCRs and other papers for everyone, or files for one address (plat, easements, where the meter and shutoff are). PDF, JPG or PNG, up to 12 MB.</p>
+        <div class="mb-grid">
+          <div><label for="po-d-title">Title</label><input id="po-d-title" maxlength="120" placeholder="e.g. Deerfield CCRs (2019)"></div>
+          <div><label for="po-d-for">For</label><input id="po-d-for" list="po-addrs" autocomplete="off" placeholder="Everyone (or type an address)"><datalist id="po-addrs"></datalist></div>
+          <div><label for="po-d-file">File</label><input type="file" id="po-d-file" accept="application/pdf,image/jpeg,image/png"></div>
+        </div>
+        <div class="row"><button class="btn" type="submit">Upload</button><span class="status" id="po-d-status"></span></div>
+        <div class="tablebox"><table class="roads"><thead><tr><th>Title</th><th>For</th><th>Size</th><th>Added</th><th></th></tr></thead><tbody id="po-docs"></tbody></table></div>
+      </form>
+      <form class="card" id="po-invite" novalidate>
+        <h3>Owners signed up</h3>
+        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1 1 220px"><label for="po-i-addr">Send a sign-in link to an owner</label><input id="po-i-addr" list="po-addrs" autocomplete="off" placeholder="Address"></div>
+          <div style="flex:1 1 220px"><label for="po-i-email">Their email</label><input id="po-i-email" type="email"></div>
+          <button class="btn small" type="submit">Send link</button>
+        </div>
+        <span class="status" id="po-i-status"></span>
+        <div class="tablebox"><table class="roads"><thead><tr><th>Email</th><th>Name</th><th>Properties</th><th>Last visit</th><th></th></tr></thead><tbody id="po-users"></tbody></table></div>
+        <p class="hint" id="po-users-empty">No one has signed in yet.</p>
+      </form>
+    </div>
   </section>
 
   <!-- NEEDS TO ORDER (drawn by admin.js) -->

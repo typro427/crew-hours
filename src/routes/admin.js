@@ -274,6 +274,36 @@ r.get('/jobs.csv', async (req, res) => {
     .send(J.csv(await J.forOwner(req.company.id, req.query)));
 });
 
+/* ------------------------------- owner portal ------------------------------- */
+const PO = require('../portal');
+r.get('/portal', async (req, res) => res.json(await PO.adminView(req.company)));
+r.put('/portal', async (req, res) => {
+  await db.q('UPDATE companies SET portal_on=$1 WHERE id=$2', [!!(req.body || {}).on, req.company.id]);
+  req.company.portal_on = !!(req.body || {}).on;
+  res.json(await PO.adminView(req.company));
+});
+r.post('/portal/requests/:id', async (req, res) => { await PO.decide(req.company, Number(req.params.id), !!(req.body || {}).approve); res.json(await PO.adminView(req.company)); });
+r.delete('/portal/users/:id', async (req, res) => { await PO.removeAccess(req.company.id, Number(req.params.id), Number(req.query.meter) || null); res.json(await PO.adminView(req.company)); });
+r.post('/portal/notices', async (req, res) => { await PO.saveNotice(req.company, null, req.body || {}); res.json(await PO.adminView(req.company)); });
+r.put('/portal/notices/:id', async (req, res) => { await PO.saveNotice(req.company, Number(req.params.id), req.body || {}); res.json(await PO.adminView(req.company)); });
+r.delete('/portal/notices/:id', async (req, res) => { await PO.removeNotice(req.company.id, Number(req.params.id)); res.json(await PO.adminView(req.company)); });
+r.post('/portal/docs', async (req, res) => { await PO.addDoc(req.company, req.body, req.query); res.json(await PO.adminView(req.company)); });
+r.delete('/portal/docs/:id', async (req, res) => { await PO.removeDoc(req.company.id, Number(req.params.id)); res.json(await PO.adminView(req.company)); });
+r.get('/portal/docs/:id', async (req, res) => {
+  const d = await PO.docForBoss(req.company.id, Number(req.params.id));
+  d ? res.set({ 'Content-Type': d.mime, 'Cache-Control': 'private, max-age=600' }).send(d.data) : res.status(404).end();
+});
+// Send a sign-in link to an owner by hand (e.g. someone who called the office): email + one of the route addresses.
+r.post('/portal/invite', async (req, res) => {
+  const b = req.body || {};
+  const m = await db.one('SELECT id FROM meters WHERE id=$1 AND company_id=$2 AND active', [Number(b.meterId), req.company.id]);
+  if (!m) V.bad('Pick an address on the route.');
+  const email = V.email(b.email);
+  await db.q(`INSERT INTO portal_users (company_id, email, name) VALUES ($1,$2,$3) ON CONFLICT (company_id, email) DO NOTHING`, [req.company.id, email, String(b.name || '').trim().slice(0, 120)]);
+  await PO.sendInvite(req.company, email, m.id);
+  res.json(await PO.adminView(req.company));
+});
+
 /* -------------------------------- members ----------------------------------- */
 const MB = require('../members');
 r.get('/members', async (req, res) => res.json(await MB.search(req.company.id, req.query)));

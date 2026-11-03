@@ -285,6 +285,67 @@ CREATE TABLE IF NOT EXISTS job_receipts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS job_receipts_job ON job_receipts (job_id);
+-- Owner portal (water customers): sign-in links, sessions, who can see which property, notices, documents.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS portal_on BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS portal_users (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen  TIMESTAMPTZ,
+  UNIQUE (company_id, email)
+);
+CREATE TABLE IF NOT EXISTS portal_access (
+  user_id  INTEGER NOT NULL REFERENCES portal_users(id) ON DELETE CASCADE,
+  meter_id INTEGER NOT NULL REFERENCES meters(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, meter_id)
+);
+CREATE TABLE IF NOT EXISTS portal_tokens (
+  token_hash TEXT PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  meter_id   INTEGER REFERENCES meters(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used       BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE TABLE IF NOT EXISTS portal_sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES portal_users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS portal_requests (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  meter_id   INTEGER NOT NULL REFERENCES meters(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  phone      TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS portal_notices (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  kind       TEXT NOT NULL DEFAULT 'info',
+  starts     DATE NOT NULL,
+  ends       DATE,
+  emailed_to INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS portal_docs (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  meter_id   INTEGER REFERENCES meters(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  mime       TEXT NOT NULL,
+  data       BYTEA NOT NULL,
+  size       INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS portal_meter_id INTEGER REFERENCES meters(id) ON DELETE SET NULL;
 -- Meters are read quarterly: turn any monthly keys (YYYY-MM) into quarters (YYYY-Q#), keeping the latest read per quarter.
 DELETE FROM meter_reads a USING meter_reads b
   WHERE a.month ~ '^[0-9]{4}-[0-9]{2}$' AND b.month ~ '^[0-9]{4}-[0-9]{2}$' AND a.meter_id=b.meter_id

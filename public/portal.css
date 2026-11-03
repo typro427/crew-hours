@@ -1,0 +1,56 @@
+/* Owner portal: built on crew.css */
+.pt-co{font:600 .95rem var(--f-body);color:var(--muted)}
+.pt-h1{font-size:2.1rem}
+.pt-sug{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.pt-sug:empty{display:none}
+.pt-sug button{font:600 1rem var(--f-body);text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer;min-height:48px}
+.pt-note{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb, var(--ok) 10%, var(--surface));border:1px solid color-mix(in srgb, var(--ok) 40%, var(--line))}
+.pt-form{display:flex;flex-direction:column;gap:12px}
+.linkish{font:inherit;color:var(--ink);background:none;border:0;padding:0;text-decoration:underline;cursor:pointer}
+.primary{font:700 1.05rem var(--f-body);background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:13px 18px;cursor:pointer;min-height:48px;align-self:flex-start}
+.status{font-size:.95rem;min-height:1.2em}
+.status.err{color:var(--err)}
+.status.ok{color:var(--ok)}
+/* notices */
+#notices{display:flex;flex-direction:column;gap:10px}
+#notices:empty{display:none}
+.notice{border-radius:10px;padding:14px 16px;border:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:4px}
+.notice b{font-size:1.05rem}
+.notice .when{font-size:.85rem;color:var(--muted)}
+.notice p{margin:0;white-space:pre-wrap}
+.notice.boil{background:#b42318;color:#fff;border-color:#b42318}
+.notice.boil .when{color:#fde2df}
+.notice.shutoff,.notice.alert{border:2px solid var(--warn)}
+.notice .tag{font:700 .75rem var(--f-body);letter-spacing:.06em;text-transform:uppercase}
+/* usage */
+.pt-addr{font-family:var(--f-display);font-weight:700;font-size:1.6rem;line-height:1.1;text-transform:uppercase;margin:0}
+.pt-meta{color:var(--muted);font-size:.9rem}
+.pt-big{font:600 2rem var(--f-num);line-height:1}
+.pt-bar{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;position:relative}
+.pt-bar i{display:block;height:100%;background:var(--ok);border-radius:7px}
+.pt-bar.over i{background:var(--warn)}
+.pt-chart{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;align-items:end;height:150px;padding-top:8px}
+.pt-col{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-end;gap:4px;height:100%;min-width:0}
+.pt-col .b{background:var(--accent);border-radius:4px 4px 0 0;min-height:2px}
+.pt-col .b.over{background:var(--warn)}
+.pt-col .b.none{background:var(--sunk)}
+.pt-col .v{font:500 .7rem var(--f-num);text-align:center;color:var(--muted);white-space:nowrap;overflow:hidden}
+.pt-col .q{font:600 .7rem var(--f-body);text-align:center;color:var(--muted)}
+.pt-alert{border-radius:10px;padding:14px 16px;background:color-mix(in srgb, var(--err) 10%, var(--surface));border:2px solid var(--err);display:flex;flex-direction:column;gap:6px}
+.pt-alert b{color:var(--err)}
+/* reports, docs */
+.pt-list{display:flex;flex-direction:column}
+.pt-list .row{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line);align-items:flex-start}
+.pt-list .row:first-child{border-top:0}
+.pt-list .row span{color:var(--muted);font-size:.9rem;white-space:nowrap}
+.pt-list a{color:var(--ink);font-weight:600}
+.pt-pill{font:700 .75rem var(--f-body);text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:5px;white-space:nowrap}
+.pt-pill.open{background:color-mix(in srgb, var(--warn) 18%, var(--surface));color:var(--warn)}
+.pt-pill.done{background:color-mix(in srgb, var(--ok) 15%, var(--surface));color:var(--ok)}
+#prop{font:600 1rem var(--f-body);min-height:48px}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumbs .x{position:relative}
+.thumbs img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.thumbs .x button{position:absolute;top:-6px;right:-6px;width:26px;height:26px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);cursor:pointer}
+.photo-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px dashed var(--line);border-radius:8px;font-weight:600;cursor:pointer;min-height:48px}
+.photo-btn input{display:none}

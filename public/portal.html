@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__COMPANY__ · Owner portal</title>
+<meta name="theme-color" content="#e3a008">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/crew.css">
+<link rel="stylesheet" href="/portal.css">
+</head>
+<body data-slug="__SLUG__">
+<div class="wrap">
+  <header>
+    <div><div class="pt-co">__COMPANY__</div><h1 class="pt-h1">Owner portal</h1></div>
+    <div class="who" id="who" hidden><span id="who-email"></span> · <button id="logout">Sign out</button></div>
+  </header>
+
+  <!-- Sign in -->
+  <section class="card" id="signin" hidden>
+    <h2>Sign in</h2>
+    <p class="muted" style="margin:0">See your water use, notices from the water system, and documents for your property. Start by typing your address.</p>
+    <div>
+      <label for="addr">Your property address</label>
+      <input id="addr" type="search" autocomplete="off" placeholder="e.g. 141 Deer Meadow">
+      <div class="pt-sug" id="addr-sug"></div>
+    </div>
+    <div class="status" id="si-status" role="status"></div>
+
+    <div id="si-sent" hidden class="pt-note">
+      <b>Check your email.</b>
+      <span id="si-sent-to"></span>
+      <span class="hint">The link works once, for an hour. Not seeing it? Check spam, or <button class="linkish" id="si-noemail" type="button">I don't get email at that address</button>.</span>
+    </div>
+
+    <form id="si-acct" hidden novalidate class="pt-form">
+      <p style="margin:0"><b id="si-acct-addr"></b></p>
+      <p class="hint" style="margin:0">We don't have an email on file for this address. Enter the account number from your water bill, and we'll send you a sign-in link once the office checks it.</p>
+      <div><label for="si-account">Account number (from your water bill)</label><input id="si-account" autocomplete="off" inputmode="text"></div>
+      <div><label for="si-name">Your name</label><input id="si-name" autocomplete="name"></div>
+      <div><label for="si-email">Your email</label><input id="si-email" type="email" autocomplete="email"></div>
+      <div><label for="si-phone">Phone <span class="hint">(optional)</span></label><input id="si-phone" type="tel" autocomplete="tel"></div>
+      <button class="primary" type="submit">Ask for access</button>
+    </form>
+    <div id="si-pending" hidden class="pt-note"><b>Thanks, we got it.</b><span>The office will check it and email you a sign-in link.</span></div>
+  </section>
+
+  <!-- Signed in -->
+  <section id="home" hidden style="display:flex;flex-direction:column;gap:16px">
+    <div id="notices"></div>
+    <select id="prop" aria-label="Property" hidden></select>
+    <div id="property"></div>
+    <section class="card">
+      <h2>Report a problem</h2>
+      <p class="hint" style="margin:0">A leak, low pressure, a damaged meter box… It goes straight to the water crew.</p>
+      <form id="rep" novalidate class="pt-form">
+        <div><label for="rep-title">What's wrong</label><input id="rep-title" maxlength="100" placeholder="e.g. Water bubbling up by the meter box"></div>
+        <div><label for="rep-details">Details <span class="hint">(optional)</span></label><textarea id="rep-details" maxlength="1500" placeholder="Where exactly, since when…"></textarea></div>
+        <div><label for="rep-phone">Best phone to reach you <span class="hint">(optional)</span></label><input id="rep-phone" type="tel" maxlength="40"></div>
+        <div id="rep-photos"></div>
+        <button class="primary" type="submit">Send report</button>
+        <div class="status" id="rep-status" role="status"></div>
+      </form>
+      <div id="reports"></div>
+    </section>
+    <section class="card" id="docs-card" hidden>
+      <h2>Documents</h2>
+      <div id="docs"></div>
+    </section>
+  </section>
+</div>
+<script src="/portal.js"></script>
+</body>
+</html>
