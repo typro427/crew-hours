@@ -655,8 +655,9 @@
   function loadQb() { return api('GET', '/api/admin/quickbooks').then(drawQb).catch(function (e) { status('qb-status', e.message, 'err'); }); }
   function drawQb(q) {
     $('qb-connect').hidden = !q.setUp || q.connected; $('qb-sync').hidden = $('qb-off').hidden = !q.connected;
-    $('qb-setup').hidden = q.setUp;
-    $('qb-setup').textContent = 'Not set up yet: add QBO_CLIENT_ID and QBO_CLIENT_SECRET in Render (from developer.intuit.com), with this Redirect URI on the Intuit app: ' + q.redirectUri;
+    $('qb-setup').hidden = q.connected;
+    $('qb-setup').textContent = (q.setUp ? 'Keys in Render: ' : 'Not set up yet. Keys in Render: ') + 'QBO_CLIENT_ID ' + q.keys.clientId + ' · QBO_CLIENT_SECRET ' + q.keys.secret + (q.keys.sandbox ? ' · sandbox (test company)' : '') +
+      '. Redirect URI on the Intuit app: ' + q.redirectUri;
     $('qb-sum').textContent = !q.connected ? 'Not connected.' : 'Connected to ' + (q.company || 'QuickBooks') + ' · ' + q.linked + ' of ' + q.total + ' meters matched' +
       (q.syncedAt ? ' · updated ' + new Date(q.syncedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
     if (q.error) status('qb-status', q.error, 'err');

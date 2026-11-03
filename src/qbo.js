@@ -160,7 +160,9 @@ async function status(companyId) {
   const meters = await db.q(`SELECT m.id, m.seq, m.name, m.address, m.qb_customer AS "qbCustomer", m.qbo_id AS "qboId", m.qbo_manual AS manual, q.name AS "qboName"
     FROM meters m LEFT JOIN qbo_customers q ON q.company_id=m.company_id AND q.qb_id=m.qbo_id WHERE m.company_id=$1 AND m.active AND m.meter_no<>'' ORDER BY m.seq`, [companyId]);
   const customers = await db.q('SELECT qb_id AS id, name FROM qbo_customers WHERE company_id=$1 AND active ORDER BY lower(name)', [companyId]);
-  return { setUp: enabled(), connected: !!(c && c.qbo_realm), company: c && c.qbo_company, syncedAt: c && c.qbo_synced_at, error: c && c.qbo_error,
+  const peek = v => (v ? v.slice(0, 4) + '…' + v.slice(-3) + ` (${v.length} characters)` : 'missing');
+  return { keys: { clientId: peek(Q().clientId), secret: Q().clientSecret ? `set (${Q().clientSecret.length} characters)` : 'missing', sandbox: /sandbox/.test(Q().apiBase) },
+    setUp: enabled(), connected: !!(c && c.qbo_realm), company: c && c.qbo_company, syncedAt: c && c.qbo_synced_at, error: c && c.qbo_error,
     linked: meters.filter(m => m.qboName).length, total: meters.length, unlinked: meters.filter(m => !m.qboName), customers,
     redirectUri: redirectUri() };
 }

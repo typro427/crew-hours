@@ -1,6 +1,8 @@
 // All settings come from environment variables (set them in Render > Environment).
 const env = process.env;
 
+const clean = v => String(v || '').trim().replace(/^["']+|["']+$/g, '').trim();
+
 const config = {
   port: Number(env.PORT || 3000),
   // Your public address. On Render, RENDER_EXTERNAL_URL is filled in automatically if APP_URL is left blank.
@@ -40,7 +42,8 @@ const config = {
   // QuickBooks Online (owners see their balance and invoices in the owner portal). Keys from developer.intuit.com.
   // QBO_SANDBOX=1 uses Intuit's test companies.
   qbo: {
-    clientId: env.QBO_CLIENT_ID || '', clientSecret: env.QBO_CLIENT_SECRET || '',
+    // trimmed, and quotes removed: a pasted key with a space or quotes around it would otherwise not work
+    clientId: clean(env.QBO_CLIENT_ID), clientSecret: clean(env.QBO_CLIENT_SECRET),
     authUrl: env.QBO_AUTH_URL || 'https://appcenter.intuit.com/connect/oauth2',
     tokenUrl: env.QBO_TOKEN_URL || 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
     revokeUrl: env.QBO_REVOKE_URL || 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke',
