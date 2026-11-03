@@ -155,8 +155,9 @@
       </div>
       <div class="msearch" style="grid-template-columns:1fr auto">
         <input id="mt-q" type="search" placeholder="Find: name, address, meter #, seq" autocomplete="off" aria-label="Find a meter">
-        <select id="mt-show" aria-label="Which meters"><option value="all">All</option><option value="unread">Not read yet</option><option value="read">Read</option></select>
+        <select id="mt-show" aria-label="Which meters"><option value="all">All</option><option value="unread">Not read yet</option><option value="read">Read</option><option value="cant">Can't read</option></select>
       </div>
+      <p class="hint" style="margin:0">Can't read a meter? Type <b>*</b> in its box, and why if you like: <b>* buried in mud</b>.</p>
       <div id="mt-list" class="mtlist"></div>
       <div class="status" id="mt-status" role="status"></div>
     </div>

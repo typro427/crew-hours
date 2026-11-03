@@ -1257,18 +1257,19 @@
     var d = mr.data, q = $('mr-q').value.trim().toLowerCase(), show = $('mr-show').value, body = $('mr-body'); body.innerHTML = '';
     var active = d.meters.filter(function (m) { return m.active; });
     var checks = active.filter(function (m) { return m.nameCheck; }).length;
-    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.label + (d.highUse ? ' · ⚠ ' + d.highUse + ' high use' : '') + (checks ? ' · ' + checks + ' names to check' : '');
+    $('mr-progress').textContent = d.read + ' of ' + d.toRead + ' meters read for ' + d.label + (d.cantRead ? ' · ' + d.cantRead + ' can\'t read' : '') + (d.highUse ? ' · ⚠ ' + d.highUse + ' high use' : '') + (checks ? ' · ' + checks + ' names to check' : '');
     var shown = 0;
     d.meters.forEach(function (m) {
       if (show === 'inactive' ? m.active : !m.active) return;
-      if (show === 'unread' && (m.current != null || !m.meterNo)) return;
+      if (show === 'unread' && (m.current != null || m.cantRead || !m.meterNo)) return;
+      if (show === 'cant' && !m.cantRead) return;
       if (show === 'read' && m.current == null) return;
       if (show === 'low' && !(m.usage != null && m.usage < 0)) return;
       if (show === 'high' && !((m.alert && m.alert.level === 'high') || m.flagOk)) return;
       if (show === 'check' && !m.nameCheck) return;
       if (q && [m.seq, m.account, m.name, m.oldName, m.qbCustomer, m.address, m.meterNo].join(' ').toLowerCase().indexOf(q) === -1) return;
       shown++;
-      var tr = el('tr', m.current != null ? 'done' : '');
+      var tr = el('tr', m.current != null ? 'done' : m.cantRead ? 'cant' : '');
       tr.appendChild(el('td', 'num', String(m.seq)));
       tr.appendChild(el('td', '', m.account));
       var nm = el('td', ''); nm.appendChild(document.createTextNode(m.name || '')); if (m.nameCheck) nm.appendChild(el('span', 'chk', 'Check'));
@@ -1278,11 +1279,11 @@
       tr.appendChild(el('td', '', m.address));
       tr.appendChild(el('td', '', m.meterNo || 'no meter'));
       tr.appendChild(el('td', 'num', nfmt(m.previous)));
-      var ct = el('td', 'num'), inp = el('input', 'cur'); inp.inputMode = 'numeric'; inp.value = m.current != null ? String(m.current) : ''; inp.setAttribute('aria-label', 'Current reading for ' + m.name);
+      var ct = el('td', 'num'), inp = el('input', 'cur'); inp.inputMode = 'numeric'; inp.value = m.current != null ? String(m.current) : m.cantRead ? '*' : ''; inp.placeholder = 'or *'; inp.title = "Type * if the meter can't be read"; inp.setAttribute('aria-label', 'Current reading for ' + m.name);
       var was = inp.value;
       inp.onchange = function () {
-        var v = inp.value.replace(/[,\s]/g, '');
-        if (v !== '' && !/^\d+(\.\d+)?$/.test(v)) { status('mr-status', 'Readings are numbers only.', 'err'); return; }
+        var v = /^\s*\*/.test(inp.value) ? inp.value.trim() : inp.value.replace(/[,\s]/g, '');   // * = can't read (reason after it)
+        if (v !== '' && v[0] !== '*' && !/^\d+(\.\d+)?$/.test(v)) { status('mr-status', "Readings are numbers only, or * if it can't be read.", 'err'); return; }
         api('POST', '/api/admin/meters/' + m.id + '/read', { reading: v, quarter: d.quarter }).then(function () { was = v; return loadMeterAdmin(); })
           .catch(function (e) { inp.value = was; status('mr-status', e.message, 'err'); });
       };
@@ -1290,7 +1291,7 @@
       var ut = el('td', 'num' + (m.usage != null && m.usage < 0 ? ' warn' : ''), m.usage == null ? '' : nfmt(m.usage));
       if ((m.alert && m.alert.level === 'high') || m.flagOk) ut.appendChild(highUseCell(m, d));
       tr.appendChild(ut);
-      tr.appendChild(el('td', '', m.readBy || ''));
+      tr.appendChild(el('td', m.cantRead ? 'warn' : '', (m.cantRead ? 'Can\'t read' + (m.readNotes ? ': ' + m.readNotes : '') + (m.readBy ? ' · ' : '') : '') + (m.readBy || '')));
       var et = el('td'), eb = el('button', 'btn ghost small', mr.edit === m.id ? 'Close' : 'Edit'); eb.type = 'button';
       eb.onclick = function () { mr.edit = mr.edit === m.id ? null : m.id; drawMeterAdmin(); };
       et.appendChild(eb); tr.appendChild(et);

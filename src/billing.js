@@ -59,7 +59,12 @@ async function invoices(company, quarter) {
   for (const m of rt.meters) {
     if (!m.meterNo) continue;
     const who = m.qbCustomer || m.name;
-    if (m.current == null) { skipped.push({ seq: m.seq, name: who, why: 'Not read' }); continue; }
+    if (m.current == null && m.cantRead && set.base) {   // couldn't read it: the base charge still applies, no overage
+      list.push({ no: `${set.prefix}${tag}-${String(m.seq).padStart(4, '0')}`, customer: who, qbMatched: !!m.qbCustomer, seq: m.seq, address: m.address, date, due, usage: null, gallons: null, over: 0, first: false, cantRead: true,
+        lines: [{ item: set.baseItem, desc: `${rt.label}: meter ${m.meterNo} couldn't be read this quarter`, qty: 1, rate: set.base, amount: cents(set.base) }], total: cents(set.base) });
+      continue;
+    }
+    if (m.current == null) { skipped.push({ seq: m.seq, name: who, why: m.cantRead ? "Couldn't read" : 'Not read' }); continue; }
     if (m.usage == null || m.usage < 0) { skipped.push({ seq: m.seq, name: who, why: m.usage < 0 ? 'Lower than last reading' : 'No last reading' }); continue; }
     const lines = [], gallons = gal(m.usage);
     // The first reading after the old sheet covers years, not a quarter: it's the starting point (base charge only).

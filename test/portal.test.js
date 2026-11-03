@@ -162,3 +162,35 @@ test('signing out ends the session; other companies are separate', async () => {
   assert.deepStrictEqual((await O2('GET', '/api/admin/portal')).body.users, []);
   assert.strictEqual((await O2('GET', '/api/admin/portal')).body.docs.length, 0);
 });
+
+test("can't read a meter: * (with a reason); next quarter's use counts from the last real reading; the base charge still bills", async () => {
+  const M = require('../src/meters');
+  const c = await db.one('SELECT * FROM companies WHERE slug=$1', [slug]);
+  const q = M.quarterOf(c);
+  // Wendy's meter: last real reading 500 (start); can't read this quarter
+  let r = await O('POST', `/api/admin/meters/${meters[1].id}/read`, { reading: '* buried in mud', quarter: q });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  let d = (await O('GET', '/api/admin/meters')).body;
+  const w = d.meters.find(m => m.id === meters[1].id);
+  assert.strictEqual(w.cantRead, true); assert.strictEqual(w.current, null); assert.strictEqual(w.readNotes, 'buried in mud'); assert.strictEqual(w.usage, null);
+  assert.strictEqual(d.cantRead, 1); assert.strictEqual(w.alert, null);
+  // billing: $75 base, no overage, says why
+  const b = (await O('GET', '/api/admin/billing')).body;
+  const inv = b.invoices.find(i => i.seq === 2);
+  assert.ok(inv && inv.cantRead); assert.strictEqual(inv.total, 75); assert.match(inv.lines[0].desc, /couldn't be read/);
+  // CSV says Can't read
+  assert.match((await O('GET', '/api/admin/meters.csv')).body.toString(), /"Can't read"/);
+  // a real reading replaces it
+  r = await O('POST', `/api/admin/meters/${meters[1].id}/read`, { reading: '900', quarter: q });
+  d = (await O('GET', '/api/admin/meters')).body;
+  assert.strictEqual(d.meters.find(m => m.id === meters[1].id).cantRead, false);
+  assert.strictEqual(d.meters.find(m => m.id === meters[1].id).usage, 400);
+  await O('POST', `/api/admin/meters/${meters[1].id}/read`, { reading: '*', quarter: q });
+  // the quarter after a can't-read: previous is the last real reading, not the blank
+  const next = (() => { let y = Number(q.slice(0, 4)), k = Number(q.slice(6)) + 1; if (k > 4) { k = 1; y++; } return y + '-Q' + k; })();
+  await db.q('INSERT INTO meter_reads (company_id, meter_id, reading, month) VALUES ($1,$2,800,$3)', [c.id, meters[1].id, next]);
+  const rt = await M.route(c, next);
+  const m2 = rt.meters.find(m => m.id === meters[1].id);
+  assert.strictEqual(m2.previous, 500); assert.strictEqual(m2.usage, 300);
+  await db.q('DELETE FROM meter_reads WHERE meter_id=$1 AND month=$2', [meters[1].id, next]);
+});

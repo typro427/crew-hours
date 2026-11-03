@@ -151,3 +151,4 @@ details.bulk textarea{width:100%;margin:10px 0}
 .wx-title{flex:1 1 280px;display:flex;flex-direction:column;gap:2px}
 .wx-title input{width:100%}
 .wx-acts{display:flex;gap:6px;margin-left:auto}
+.mr-table tr.cant td{background:color-mix(in srgb, #c4560c 8%, transparent)}

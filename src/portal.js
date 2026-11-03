@@ -115,12 +115,15 @@ const meterIdsOf = async userId => (await db.q('SELECT meter_id FROM portal_acce
 
 /** Quarterly use in gallons for one meter, oldest first. The first reading after the old sheet is the starting point. */
 async function usageOf(companyId, meterId, unitGallons) {
-  const reads = await db.q('SELECT month AS quarter, reading::float AS reading FROM meter_reads WHERE company_id=$1 AND meter_id=$2 ORDER BY month', [companyId, meterId]);
+  const reads = await db.q('SELECT month AS quarter, reading::float AS reading, cant_read AS "cantRead" FROM meter_reads WHERE company_id=$1 AND meter_id=$2 ORDER BY month', [companyId, meterId]);
   const out = [];
+  let p = null;
   for (let i = 0; i < reads.length; i++) {
-    const r = reads[i], p = reads[i - 1];
+    const r = reads[i];
+    if (r.reading == null) { out.push({ quarter: r.quarter, label: M.label(r.quarter), reading: null, gallons: null, cantRead: true, starting: false }); continue; }
     out.push({ quarter: r.quarter, label: M.label(r.quarter), reading: r.reading,
       gallons: p && r.reading >= p.reading ? Math.round((r.reading - p.reading) * unitGallons / Math.max(1, M.quartersBetween(p.quarter, r.quarter))) : null, starting: !p });
+    p = r;
   }
   return out;
 }

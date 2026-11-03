@@ -253,6 +253,9 @@ CREATE TABLE IF NOT EXISTS meter_reads (
   notes      TEXT NOT NULL DEFAULT '',
   UNIQUE (meter_id, month)
 );
+-- "Can't read" a meter this quarter (type * in the reading box): no reading, a reason in the notes.
+ALTER TABLE meter_reads ALTER COLUMN reading DROP NOT NULL;
+ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS cant_read BOOLEAN NOT NULL DEFAULT FALSE;
 -- High-usage alerts: the leak report made from a read, or "not a leak" from the boss.
 ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS leak_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
 ALTER TABLE meter_reads ADD COLUMN IF NOT EXISTS flag_ok BOOLEAN NOT NULL DEFAULT FALSE;

@@ -1287,8 +1287,8 @@
     call("getMeters",[token], function(res){ mtData=res; say($("mt-status"),""); drawMeters(); }, function(msg){ say($("mt-status"),msg,"err"); });
   }
   function mtProgress(){
-    var withMeter=mtData.meters.filter(function(m){ return m.meterNo; }), done=withMeter.filter(function(m){ return m.current!=null; }).length;
-    $("mt-progress").textContent = done+" of "+withMeter.length+" read";
+    var withMeter=mtData.meters.filter(function(m){ return m.meterNo; }), done=withMeter.filter(function(m){ return m.current!=null; }).length, cant=withMeter.filter(function(m){ return m.cantRead; }).length;
+    $("mt-progress").textContent = done+" of "+withMeter.length+" read"+(cant ? " · "+cant+" can't read" : "");
     $("mt-month").textContent = mtData.label+" readings";
   }
   function mtInfo(m, info){
@@ -1299,6 +1299,7 @@
       var u=m.current-m.previous;
       info.appendChild(el("span", u<0 || (m.alert && m.alert.level==="high") ? "warn" : "ok", u<0 ? "Lower than last reading. Check it." : "Used "+fmtN(Math.round(u*100)/100)));
     }
+    if(m.cantRead) info.appendChild(el("span","warn","Can't read"+(m.readNotes ? ": "+m.readNotes : "")));
     if(m.readBy) info.appendChild(el("span","","by "+m.readBy));
     if(m.queued) info.appendChild(el("span","pending","⏳ waiting to send"));
     if(m.notes) info.appendChild(el("span","",m.notes));
@@ -1329,32 +1330,34 @@
     var q=$("mt-q").value.trim().toLowerCase(), show=$("mt-show").value, list=$("mt-list"); list.innerHTML=""; mtRows={};
     var shown=0;
     mtData.meters.forEach(function(m){
-      if(show==="unread" && m.current!=null) return;
+      if(show==="unread" && (m.current!=null || m.cantRead)) return;
       if(show==="read" && m.current==null) return;
+      if(show==="cant" && !m.cantRead) return;
       if(q && [m.seq,m.name,m.address,m.meterNo,m.account].join(" ").toLowerCase().indexOf(q)===-1) return;
       shown++;
-      var row=el("div","mrow"+(m.current!=null?" done":"")); row.dataset.id=m.id;
+      var row=el("div","mrow"+(m.current!=null?" done":m.cantRead?" cant":"")); row.dataset.id=m.id;
       row.appendChild(el("div","sq",String(m.seq)));
       var who=el("div","who"); who.appendChild(el("b","",m.name||"(no name)")); who.appendChild(el("span","",m.address||""));
       if(!m.meterNo) who.appendChild(el("span","nometer","NO METER"));
       row.appendChild(who);
-      var inp=el("input"); inp.type="text"; inp.inputMode="numeric"; inp.autocomplete="off"; inp.placeholder="Reading";
+      var inp=el("input"); inp.type="text"; inp.inputMode="tel"; inp.autocomplete="off"; inp.placeholder="Reading or *";   // the phone-dial keypad has a * key
       inp.setAttribute("aria-label","Reading for "+(m.name||"meter")+" "+(m.meterNo||""));
-      inp.value = m.current!=null ? String(m.current) : "";
+      inp.value = m.current!=null ? String(m.current) : m.cantRead ? "*"+(m.readNotes ? " "+m.readNotes : "") : "";
       row.appendChild(inp);
       var info=el("div","info"); mtInfo(m, info); row.appendChild(info);
       var saved=inp.value;
       function save(){
-        var v=inp.value.replace(/[,\s]/g,"");
+        var star=/^\s*\*/.test(inp.value), v= star ? inp.value.trim() : inp.value.replace(/[,\s]/g,"");
         if(v===saved) return;
-        if(v!=="" && !/^\d+(\.\d+)?$/.test(v)){ say($("mt-status"),"Readings are numbers only.","err"); inp.focus(); return; }
+        if(v!=="" && !star && !/^\d+(\.\d+)?$/.test(v)){ say($("mt-status"),"Readings are numbers only, or * if you can't read it.","err"); inp.focus(); return; }
         say($("mt-status"),"Saving "+(m.name||"")+"…");
         call("readMeter",[token, m.id, v, mtData.quarter], function(res){
-          saved=v; m.current = v==="" ? null : Number(v); m.readBy = v==="" ? null : $("who-name").textContent;
+          saved=v; m.cantRead=star; m.readNotes= star ? v.slice(1).trim() : null;
+          m.current = (v==="" || star) ? null : Number(v); m.readBy = v==="" ? null : $("who-name").textContent;
           if(res && res.meter){ m.alert=res.meter.alert; m.usage=res.meter.usage; m.leakTaskId=res.meter.leakTaskId; }
           m.queued=!!(res && res.queued);
-          row.className="mrow"+(m.current!=null?" done":""); mtInfo(m, info); mtProgress();
-          say($("mt-status"), (v==="" ? "Cleared" : "Saved "+(m.name||"")+": "+fmtN(m.current))+(res && res.queued ? ". On this phone until you have signal." : "."),"ok");
+          row.className="mrow"+(m.current!=null?" done":m.cantRead?" cant":""); mtInfo(m, info); mtProgress();
+          say($("mt-status"), (v==="" ? "Cleared" : star ? "Marked "+(m.name||"this meter")+" can't read" : "Saved "+(m.name||"")+": "+fmtN(m.current))+(res && res.queued ? ". On this phone until you have signal." : "."),"ok");
         }, function(msg){ say($("mt-status"),msg,"err"); });
       }
       inp.onblur=save;
@@ -1367,7 +1370,7 @@
   $("mt-show").onchange=function(){ if(mtData) drawMeters(); };
   $("mt-next").onclick=function(){
     if(!mtData) return;
-    var next=mtData.meters.filter(function(m){ return m.meterNo && m.current==null; })[0];
+    var next=mtData.meters.filter(function(m){ return m.meterNo && m.current==null && !m.cantRead; })[0];
     if(!next){ say($("mt-status"),"Every meter with a meter number is read for this quarter. Nice work.","ok"); return; }
     if(!mtRows[next.id]){ $("mt-q").value=""; $("mt-show").value="all"; drawMeters(); }
     var row=mtRows[next.id]; row.scrollIntoView({behavior:"smooth", block:"center"});

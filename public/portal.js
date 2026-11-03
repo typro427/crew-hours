@@ -104,6 +104,7 @@
     var q = el('div', ''); q.style.cssText = 'display:flex;flex-direction:column;gap:8px';
     q.appendChild(el('div', 'pt-meta', p.thisQuarter));
     if (!c) q.appendChild(el('div', '', 'Not read yet this quarter. Meters are read once a quarter.'));
+    else if (c.cantRead) q.appendChild(el('div', '', "We couldn't read your meter this quarter. If something is covering it or blocking the way to it, please clear it, or report a problem below."));
     else if (c.starting || c.gallons == null) q.appendChild(el('div', '', 'Reading: ' + num(c.reading) + '. This is the first reading on the new system, so it\'s the starting point; your use shows from next quarter.'));
     else {
       q.appendChild(el('div', 'pt-big', num(c.gallons) + ' gal'));

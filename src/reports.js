@@ -39,7 +39,7 @@ async function operations(company, from, to) {
   if (meters) {
     const rt = await require('./meters').route(company);
     const high = rt.meters.filter(m => m.active && m.alert && m.alert.level === 'high');
-    out.push(`<li><b>Meters (${esc(rt.label)}):</b> ${rt.read} of ${rt.toRead} read${high.length ? ` · <b style="color:#b42318">${high.length} high use (possible leak)</b>: ` +
+    out.push(`<li><b>Meters (${esc(rt.label)}):</b> ${rt.read} of ${rt.toRead} read${rt.cantRead ? ` · ${rt.cantRead} couldn't be read` : ''}${high.length ? ` · <b style="color:#b42318">${high.length} high use (possible leak)</b>: ` +
       high.slice(0, 5).map(m => esc(m.address || m.name) + (m.alert.times ? ` (${m.alert.times}×)` : '')).join(', ') + (high.length > 5 ? ', …' : '') : ''}</li>`);
   }
   const od = await db.one(`SELECT count(*) FILTER (WHERE status='open')::int AS open, COALESCE(sum(cost) FILTER (WHERE status='open'),0)::float AS est,

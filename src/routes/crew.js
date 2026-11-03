@@ -143,7 +143,7 @@ r.get('/:slug/meters', A.requireCrew, F.need('w_meters'), async (req, res) => {
   res.json({ ...rt, meters: rt.meters.map(crewMeter) });
 });
 const crewMeter = m => ({ id: m.id, seq: m.seq, account: m.account, meterNo: m.meterNo, name: m.name, address: m.address, notes: m.notes,
-  previous: m.previous, current: m.current, usage: m.usage, readBy: m.readBy, readNotes: m.readNotes, alert: m.alert, leakTaskId: m.leakTaskId });
+  previous: m.previous, current: m.current, cantRead: m.cantRead, usage: m.usage, readBy: m.readBy, readNotes: m.readNotes, alert: m.alert, leakTaskId: m.leakTaskId });
 r.post('/:slug/meters/:id/read', A.requireCrew, F.need('w_meters'), async (req, res) => {
   const b = { ...(req.body || {}) }, now = MT.quarterOf(req.company);
   // A reading saved offline at the end of a quarter can arrive just after: allow the quarter before, nothing older.

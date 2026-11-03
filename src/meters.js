@@ -19,14 +19,14 @@ async function route(company, quarter, opts = {}) {
   const m = validQuarter(quarter) ? quarter : quarterOf(company);
   const rows = await db.q(`SELECT mt.id, mt.seq, mt.account, mt.meter_no AS "meterNo", mt.name, mt.address, mt.notes,
       mt.name_check AS "nameCheck", mt.old_name AS "oldName", mt.active, mt.qb_customer AS "qbCustomer",
-      cur.reading AS current, cur.read_at AS "readAt", cur.notes AS "readNotes", cc.name AS "readBy", cur.id AS "readId",
+      cur.reading AS current, cur.cant_read AS "cantRead", cur.read_at AS "readAt", cur.notes AS "readNotes", cc.name AS "readBy", cur.id AS "readId",
       COALESCE(prev.reading, mt.start_reading) AS previous, prev.month AS "previousQuarter",
       cur.leak_task_id AS "leakTaskId", cur.flag_ok AS "flagOk", lt.status AS "leakStatus"
     FROM meters mt
     LEFT JOIN meter_reads cur ON cur.meter_id=mt.id AND cur.month=$2
     LEFT JOIN crew cc ON cc.id=cur.crew_id
     LEFT JOIN tasks lt ON lt.id=cur.leak_task_id
-    LEFT JOIN LATERAL (SELECT reading, month FROM meter_reads p WHERE p.meter_id=mt.id AND p.month<$2 ORDER BY p.month DESC LIMIT 1) prev ON TRUE
+    LEFT JOIN LATERAL (SELECT reading, month FROM meter_reads p WHERE p.meter_id=mt.id AND p.month<$2 AND p.reading IS NOT NULL ORDER BY p.month DESC LIMIT 1) prev ON TRUE
     WHERE mt.company_id=$1 ${opts.all ? '' : 'AND mt.active'} ORDER BY mt.seq, mt.id`, [company.id, m]);
   rows.forEach(r => { r.usage = r.current != null && r.previous != null ? Math.round((r.current - r.previous) * 100) / 100 : null; });
   const { usual, typical } = await usageHistory(company.id, m, rows);
@@ -38,7 +38,7 @@ async function route(company, quarter, opts = {}) {
   const withMeter = rows.filter(r => r.meterNo && r.active);
   return { quarter: m, label: label(m), thisQuarter: quarterOf(company), meters: rows, typical,
            highUse: rows.filter(r => r.active && r.alert && r.alert.level === 'high').length,
-           read: withMeter.filter(r => r.current != null).length, toRead: withMeter.length };
+           read: withMeter.filter(r => r.current != null).length, cantRead: withMeter.filter(r => r.cantRead).length, toRead: withMeter.length };
 }
 
 // ---- High-usage alerts ----
@@ -51,7 +51,7 @@ const r2 = n => Math.round(n * 100) / 100;
  * across all meters (median, from at least 10 quarterly usages), so a big jump stands out.
  */
 async function usageHistory(companyId, quarter, rows) {
-  const reads = await db.q('SELECT meter_id, month, reading::float AS reading FROM meter_reads WHERE company_id=$1 AND month<$2 ORDER BY meter_id, month', [companyId, quarter]);
+  const reads = await db.q('SELECT meter_id, month, reading::float AS reading FROM meter_reads WHERE company_id=$1 AND month<$2 AND reading IS NOT NULL ORDER BY meter_id, month', [companyId, quarter]);
   const start = new Map((await db.q('SELECT id, start_reading::float AS s FROM meters WHERE company_id=$1', [companyId])).map(r => [r.id, r.s]));
   const per = new Map();
   let lastId = null, lastQ = null, lastV = null;
@@ -107,10 +107,18 @@ async function read(company, crew, meterId, b) {
     await db.q('DELETE FROM meter_reads WHERE meter_id=$1 AND month=$2', [meterId, month]);
     return;
   }
-  const n = Number(b.reading);
+  const raw = String(b.reading).trim();
+  if (raw.startsWith('*')) {   // "*" = can't read it this quarter; anything after it is the reason ("* buried in mud")
+    const why = (raw.slice(1).trim() || String(b.notes || '').trim()).slice(0, 500);
+    await db.q(`INSERT INTO meter_reads (company_id, meter_id, reading, cant_read, month, crew_id, notes) VALUES ($1,$2,NULL,TRUE,$3,$4,$5)
+      ON CONFLICT (meter_id, month) DO UPDATE SET reading=NULL, cant_read=TRUE, crew_id=EXCLUDED.crew_id, notes=EXCLUDED.notes, read_at=now(), flag_ok=FALSE`,
+      [company.id, meterId, month, crew ? crew.id : null, why]);
+    return;
+  }
+  const n = Number(raw.replace(/[,\s]/g, ''));
   if (!isFinite(n) || n < 0 || n > 1e10) V.bad('The reading must be a number.');
   await db.q(`INSERT INTO meter_reads (company_id, meter_id, reading, month, crew_id, notes) VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (meter_id, month) DO UPDATE SET reading=EXCLUDED.reading, crew_id=EXCLUDED.crew_id, notes=EXCLUDED.notes, read_at=now(),
+    ON CONFLICT (meter_id, month) DO UPDATE SET reading=EXCLUDED.reading, cant_read=FALSE, crew_id=EXCLUDED.crew_id, notes=EXCLUDED.notes, read_at=now(),
       flag_ok = meter_reads.flag_ok AND meter_reads.reading = EXCLUDED.reading`,
     [company.id, meterId, n, month, crew ? crew.id : null, String(b.notes || '').trim().slice(0, 500)]);
 }
@@ -189,8 +197,9 @@ async function fromExcel(buffer) {
     meters.push(m);
     const cur = g('current').replace(/,/g, '');
     if (cur !== '') {
-      if (!/^\d+(\.\d+)?$/.test(cur)) V.bad(`Row ${n}: the current reading "${cur}" isn't a number.`);
-      readings.push({ seq, account: m.account, meterNo, reading: Number(cur) });
+      if (cur.startsWith('*')) readings.push({ seq, account: m.account, meterNo, reading: cur });   // can't read
+      else if (!/^\d+(\.\d+)?$/.test(cur)) V.bad(`Row ${n}: the current reading "${cur}" isn't a number (or * for can't read).`);
+      else readings.push({ seq, account: m.account, meterNo, reading: Number(cur) });
     }
   });
   if (!meters.length) V.bad('No meters found under the header row.');
