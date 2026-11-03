@@ -476,6 +476,24 @@ CREATE TABLE IF NOT EXISTS day_photos (
 );
 CREATE INDEX IF NOT EXISTS day_photos_day ON day_photos (company_id, day);
 CREATE TABLE IF NOT EXISTS slug_redirects (old_slug TEXT PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE);
+-- Board reports: a week or month of what the crew did, with photos. The boss adds notes and picks the photos;
+-- the board opens it with a private link (token).
+CREATE TABLE IF NOT EXISTS board_reports (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  start_day  DATE NOT NULL,
+  end_day    DATE NOT NULL,
+  intro      TEXT NOT NULL DEFAULT '',
+  notes      JSONB NOT NULL DEFAULT '{}',
+  hidden     JSONB NOT NULL DEFAULT '[]',
+  token      TEXT NOT NULL,
+  sent_at    TIMESTAMPTZ,
+  sent_to    TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, start_day, end_day)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS board_reports_token ON board_reports (token);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS board_emails TEXT NOT NULL DEFAULT '';
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

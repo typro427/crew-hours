@@ -35,11 +35,133 @@
     if (name === 'orders') orderPanel.load();
     if (name === 'jobs') loadJobs();
     if (name === 'portal') loadPortal();
+    if (name === 'board') loadBoard();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
   document.querySelectorAll('[data-goto]').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-goto')); }; });
   $('logout').onclick = function () { api('POST', '/api/logout').then(function () { location.href = '/login'; }); };
+
+  /* --------------------------- board report --------------------------- */
+  var br = { data: null, timer: null };
+  function brPrevMonth(t) { var y = +t.slice(0, 4), m = +t.slice(5, 7) - 1; if (m < 1) { m = 12; y--; } return y + '-' + (m < 10 ? '0' : '') + m; }
+  function brShift(d, n) { var x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+  function brMonthAdd(ym, n) { var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12 + 1; return y + '-' + (m < 10 ? '0' : '') + m; }
+  function brQuery() {
+    var k = $('br-kind').value;
+    return 'kind=' + k + '&start=' + encodeURIComponent(k === 'month' ? $('br-month').value : $('br-week').value);
+  }
+  function loadBoard() {
+    var t = me_today() || new Date().toISOString().slice(0, 10);
+    if (!$('br-month').value) $('br-month').value = t.slice(8, 10) < '15' ? brPrevMonth(t) : t.slice(0, 7);   // early in the month: last month's report
+    if (!$('br-week').value) $('br-week').value = brShift(t, -7);
+    $('br-month').hidden = $('br-kind').value !== 'month'; $('br-week').hidden = $('br-kind').value === 'month';
+    status('br-status', 'Loading…');
+    return api('GET', '/api/admin/board?' + brQuery()).then(function (d) { br.data = d; drawBoard(); status('br-status', ''); })
+      .catch(function (e) { status('br-status', e.message, 'err'); });
+  }
+  $('br-kind').onchange = loadBoard; $('br-month').onchange = loadBoard; $('br-week').onchange = loadBoard;
+  $('br-prev').onclick = function () { brStep(-1); }; $('br-next').onclick = function () { brStep(1); };
+  function brStep(n) {
+    if ($('br-kind').value === 'month') $('br-month').value = brMonthAdd($('br-month').value, n);
+    else $('br-week').value = brShift(br.data ? br.data.from : $('br-week').value, 7 * n);
+    loadBoard();
+  }
+  function brHidden(k) { return br.data.hidden.indexOf(k) >= 0; }
+  function brToggle(k, off) { var h = br.data.hidden.filter(function (x) { return x !== k; }); if (off) h.push(k); br.data.hidden = h; brSave(); }
+  function brSave() {
+    clearTimeout(br.timer); status('br-status', 'Saving…');
+    br.timer = setTimeout(function () {
+      var d = br.data;
+      api('PUT', '/api/admin/board', { from: d.from, to: d.to, intro: d.intro, notes: d.notes, hidden: d.hidden })
+        .then(function () { status('br-status', 'Saved.', 'ok'); }).catch(function (e) { status('br-status', e.message, 'err'); });
+    }, 600);
+  }
+  function brNote(key, ph) {
+    var t = el('textarea'); t.rows = 1; t.placeholder = ph || 'Note for the board (optional)'; t.value = br.data.notes[key] || '';
+    t.oninput = function () { if (t.value.trim()) br.data.notes[key] = t.value; else delete br.data.notes[key]; brSave(); };
+    return t;
+  }
+  function brCheck(key, label, onchange) {
+    var c = el('input', 'br-check'); c.type = 'checkbox'; c.checked = !brHidden(key); c.setAttribute('aria-label', label);
+    c.onchange = function () { brToggle(key, !c.checked); onchange(!c.checked); };
+    return c;
+  }
+  function drawBoard() {
+    var d = br.data;
+    $('br-label').textContent = d.label;
+    $('br-intro').value = d.intro || '';
+    $('br-open').href = d.link;
+    $('br-emails').value = d.boardEmails || '';
+    $('br-sent').textContent = d.sentAt ? 'Emailed to ' + d.sentTo + ' on ' + new Date(d.sentAt).toLocaleString() + '.' : 'The link opens without signing in. Only people you give it to can see it.';
+    var tiles = $('br-tiles'); tiles.innerHTML = '';
+    d.summary.forEach(function (t) { var b = el('div', 'tile'), v = el('div', 'v'); v.innerHTML = t.value; b.appendChild(v); b.appendChild(el('div', 'k', t.label)); tiles.appendChild(b); });
+    tiles.hidden = !d.summary.length;
+    var box = $('br-sections'); box.innerHTML = '';
+    if (!d.sections.length) { box.appendChild(el('p', 'br-empty', 'Nothing was logged for these dates yet.')); return; }
+    d.sections.forEach(function (s) {
+      var sec = el('section', 'br-sec' + (brHidden(s.key) ? ' off' : '')), hd = el('header');
+      hd.appendChild(brCheck(s.key, 'Include ' + s.title, function (off) { sec.classList.toggle('off', off); }));
+      hd.appendChild(el('h4', '', s.title));
+      hd.appendChild(el('span', 'hint', (s.items || s.list).length + ''));
+      sec.appendChild(hd);
+      (s.items || []).forEach(function (i) {
+        var it = el('div', 'br-item' + (brHidden(i.key) ? ' off' : '')), body = el('div', 'br-body');
+        it.appendChild(brCheck(i.key, 'Include ' + i.title, function (off) { it.classList.toggle('off', off); }));
+        var h = el('div', 'br-head'); h.appendChild(el('b', '', i.title));
+        if (i.priority) { h.appendChild(document.createTextNode(' ')); h.appendChild(el('span', 'chip ' + ({ urgent: 'p1', high: 'p2' }[i.priority] || ''), i.priority)); }
+        body.appendChild(h);
+        if (i.sub) body.appendChild(el('div', 'br-sub', i.sub));
+        if (i.text) body.appendChild(el('div', 'br-txt', i.text));
+        if (i.photos && i.photos.length) {
+          var pics = el('div', 'br-pics');
+          i.photos.forEach(function (p) {
+            var b = el('button', 'br-pic' + (brHidden(p) ? ' off' : '')), img = el('img'); b.type = 'button';
+            img.src = '/api/admin/board/photo/' + p; img.alt = ''; img.loading = 'lazy'; b.appendChild(img);
+            b.title = 'Tap to leave this photo out (or put it back)';
+            b.onclick = function () { var off = !b.classList.contains('off'); b.classList.toggle('off', off); brToggle(p, off); };
+            pics.appendChild(b);
+          });
+          body.appendChild(pics);
+        }
+        body.appendChild(brNote(i.key));
+        it.appendChild(body); sec.appendChild(it);
+      });
+      if (s.list) {
+        var ul = el('ul', 'br-list');
+        s.list.forEach(function (i) {
+          var li = el('li', brHidden(i.key) ? 'off' : '');
+          li.appendChild(brCheck(i.key, 'Include ' + i.title, function (off) { li.classList.toggle('off', off); }));
+          var t = el('span'); t.appendChild(el('b', '', i.title)); if (i.priority) t.appendChild(document.createTextNode(' (' + i.priority + ')')); if (i.sub) t.appendChild(document.createTextNode(' · ' + i.sub));
+          li.appendChild(t); ul.appendChild(li);
+        });
+        sec.appendChild(ul);
+      }
+      box.appendChild(sec);
+    });
+  }
+  $('br-intro').oninput = function () { br.data.intro = $('br-intro').value; brSave(); };
+  $('br-copy').onclick = function () {
+    var l = br.data && br.data.link; if (!l) return;
+    (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(function () { status('br-status', 'Link copied. Paste it in an email or text.', 'ok'); })
+      .catch(function () { window.prompt('Copy this link:', l); });
+  };
+  $('br-newlink').onclick = function () {
+    var b = $('br-newlink');
+    if (b.textContent !== 'Tap again to replace') { b.textContent = 'Tap again to replace'; setTimeout(function () { b.textContent = 'Make a new link'; }, 4000); status('br-status', 'The old link will stop working.'); return; }
+    b.textContent = 'Make a new link';
+    api('POST', '/api/admin/board/link', { from: br.data.from, to: br.data.to }).then(function (r) { br.data.link = r.link; $('br-open').href = r.link; status('br-status', 'New link made. The old one no longer works.', 'ok'); })
+      .catch(function (e) { status('br-status', e.message, 'err'); });
+  };
+  $('br-email').onclick = function () {
+    var b = $('br-email'); b.disabled = true; status('br-status', 'Sending…');
+    clearTimeout(br.timer);
+    var d = br.data;
+    api('PUT', '/api/admin/board', { from: d.from, to: d.to, intro: d.intro, notes: d.notes, hidden: d.hidden })
+      .then(function () { return api('POST', '/api/admin/board/email', { from: d.from, to: d.to, emails: $('br-emails').value }); })
+      .then(function (r) { d.sentTo = r.sentTo; d.sentAt = new Date().toISOString(); d.boardEmails = r.sentTo; $('br-sent').textContent = 'Emailed to ' + r.sentTo + ' just now.'; status('br-status', 'Sent to the board.', 'ok'); })
+      .catch(function (e) { status('br-status', e.message, 'err'); }).then(function () { b.disabled = false; });
+  };
 
   /* ------------------------------- me --------------------------------- */
   function loadMe() {

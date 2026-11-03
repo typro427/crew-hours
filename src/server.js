@@ -134,6 +134,25 @@ app.post('/inv/:id/:token', express.urlencoded({ extended: false, limit: '10kb' 
   } catch (e) { next(e); }
 });
 
+// Board report: the private link the board opens (no sign-in), and its photos (only the ones in the report).
+const BR = require('./board');
+app.get('/board/:token', async (req, res, next) => {
+  try {
+    const x = await BR.byToken(req.params.token);
+    if (!x) return res.status(404).type('html').send(invPage('Not found', '<p style="padding:24px">That report link is not valid. Ask for a new one.</p>'));
+    res.set('Cache-Control', 'no-store').type('html').send(BR.html(x.report, k => `/board/${req.params.token}/photo/${k}`));
+  } catch (e) { next(e); }
+});
+app.get('/board/:token/photo/:key', async (req, res, next) => {
+  try {
+    const x = await BR.byToken(req.params.token);
+    if (!x || !x.photos.has(req.params.key)) return res.status(404).end();
+    const p = await BR.photo(x.company.id, req.params.key);
+    if (!p) return res.status(404).end();
+    res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=3600' }).send(p.data);
+  } catch (e) { next(e); }
+});
+
 // Owner portal pages: /p/<link>/ (sign in or home), /p/<link>/in/<token> (the emailed sign-in link).
 const portalHtml = fs.readFileSync(path.join(PUB, 'portal.html'), 'utf8');
 app.get('/p/:slug', async (req, res, next) => {

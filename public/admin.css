@@ -152,3 +152,32 @@ details.bulk textarea{width:100%;margin:10px 0}
 .wx-title input{width:100%}
 .wx-acts{display:flex;gap:6px;margin-left:auto}
 .mr-table tr.cant td{background:color-mix(in srgb, #c4560c 8%, transparent)}
+
+/* board report */
+.br-send{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--sunk)}
+.br-pick input,.br-pick select{width:auto;min-height:36px;padding:6px 10px}
+.br-kicker{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.br-title{margin:2px 0 0;font:700 1.6rem var(--f-head, inherit)}
+.br-intro{display:flex;flex-direction:column;gap:6px;font-weight:600}
+#br-tiles .tile .v small{display:block;font:400 .8rem var(--f-body);color:var(--muted)}
+.br-sec{margin-top:8px}
+.br-sec > header{display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:6px}
+.br-sec > header h4{margin:0;font-size:1.1rem;flex:1}
+.br-sec.off > :not(header){opacity:.4}
+.br-item{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.br-item.off .br-body{opacity:.4}
+.br-item .br-head b{font-size:1rem}
+.br-item .br-sub{color:var(--muted);font-size:.86rem}
+.br-item .br-txt{font-size:.92rem;white-space:pre-line;margin-top:4px}
+.br-item textarea{min-height:44px;margin-top:6px;font-size:.92rem;padding:8px 10px}
+.br-check{width:22px;height:22px;min-height:0;margin-top:2px;accent-color:var(--accent)}
+.br-pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px}
+.br-pic{position:relative;padding:0;border:2px solid transparent;border-radius:8px;background:var(--sunk);cursor:pointer;overflow:hidden;aspect-ratio:4/3}
+.br-pic img{width:100%;height:100%;object-fit:cover;display:block}
+.br-pic.off{border-color:var(--line)} .br-pic.off img{opacity:.25;filter:grayscale(1)}
+.br-pic.off::after{content:"Left out";position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.65);color:#fff;font-size:.78rem;font-weight:700;padding:3px 0;text-align:center}
+.br-list{list-style:none;margin:0;padding:0}
+.br-list li{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.br-list li.off span{opacity:.4;text-decoration:line-through}
+.br-empty{color:var(--muted);padding:12px 0}
+@media (max-width:640px){.br-send .row{flex-wrap:wrap!important}}

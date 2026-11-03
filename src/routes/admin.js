@@ -395,6 +395,26 @@ r.get('/tasks/photo/:id', async (req, res) => {
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
 });
 
+/* ------------------------------- board report ------------------------------- */
+const BR = require('../board');
+const brRange = (req, q) => {
+  if (q.from && q.to) return { from: String(q.from), to: String(q.to) };
+  return BR.period(req.company, q.kind === 'month' ? 'month' : 'week', String(q.start || ''));
+};
+r.get('/board', async (req, res) => { const p = brRange(req, req.query); res.json({ kind: p.kind || 'custom', ...(await BR.get(req.company, p.from, p.to)) }); });
+r.put('/board', async (req, res) => { const b = req.body || {}; const out = await BR.save(req.company, String(b.from || ''), String(b.to || ''), b); BR.forget(); res.json(out); });
+r.post('/board/link', async (req, res) => { const b = req.body || {}; BR.forget(); res.json(await BR.newLink(req.company, String(b.from || ''), String(b.to || ''))); });
+r.post('/board/email', async (req, res) => {
+  if (A.limited('board:' + req.company.id, 20, 60 * 60e3)) return res.status(429).json({ error: 'Too many emails. Try again in an hour.' });
+  A.fail('board:' + req.company.id, 60 * 60e3);
+  const b = req.body || {}; res.json(await BR.email(req.company, String(b.from || ''), String(b.to || ''), { to: b.emails }));
+});
+r.get('/board/photo/:key', async (req, res) => {
+  const p = await BR.photo(req.company.id, req.params.key);
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
+});
+
 /* --------------------------------- import ---------------------------------- */
 // Bring in crew, settings and past hours from another system (e.g. the old Google Sheet).
 // Safe to run twice: existing crew (same name) and days already logged are left alone.
