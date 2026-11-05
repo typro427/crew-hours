@@ -508,6 +508,34 @@ CREATE TABLE IF NOT EXISTS road_drives (
   UNIQUE (road_id, day)
 );
 CREATE INDEX IF NOT EXISTS road_drives_day ON road_drives (company_id, day);
+-- GPS: the route recorded while driving (only between Start drive and Stop), each road's shape for ticking it by GPS.
+ALTER TABLE road_drives ADD COLUMN IF NOT EXISTS auto BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS road_shapes (
+  road_id    INTEGER PRIMARY KEY REFERENCES roads(id) ON DELETE CASCADE,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  source     TEXT NOT NULL,              -- osm | learned
+  shape      JSONB NOT NULL,             -- [[ [lat,lon], ... ], ...]
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS drive_trips (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id    INTEGER REFERENCES crew(id) ON DELETE CASCADE,
+  ref        TEXT NOT NULL,
+  day        DATE NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at   TIMESTAMPTZ,
+  UNIQUE (company_id, ref)
+);
+CREATE INDEX IF NOT EXISTS drive_trips_day ON drive_trips (company_id, day);
+CREATE TABLE IF NOT EXISTS drive_points (
+  trip_id INTEGER NOT NULL REFERENCES drive_trips(id) ON DELETE CASCADE,
+  t       TIMESTAMPTZ NOT NULL,
+  lat     DOUBLE PRECISION NOT NULL,
+  lon     DOUBLE PRECISION NOT NULL,
+  acc     REAL,
+  PRIMARY KEY (trip_id, t)
+);
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

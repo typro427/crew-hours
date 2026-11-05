@@ -294,3 +294,7 @@ tfoot td{font-weight:700;border-bottom:0}
 .dform .chk{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}.dform .chk input{width:20px;height:20px;min-height:0}
 .dform .row{display:flex;gap:8px}
 .dpend{font-size:12px;color:var(--warn);font-weight:700}
+.dgrow{display:flex;gap:8px}.dgrow .dgps{flex:1;min-height:46px;font-weight:700}.dgrow .dmapbtn{min-height:46px}
+.dgrow .danger{background:var(--err);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
+.dginfo{font-size:13px;font-weight:600;color:var(--ok)}.dginfo.weak{color:var(--warn)}
+.dmap{height:340px;border-radius:12px;border:1px solid var(--line);overflow:hidden;z-index:1}

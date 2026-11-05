@@ -46,7 +46,7 @@
   function loadDrives() {
     return api('GET', '/api/admin/drives?days=' + $('dr-days').value).then(function (d) {
       var body = $('dr-body'); body.innerHTML = '';
-      if (!d.days.length) { var tr = el('tr'), td = el('td', 'muted', 'Nothing yet. Managers tick roads off in the crew app under Roads driven.'); td.colSpan = 4; tr.appendChild(td); body.appendChild(tr); }
+      if (!d.days.length) { var tr = el('tr'), td = el('td', 'muted', 'Nothing yet. Managers tick roads off in the crew app under Roads driven.'); td.colSpan = 5; tr.appendChild(td); body.appendChild(tr); }
       d.days.forEach(function (g) {
         var tr = el('tr'), dt = new Date(g.day + 'T12:00:00Z');
         tr.appendChild(el('td', '', dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })));
@@ -54,12 +54,49 @@
         tr.appendChild(el('td', '', g.who.join(', ')));
         var nt = el('td');
         g.notes.forEach(function (n) { var p = el('div'); p.appendChild(el('b', '', n.road + ': ')); p.appendChild(document.createTextNode(n.note + (n.task ? ' (on Tasks)' : ''))); nt.appendChild(p); });
-        tr.appendChild(nt); body.appendChild(tr);
+        tr.appendChild(nt);
+        var mt = el('td'), mb = el('button', 'btn ghost small', 'Map'); mb.type = 'button'; mb.onclick = function () { drMap(g.day); }; mt.appendChild(mb); tr.appendChild(mt);
+        body.appendChild(tr);
       });
       status('dr-status', '');
     }).catch(function (e) { status('dr-status', e.message, 'err'); });
   }
   $('dr-days').onchange = loadDrives;
+  function drawShapes(s) {
+    $('dr-shapes-sum').innerHTML = '';
+    var b = el('b', '', 'Road shapes: ' + (s.osm + s.learned) + ' of ' + s.total + ' known');
+    $('dr-shapes-sum').appendChild(b);
+    $('dr-shapes-sum').appendChild(document.createTextNode(' (' + s.osm + ' from OpenStreetMap, ' + s.learned + ' learned by driving)'));
+    var ul = $('dr-missing'); ul.innerHTML = '';
+    s.missing.forEach(function (r) { ul.appendChild(el('li', '', r.name)); });
+    $('dr-missing-btn').hidden = !s.missing.length;
+    $('dr-missing-btn').textContent = (ul.hidden ? 'Show the ' : 'Hide the ') + s.missing.length + ' road' + (s.missing.length === 1 ? '' : 's') + ' with no shape';
+  }
+  $('dr-missing-btn').onclick = function () { $('dr-missing').hidden = !$('dr-missing').hidden; api('GET', '/api/admin/drives/shapes').then(drawShapes); };
+  var loadDrivesList = loadDrives;
+  loadDrives = function () { api('GET', '/api/admin/drives/shapes').then(drawShapes).catch(function () {}); return loadDrivesList(); };
+  $('dr-find').onclick = function () {
+    var b = $('dr-find'); b.disabled = true; status('dr-status', 'Looking up your roads on OpenStreetMap… (can take 30 seconds)');
+    api('POST', '/api/admin/drives/shapes/find').then(function (s) {
+      drawShapes(s); status('dr-status', 'Found ' + s.found + ' road' + (s.found === 1 ? '' : 's') + ' on OpenStreetMap.' + (s.missing.length ? ' The rest are learned when someone ticks them by hand during a drive.' : ''), 'ok');
+    }).catch(function (e) { status('dr-status', e.message, 'err'); }).then(function () { b.disabled = false; });
+  };
+  var drM = null, drLayer = null;
+  function drMap(day) {
+    if (!window.L) { status('dr-status', "The map didn't load. Refresh the page.", 'err'); return; }
+    $('dr-map-wrap').hidden = false;
+    $('dr-map-title').textContent = new Date(day + 'T12:00:00Z').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+    if (!drM) { drM = L.map('dr-map'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(drM); drLayer = L.layerGroup().addTo(drM); drM.setView([36.4, -84.1], 13); }
+    setTimeout(function () { drM.invalidateSize(); }, 50);
+    api('GET', '/api/admin/drives/map?day=' + day).then(function (m) {
+      drLayer.clearLayers(); var b = [];
+      m.roads.forEach(function (r) { r.shape.forEach(function (line) { L.polyline(line, { color: r.done ? '#2f7d4f' : '#8b9299', weight: r.done ? 6 : 4, opacity: .85 }).bindTooltip(r.name + (r.source === 'learned' ? ' (learned)' : '')).addTo(drLayer); b = b.concat(line); }); });
+      m.route.forEach(function (line) { L.polyline(line, { color: '#1f6feb', weight: 3 }).addTo(drLayer); b = b.concat(line); });
+      if (b.length) drM.fitBounds(b, { padding: [20, 20] }); else if (m.center) drM.setView(m.center, 14);
+      if (!b.length) status('dr-status', 'No road shapes or route for that day yet.');
+      $('dr-map-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }).catch(function (e) { status('dr-status', e.message, 'err'); });
+  }
 
   /* --------------------------- board report --------------------------- */
   var br = { data: null, timer: null };

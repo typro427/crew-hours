@@ -181,3 +181,9 @@ details.bulk textarea{width:100%;margin:10px 0}
 .br-list li.off span{opacity:.4;text-decoration:line-through}
 .br-empty{color:var(--muted);padding:12px 0}
 @media (max-width:640px){.br-send .row{flex-wrap:wrap!important}}
+
+/* roads driven */
+.dr-shapes{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--sunk)}
+.dr-missing{margin:0;padding-left:18px;columns:2;font-size:.9rem}
+#dr-map{height:460px;border-radius:10px;border:1px solid var(--line);margin-top:8px}
+.dr-key{display:inline-block;width:14px;height:4px;border-radius:2px;margin:0 4px 2px 10px;vertical-align:middle}

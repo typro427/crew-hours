@@ -187,6 +187,14 @@ r.delete('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.co
 /* --------------------------------- roads ----------------------------------- */
 const RD = require('../roads');
 // kind=road (Roads mowed) or kind=water (water system sites).
+r.get('/drives/map', async (req, res) => res.json(await require('../drives').map(req.company, req.query.day, { any: true })));
+r.get('/drives/shapes', async (req, res) => res.json(await require('../drives').shapes(req.company)));
+r.post('/drives/shapes/find', async (req, res) => {
+  if (A.limited('osm:' + req.company.id, 6, 60 * 60e3)) return res.status(429).json({ error: 'Looked up too many times. Try again in an hour.' });
+  A.fail('osm:' + req.company.id, 60 * 60e3);
+  res.json(await require('../drives').findShapes(req.company));
+});
+r.delete('/drives/shapes/:roadId', async (req, res) => res.json(await require('../drives').clearShape(req.company, Number(req.params.roadId))));
 r.get('/drives', async (req, res) => res.json(await require('../drives').history(req.company, req.query.days)));
 r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id, req.query.kind) }));
 r.put('/roads', async (req, res) => { const b = req.body || {}; await RD.setList(req.company.id, b.names, b.kind); res.json({ roads: await RD.list(req.company.id, b.kind) }); });

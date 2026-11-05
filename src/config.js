@@ -39,6 +39,8 @@ const config = {
   // Weather reminders: National Weather Service forecast (free, US) and the US Census address lookup.
   weather: { api: env.WEATHER_API || 'https://api.weather.gov', geocoder: env.GEOCODER_URL || 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress',
     cacheMs: env.WEATHER_CACHE_MS != null ? Number(env.WEATHER_CACHE_MS) : 30 * 60e3 },   // the Weather Service updates about hourly
+  // Road shapes for the roads driven checklist (OpenStreetMap), and how far around the company to look.
+  geo: { overpass: env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter', radius: Number(env.ROAD_SEARCH_METERS) || 6000 },
   // QuickBooks Online (owners see their balance and invoices in the owner portal). Keys from developer.intuit.com.
   // QBO_SANDBOX=1 uses Intuit's test companies.
   qbo: {

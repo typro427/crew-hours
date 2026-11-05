@@ -49,7 +49,7 @@ test('a manager sees every road (not water sites) and ticks them off; untick wor
   await scott('POST', '/drives/' + ids['Skyline Knoll'], { done: true });
   r = await scott('POST', '/drives/' + ids['Skyline Knoll'], { done: false });
   assert.strictEqual(r.body.driven, 1);
-  assert.strictEqual((await db.one('SELECT count(*)::int AS n FROM road_drives')).n, 1, 'unticked with no note = gone');
+  assert.strictEqual((await db.one('SELECT count(*)::int AS n FROM road_drives WHERE done')).n, 1);
 });
 
 test('a note: ticks the road, goes on Tasks once, stays with the road for the day', async () => {

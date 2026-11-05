@@ -19,7 +19,7 @@ app.use((req, res, next) => {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Frame-Options': 'DENY',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   });
   if (config.isProd) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
@@ -41,6 +41,7 @@ app.use('/api/admin/portal/docs', express.raw({ type: () => true, limit: '13mb' 
 app.use(/^\/api\/p\/[^/]+\/report$/, express.json({ limit: '25mb' }));   // photos
 app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
 app.use(/^\/api\/admin\/(tasks|jobs)(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
+app.use(/^\/api\/c\/[^/]+\/drives\/trip$/, express.json({ limit: '2mb' }));   // GPS points from a drive
 app.use(express.json({ limit: '100kb' }));
 
 // Requests that change things must come from our own pages (blocks cross-site form tricks).
@@ -212,6 +213,7 @@ app.get('/c/:slug/sw.js', (req, res) => res.type('application/javascript').set('
 
 // Scripts and styles are re-checked on every visit (cheap, thanks to ETags) so updates show up straight away.
 // Images and icons can be kept for a day.
+app.use('/vendor/leaflet', express.static(path.join(__dirname, '..', 'node_modules', 'leaflet', 'dist'), { maxAge: '30d' }));   // maps
 app.use(express.static(PUB, { index: false, setHeaders: (res, file) => {
   res.setHeader('Cache-Control', /\.(png|ico|svg|webp|jpg)$/.test(file) && config.isProd ? 'public, max-age=86400' : 'no-cache');
 } }));

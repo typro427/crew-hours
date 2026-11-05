@@ -66,10 +66,12 @@
     progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3], clientRef:a[4] }]; },
     delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; },
     getDrives:       function(a){ return ["GET", "/drives?day=" + encodeURIComponent(a[1]||"")]; },
-    checkRoad:       function(a){ return ["POST", "/drives/" + a[1], a[2]]; }
+    checkRoad:       function(a){ return ["POST", "/drives/" + a[1], a[2]]; },
+    drivePoints:     function(a){ return ["POST", "/drives/trip", a[1]]; },
+    getDriveMap:     function(a){ return ["GET", "/drives/map?day=" + encodeURIComponent(a[1]||"")]; }
   };
   // ---- Offline: saves wait in an outbox on the phone; the last lists loaded are kept so screens open with no signal. ----
-  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked" };
+  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked", drivePoints:"Drive route" };
   var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1, getDrives:1 };
   var memBox=[], memCache={}, memId=1;
   var IDB=(function(){
@@ -1057,15 +1059,19 @@
     var top=el("div","dtop"), r1=el("div","drow1"), cnt=el("b","dcount"), daySel=el("select"); daySel.setAttribute("aria-label","Day");
     r1.appendChild(cnt); r1.appendChild(daySel); top.appendChild(r1);
     var bar=el("div","dbar"), fill=el("i"); bar.appendChild(fill); top.appendChild(bar);
+    var gRow=el("div","dgrow"), gpsBtn=el("button","primary dgps","\u25b6 Start drive (GPS)"), mapBtn=el("button","ghost dmapbtn","Map"); gpsBtn.type=mapBtn.type="button";
+    gRow.appendChild(gpsBtn); gRow.appendChild(mapBtn); top.appendChild(gRow);
+    var gInfo=el("div","dginfo"); gInfo.hidden=true; top.appendChild(gInfo);
     var tools=el("div","dtools"), find=el("input"); find.type="search"; find.placeholder="Search roads"; find.autocomplete="off"; find.setAttribute("aria-label","Search roads");
     var hideL=el("label"), hide=el("input"); hide.type="checkbox"; hideL.appendChild(hide); hideL.appendChild(document.createTextNode("Hide driven"));
     tools.appendChild(find); tools.appendChild(hideL); top.appendChild(tools);
-    var hint=el("p","hint","Tap the box as you drive each road. Tap Note if something needs fixing."); hint.style.margin="0";
+    var hint=el("p","hint","Tap Start drive and the app ticks each road as you drive it (keep this screen open). Or tap the box yourself. Tap Note if something needs fixing."); hint.style.margin="0";
     var list=el("div","dlist"), empty=el("p","hint",""); empty.style.cssText="margin:0;text-align:center";
     var st=statusLine();
-    [top,hint,st,list,empty].forEach(function(n){ root.appendChild(n); });
+    var mapBox=el("div","dmap"); mapBox.hidden=true;
+    [top,mapBox,hint,st,list,empty].forEach(function(n){ root.appendChild(n); });
     find.oninput=draw; hide.onchange=draw;
-    daySel.onchange=function(){ me.day=daySel.value; me.open=null; me.load(); };
+    daySel.onchange=function(){ me.day=daySel.value; me.open=null; me.load(); setTimeout(function(){ refreshMap(true); },300); };
     function fillDays(d){
       if(daySel.options.length && daySel.dataset.today===d.today) { daySel.value=d.day; return; }
       daySel.innerHTML=""; daySel.dataset.today=d.today;
@@ -1094,15 +1100,121 @@
       shown.forEach(function(r){ list.appendChild(row(r)); });
     }
     function sub(r){
-      if(r.done) return "Driven"+(r.checkedAt ? " "+timeOf(r.checkedAt) : "")+(r.byName ? " by "+r.byName : "");
+      if(r.done) return "Driven"+(r.checkedAt ? " "+timeOf(r.checkedAt) : "")+(r.byName ? " by "+r.byName : "")+(r.auto ? " \u00b7 GPS" : "");
       return r.lastDay ? "Last driven "+short(r.lastDay)+" · "+ago(r.lastDay)+(r.lastBy ? " ("+r.lastBy+")" : "") : "Not driven yet";
     }
     function send(r, body, after){
       body.day=me.data.day;
       call("checkRoad",[token, r.id, body], function(res){
         if(res.queued){ r.pending=true; draw(); say(st,"No signal. Saved on this phone; it sends when you're back in range.","ok"); if(after) after(); return; }
-        me.data=res; draw(); if(after) after();
+        me.data=res; draw(); refreshMap(); if(after) after();
       }, function(msg){ say(st,msg,"err"); me.load(); });
+    }
+
+    // ---- GPS: record the route while driving; the app ticks the roads it covers ----
+    var rec={ on:false, ref:null, buf:[], local:[], watch:null, timer:null, lock:null, last:null, n:0, weak:false, sending:null };
+    function rid(){ var a=new Uint8Array(12); (window.crypto||{}).getRandomValues ? crypto.getRandomValues(a) : a.forEach(function(_,i){ a[i]=Math.random()*256; }); return Array.prototype.map.call(a,function(b){ return ("0"+b.toString(16)).slice(-2); }).join(""); }
+    function meters(a,b){ var r=Math.PI/180, dl=(b[0]-a[0])*r, dn=(b[1]-a[1])*r, h=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dn/2)*Math.sin(dn/2); return 2*6371000*Math.asin(Math.sqrt(h)); }
+    function wake(){ if(rec.on && navigator.wakeLock && document.visibilityState==="visible") navigator.wakeLock.request("screen").then(function(l){ rec.lock=l; }).catch(function(){}); }
+    document.addEventListener("visibilitychange", function(){ if(!rec.on) return; if(document.visibilityState==="visible") wake(); else flushGps(); drawGps(); });
+    function drawGps(){
+      gpsBtn.textContent = rec.on ? "■ Stop drive" : "▶ Start drive (GPS)";
+      gpsBtn.className = rec.on ? "danger dgps" : "primary dgps";
+      gInfo.hidden=!rec.on;
+      if(rec.on) gInfo.textContent = (rec.weak ? "Weak GPS signal… " : "● Recording your route. ") + "Keep this screen open; it pauses if you lock the phone or switch apps.";
+      gInfo.className="dginfo"+(rec.weak ? " weak" : "");
+    }
+    function onPos(p){
+      var c=p.coords, acc=Math.round(c.accuracy||0);
+      rec.weak = acc>60; drawGps();
+      if(rec.weak) return;
+      var pt=[p.timestamp||Date.now(), +c.latitude.toFixed(6), +c.longitude.toFixed(6), acc];
+      if(rec.last && meters(rec.last.slice(1),pt.slice(1))<10 && pt[0]-rec.last[0]<30000) return;   // standing still
+      rec.last=pt; rec.buf.push(pt); rec.local.push([pt[1],pt[2]]); rec.n++;
+      drawLive();
+    }
+    function onErr(e){
+      if(e && e.code===1){ stopGps(true); say(st,"Location is blocked for this app. On an iPhone: Settings › Privacy & Security › Location Services › Safari Websites › While Using. On Android: tap the lock by the web address › Permissions › Location.","err"); return; }
+      rec.weak=true; drawGps();
+    }
+    function startGps(){
+      if(!navigator.geolocation){ say(st,"This phone's browser can't share location.","err"); return; }
+      if(me.data && me.data.day!==me.data.today){ me.day=me.data.today; me.load(); }
+      rec.on=true; rec.ref=rid(); rec.buf=[]; rec.local=[]; rec.last=null; rec.n=0; rec.weak=false;
+      rec.watch=navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy:true, maximumAge:5000, timeout:30000 });
+      rec.timer=setInterval(flushGps, 20000);
+      wake(); drawGps(); say(st,"Drive started. Roads tick themselves as you cover them.","ok");
+      if(mapBox.hidden) toggleMap();
+    }
+    function stopGps(quiet){
+      if(rec.watch!=null) navigator.geolocation.clearWatch(rec.watch);
+      clearInterval(rec.timer); rec.watch=null;
+      if(rec.lock){ try{ rec.lock.release(); }catch(e){} rec.lock=null; }
+      var was=rec.on; rec.on=false; drawGps();
+      if(was) flushGps(true).then(function(){ if(!quiet && me.data) say(st,"Drive stopped. "+me.data.driven+" of "+me.data.roads.length+" roads driven today.","ok"); });
+    }
+    gpsBtn.onclick=function(){ if(rec.on) stopGps(); else startGps(); };
+    function flushGps(ended){
+      if(!rec.ref || (!rec.buf.length && !ended)) return rec.sending || Promise.resolve();
+      var pts=rec.buf.splice(0), ref=rec.ref, prev=rec.sending || Promise.resolve();
+      if(ended) rec.ref=null;
+      rec.sending=prev.then(function(){ return new Promise(function(ok){
+        call("drivePoints",[token,{ ref:ref, points:pts, ended:!!ended }], function(res){
+          if(!res.queued && res.list && me.data && res.list.day===me.data.day){ me.data=res.list; draw(); refreshMap(); }
+          if(res.ticked && res.ticked.length) say(st,"GPS ticked: "+res.ticked.join(", ")+".","ok");
+          ok();
+        }, function(msg){ say(st,msg,"err"); ok(); });
+      }); });
+      return rec.sending;
+    }
+    // ---- the map: your route (blue), roads driven (green) and not yet (grey) ----
+    var map=null, layers=null, live=null, here=null, mapData=null;
+    function leaflet(){
+      if(window.L) return Promise.resolve(window.L);
+      return new Promise(function(ok,no){
+        var l=document.createElement("link"); l.rel="stylesheet"; l.href="/vendor/leaflet/leaflet.css"; document.head.appendChild(l);
+        var sc=document.createElement("script"); sc.src="/vendor/leaflet/leaflet.js"; sc.onload=function(){ ok(window.L); }; sc.onerror=function(){ no(new Error("The map didn't load. Check your signal.")); }; document.head.appendChild(sc);
+      });
+    }
+    function toggleMap(){
+      mapBox.hidden=!mapBox.hidden; mapBtn.textContent = mapBox.hidden ? "Map" : "Hide map";
+      if(!mapBox.hidden) refreshMap(true);
+    }
+    mapBtn.onclick=toggleMap;
+    function refreshMap(fit){
+      if(mapBox.hidden || !token) return;
+      leaflet().then(function(L){
+        if(!map){
+          map=L.map(mapBox,{ zoomControl:true }); map.setView([36.4,-84.1],13);
+          L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:19, attribution:"© OpenStreetMap" }).addTo(map);
+          layers=L.layerGroup().addTo(map);
+        }
+        setTimeout(function(){ map.invalidateSize(); },50);
+        call("getDriveMap",[token, me.data ? me.data.day : ""], function(res){ mapData=res; drawMap(fit); }, function(msg){ say(st,msg,"err"); });
+      }, function(e){ say(st,e.message,"err"); });
+    }
+    function drawMap(fit){
+      if(!map || !mapData) return;
+      var L=window.L; layers.clearLayers(); live=null; here=null;
+      var b=[];
+      mapData.roads.forEach(function(r){ r.shape.forEach(function(line){ L.polyline(line,{ color:r.done ? "#2f7d4f" : "#8b9299", weight:r.done ? 6 : 4, opacity:.85 }).bindTooltip(r.name).addTo(layers); line.forEach(function(p){ b.push(p); }); }); });
+      mapData.route.forEach(function(line){ L.polyline(line,{ color:"#1f6feb", weight:3 }).addTo(layers); });
+      drawLive();
+      if(fit===true){
+        var pts = rec.local.length ? rec.local.slice(-1) : null;
+        if(pts && rec.on) map.setView(pts[0], 16);
+        else if(b.length) map.fitBounds(b,{ padding:[20,20] });
+        else if(mapData.center) map.setView(mapData.center, 14);
+      }
+    }
+    function drawLive(){
+      if(!map || !window.L) return;
+      var L=window.L;
+      if(!rec.local.length) return;
+      if(!live) live=L.polyline(rec.local,{ color:"#1f6feb", weight:4 }).addTo(layers); else live.setLatLngs(rec.local);
+      var p=rec.local[rec.local.length-1];
+      if(!here) here=L.circleMarker(p,{ radius:8, color:"#fff", weight:3, fillColor:"#1f6feb", fillOpacity:1 }).addTo(layers); else here.setLatLng(p);
+      if(rec.on && !map.getBounds().pad(-0.2).contains(p)) map.panTo(p);
     }
     function row(r){
       var box=el("div","drive"+(r.done ? " done" : "")), m=el("div","dmain");
@@ -1111,7 +1223,7 @@
       if(r.note) nm.appendChild(el("span","dn","⚠ "+r.note+(r.taskId ? " (on Tasks)" : "")));
       if(r.pending) nm.appendChild(el("span","dpend","Waiting for signal"));
       var nb=el("button","dnote"+(r.note ? " has" : ""), r.note ? "Note ✎" : "Note"); nb.type="button";
-      tick.onclick=function(){ r.done=!r.done; if(r.done){ r.checkedAt=new Date().toISOString(); r.byName=me_name(); } box.replaceWith(row(r)); counts(); send(r,{ done:r.done }); };
+      tick.onclick=function(){ r.done=!r.done; r.auto=false; if(r.done){ r.checkedAt=new Date().toISOString(); r.byName=me_name(); } box.replaceWith(row(r)); counts(); flushGps().then(function(){ send(r,{ done:r.done }); }); };
       nm.onclick=tick.onclick;
       nb.onclick=function(){ me.open = me.open===r.id ? null : r.id; draw(); };
       m.appendChild(tick); m.appendChild(nm); m.appendChild(nb); box.appendChild(m);

@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/admin.css">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<script src="/vendor/leaflet/leaflet.js" defer></script>
 </head>
 <body>
 <header class="top">
@@ -243,7 +245,14 @@
         <div><h3>Roads driven</h3><p class="hint" style="margin:0">The checklist managers tick in the crew app as they drive the roads, with anything they noted. Switch it on for others in Crew &amp; PINs.</p></div>
         <select id="dr-days" aria-label="How far back" style="width:auto"><option value="14">Last 2 weeks</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select>
       </div>
-      <div class="tablebox"><table class="roads"><thead><tr><th>Day</th><th>Driven</th><th>Who</th><th>Notes</th></tr></thead><tbody id="dr-body"></tbody></table></div>
+      <div class="dr-shapes">
+        <p style="margin:0" id="dr-shapes-sum"></p>
+        <p class="hint" style="margin:0">With a road's shape known, the app ticks it by itself when someone taps <b>Start drive</b> and drives it. Roads OpenStreetMap doesn't know are learned the first time they're ticked by hand during a drive.</p>
+        <div class="row" style="gap:8px"><button class="btn small" type="button" id="dr-find">Find road shapes on OpenStreetMap</button><button class="linkish" type="button" id="dr-missing-btn" hidden>Show roads with no shape</button></div>
+        <ul id="dr-missing" class="dr-missing" hidden></ul>
+      </div>
+      <div class="tablebox"><table class="roads"><thead><tr><th>Day</th><th>Driven</th><th>Who</th><th>Notes</th><th></th></tr></thead><tbody id="dr-body"></tbody></table></div>
+      <div id="dr-map-wrap" hidden><div class="row" style="justify-content:space-between"><b id="dr-map-title"></b><span class="hint"><span class="dr-key" style="background:#2f7d4f"></span>driven <span class="dr-key" style="background:#8b9299"></span>not driven <span class="dr-key" style="background:#1f6feb"></span>route</span></div><div id="dr-map"></div></div>
       <p class="status" id="dr-status"></p>
     </div>
   </section>
