@@ -117,6 +117,9 @@ test('import a sample schedule: CSV with headings, an Excel file, pasted rows; p
   ws.addRow(['Sample', 'How often', 'Last sampled']); ws.addRow(['Chlorine residual', 'Monthly', new Date(Date.UTC(2026, 9, 1))]);
   r = await raw('/import/read', Buffer.from(await wb.xlsx.writeBuffer()));
   assert.deepStrictEqual(r.body.rows.map(x => [x.name, x.months, x.last]), [['Chlorine residual', 1, '2026-10-01']]);
+  // TDEC schedule codes
+  r = await raw('/import/read', 'Sample,Sample Collection,Next due\nVOCs,3Y,2028-12-31\nNitrates,YR,2027-09-30\nRTCR,MN,2026-11-30\n');
+  assert.deepStrictEqual(r.body.rows.map(x => x.months), [36, 12, 1]);
   assert.strictEqual((await raw('/import/read', '%PDF-1.4 junk')).status, 400);
   assert.strictEqual((await raw('/import/read', '')).status, 400);
   // import: NITRATE updates "Nitrate"; Arsenic needs a frequency; remove the ones not in the file (unless recorded)

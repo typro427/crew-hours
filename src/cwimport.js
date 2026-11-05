@@ -62,6 +62,10 @@ function months(text) {
   if (!s) return null;
   const words = { monthly: 1, month: 1, quarterly: 3, quarter: 3, semiannual: 6, 'semi-annual': 6, 'semi annual': 6, biannual: 6, 'twice a year': 6, annual: 12, annually: 12, yearly: 12, year: 12,
     biennial: 24, biennially: 24, triennial: 36, triennially: 36, weekly: 0.25, daily: 1 / 30 };
+  // TDEC / SDWIS schedule codes: YR, MN, QT, SA, 3Y, 9Y, DA
+  const code = { yr: 12, an: 12, yy: 12, mn: 1, mo: 1, qt: 3, qr: 3, qu: 3, sa: 6, sm: 6, da: 1, dy: 1, wk: 1 }[s];
+  if (code) return code;
+  if (/^\d+\s*y$/.test(s)) return Number(s.replace(/\D/g, '')) * 12;
   const U = { year: 12, yr: 12, y: 12, month: 1, mo: 1, quarter: 3, qtr: 3, q: 3 };
   // "2x per year", "4 times a year", "4/yr": that many in each period
   let c = /(\d+)\s*(?:x|times)\s*(?:a|per|each|\/)?\s*(year|yr|y|month|mo|quarter|qtr|q)\b/.exec(s) || /(\d+)\s*\/\s*(year|yr|y|month|mo|quarter|qtr|q)\b/.exec(s);
