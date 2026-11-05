@@ -219,7 +219,7 @@ test('per-person switches: the boss turns parts of the app off for one person', 
   assert.strictEqual(r.status, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.crew.find(c => c.id === samRow.id).features.roads, false);
   const wk = (await sam('GET', '/week')).body;
-  assert.deepStrictEqual(wk.features, { hours: true, tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false, orders: false, jobs: false, drives: false });
+  assert.deepStrictEqual(wk.features, { hours: true, tasks: true, roads: false, w_sites: true, w_repairs: false, w_meters: true, members: false, orders: false, jobs: false, drives: false, compliance: false });
   assert.strictEqual((await sam('GET', '/roads')).status, 403);
   assert.strictEqual((await sam('POST', '/tasks', { kind: 'repair', title: 'x' })).status, 403);
   assert.strictEqual((await sam('GET', '/roads?kind=water')).status, 200);

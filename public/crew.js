@@ -351,6 +351,7 @@
   $("tab-roads").onclick = function(){ roadBoard.reset(); showScreen("roads"); };
   $("tab-water").onclick = function(){ showScreen("water"); };
   $("tab-drives").onclick = function(){ showScreen("drives"); };
+  $("tab-cw").onclick = function(){ location.href = "compliance"; };
   $("tab-mine").onclick = function(){ showScreen("mine"); if(week) loadWeek(week, sel); };
   $("tab-tasks").onclick = function(){ showScreen("tasks"); };
   $("tab-crew").onclick = function(){ showScreen("crew"); };
@@ -1650,6 +1651,7 @@
     $("tab-tasks").hidden=!features.tasks;
     $("tab-roads").hidden=!(features.roads && setup.roads>0);
     $("tab-drives").hidden=!((features.drives || isBoss) && setup.roads>0);
+    $("tab-cw").hidden=!(features.compliance || isBoss);
     $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
     $("tab-orders").hidden=!features.orders;

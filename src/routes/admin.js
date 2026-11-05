@@ -404,6 +404,9 @@ r.get('/tasks/photo/:id', async (req, res) => {
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
 });
 
+/* ------------------------------- compliance ------------------------------- */
+require('../compliance').mount(r, '/cw', null, req => req.owner.name || 'Boss');
+
 /* ------------------------------- board report ------------------------------- */
 const BR = require('../board');
 const brRange = (req, q) => {

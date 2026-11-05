@@ -510,6 +510,41 @@ CREATE TABLE IF NOT EXISTS road_drives (
 CREATE INDEX IF NOT EXISTS road_drives_day ON road_drives (company_id, day);
 -- GPS: the route recorded while driving (only between Start drive and Stop), each road's shape for ticking it by GPS.
 ALTER TABLE road_drives ADD COLUMN IF NOT EXISTS auto BOOLEAN NOT NULL DEFAULT FALSE;
+-- Compliance (water system): daily operating log, sampling schedule, testing & maintenance, the system's details.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS cw_system JSONB;
+CREATE TABLE IF NOT EXISTS cw_logs (
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  day        DATE NOT NULL,
+  ep         NUMERIC,                 -- free chlorine at the entry point, mg/L
+  dist       NUMERIC,                 -- free chlorine in distribution, mg/L
+  meter      NUMERIC,                 -- master meter, gallons
+  pump       NUMERIC,                 -- well pump run time, hours
+  notes      TEXT NOT NULL DEFAULT '',
+  by_name    TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, day)
+);
+CREATE TABLE IF NOT EXISTS cw_items (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  list       TEXT NOT NULL,           -- samples | assets
+  name       TEXT NOT NULL,
+  kind       TEXT NOT NULL DEFAULT '',
+  months     INTEGER NOT NULL DEFAULT 12,
+  last       DATE,
+  note       TEXT NOT NULL DEFAULT '',
+  position   INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS cw_history (
+  id         SERIAL PRIMARY KEY,
+  item_id    INTEGER NOT NULL REFERENCES cw_items(id) ON DELETE CASCADE,
+  day        DATE NOT NULL,
+  result     TEXT NOT NULL DEFAULT '',
+  lab        TEXT NOT NULL DEFAULT '',
+  by_name    TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cw_history_item ON cw_history (item_id, day);
 CREATE TABLE IF NOT EXISTS road_shapes (
   road_id    INTEGER PRIMARY KEY REFERENCES roads(id) ON DELETE CASCADE,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

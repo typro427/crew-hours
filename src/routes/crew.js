@@ -226,6 +226,9 @@ r.post('/:slug/drives/trip', A.requireCrew, drives, async (req, res) => res.json
 r.get('/:slug/drives/map', A.requireCrew, drives, async (req, res) => res.json(await DR.map(req.company, req.query.day)));
 r.get('/:slug/drives', A.requireCrew, drives, async (req, res) => res.json(await DR.list(req.company, req.query.day)));
 r.post('/:slug/drives/:roadId', A.requireCrew, drives, async (req, res) => res.json(await DR.check(req.company, req.crew, Number(req.params.roadId), req.body || {})));
+// Compliance (daily log, samples, testing, monthly report): managers, and anyone it's switched on for.
+const cwOk = (req, res, next) => (req.crew.is_manager || require('../features').can(req.crew, 'compliance')) ? next() : res.status(403).json({ error: 'Compliance is for managers. Ask the boss to switch it on for you.' });
+require('../compliance').mount(r, '/:slug/cw', [A.requireCrew, cwOk], req => req.crew.name);
 // Crew members ticked as Manager also get the boss screen in the app.
 const manager = (req, res, next) => req.crew.is_manager ? next() : res.status(403).json({ error: 'Only managers can see the whole crew.' });
 r.get('/:slug/crew-week', A.requireCrew, manager, async (req, res) => res.json(await H.crewWeek(req.company, req.query.start)));

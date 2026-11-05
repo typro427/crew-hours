@@ -197,6 +197,16 @@ app.get('/c/:slug', async (req, res, next) => {
     res.type('html').send(crewHtml.replace(/__COMPANY__/g, esc(c.name)).replace(/__SLUG__/g, c.slug));
   } catch (e) { next(e); }
 });
+// Compliance (water system records): managers from the crew app, the boss from the dashboard. The page checks who's signed in.
+const cwHtml = fs.readFileSync(path.join(PUB, 'compliance.html'), 'utf8');
+app.get('/c/:slug/compliance', async (req, res, next) => {
+  try {
+    const c = await db.one('SELECT slug FROM companies WHERE slug=$1', [String(req.params.slug).toLowerCase()]);
+    if (!c) return res.status(404).send('Not found');
+    res.set('Cache-Control', 'no-cache').type('html').send(cwHtml.replace(/__SLUG__/g, c.slug));
+  } catch (e) { next(e); }
+});
+app.get('/compliance', (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(cwHtml.replace(/__SLUG__/g, '')));
 app.get('/c/:slug/manifest.webmanifest', async (req, res, next) => {
   try {
     const c = await db.one('SELECT name, slug FROM companies WHERE slug=$1', [String(req.params.slug).toLowerCase()]);

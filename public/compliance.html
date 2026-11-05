@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Compliance · Crew Hours</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f3f5f4; --surface:#fcfcfb; --ink:#0f1f1c; --ink2:#52514e; --muted:#7a7a74; --line:#e1e0d9; --axis:#c3c2b7;
+  --brand:#0e6b5c; --brand-ink:#fff; --brand-soft:#dcefe9;
+  --series:#2a78d6;
+  --good:#0ca30c; --good-text:#006300; --warn:#fab219; --warn-text:#8a5a00; --crit:#d03b3b; --crit-text:#b02a2a;
+  --good-soft:#e3f4e3; --warn-soft:#fdf1d6; --crit-soft:#f9e1e1;
+  --radius:14px; --shadow:0 1px 2px rgba(15,31,28,.06),0 6px 18px rgba(15,31,28,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    color-scheme:dark;
+    --bg:#121413; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#8f8e86; --line:#2c2c2a; --axis:#383835;
+    --brand:#3fbfa6; --brand-ink:#06201b; --brand-soft:#173a33;
+    --series:#3987e5;
+    --good-text:#0ca30c; --warn-text:#fab219; --crit-text:#e66767;
+    --good-soft:#15301a; --warn-soft:#3a2e10; --crit-soft:#3d1a1a; --shadow:none;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;padding-bottom:84px}
+.num{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+header.top{position:sticky;top:0;z-index:5;background:var(--brand);color:var(--brand-ink)}
+header.top .in{max-width:720px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em}
+.logo small{display:block;font-weight:500;font-size:13px;opacity:.85;letter-spacing:0}
+.iconbtn{background:transparent;border:0;color:inherit;cursor:pointer;padding:8px;border-radius:10px;display:grid;place-items:center}
+.iconbtn:hover{background:rgba(255,255,255,.14)}
+.demo{background:var(--warn-soft);color:var(--warn-text);font-size:13px;text-align:center;padding:6px 12px;font-weight:500}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:24px;margin:0 0 4px;letter-spacing:-.015em}
+h2{font-size:18px;margin:0 0 10px;letter-spacing:-.01em}
+h3{font-size:15px;margin:0}
+p{margin:0 0 10px}
+.muted{color:var(--ink2)} .small{font-size:14px} .tiny{font-size:12.5px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.row{display:flex;gap:10px;align-items:center} .between{justify-content:space-between} .wrap{flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.tile .big{font-size:28px;font-weight:700;line-height:1.1}
+.tile .lbl{font-size:13px;color:var(--ink2);margin-top:2px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-weight:600;border-radius:10px;padding:10px 14px;cursor:pointer;min-height:44px}
+.btn:hover{border-color:var(--brand)}
+.btn.primary{background:var(--brand);color:var(--brand-ink);border-color:transparent}
+.btn.small{min-height:36px;padding:6px 12px;font-size:14px}
+.btn.danger{color:var(--crit-text)}
+.btn.block{width:100%}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.badge.crit{background:var(--crit-soft);color:var(--crit-text)}
+.badge.warn{background:var(--warn-soft);color:var(--warn-text)}
+.badge.good{background:var(--good-soft);color:var(--good-text)}
+.badge.neutral{background:var(--brand-soft);color:var(--brand)}
+.badge svg{flex:none}
+.alert{display:flex;gap:12px;align-items:flex-start;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.alert.warn{background:var(--warn-soft)} .alert.crit{background:var(--crit-soft)} .alert.good{background:var(--good-soft)}
+.alert b{display:block}
+.item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0;padding-top:2px}
+.item .t{font-weight:600}
+.item .s{font-size:13.5px;color:var(--ink2)}
+label{display:block;font-size:13.5px;font-weight:600;color:var(--ink2);margin-bottom:4px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:transparent}
+textarea{min-height:70px;resize:vertical}
+.field{margin-bottom:12px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+.flag{color:var(--crit-text);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:var(--ink2);font-size:12.5px;padding:8px 6px;border-bottom:1px solid var(--axis)}
+td{padding:9px 6px;border-bottom:1px solid var(--line)}
+td.r,th.r{text-align:right}
+nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--line);z-index:6}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
+nav.tabs a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px 11px;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600}
+nav.tabs a.on{color:var(--brand)}
+.chartwrap{position:relative}
+.chartwrap svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:8px;padding:6px 9px;font-size:13px;white-space:nowrap;opacity:0;transition:opacity .1s;transform:translate(-50%,-110%)}
+.report{white-space:pre-wrap;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;line-height:1.55;overflow-x:auto}
+.inline-form{background:var(--bg);border-radius:12px;padding:12px;margin-top:10px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (max-width:460px){.grid3{grid-template-columns:1fr 1fr 1fr;gap:8px}.tile .big{font-size:24px}.tile{padding:10px}}
+.back{color:inherit;text-decoration:none;font-weight:600;font-size:14px;padding:8px 10px;border-radius:10px;white-space:nowrap}
+.back:hover{background:rgba(255,255,255,.14)}
+.hdr-r{display:flex;align-items:center;gap:4px}
+.err{background:var(--crit-soft);color:var(--crit-text);font-size:14px;font-weight:600;text-align:center;padding:8px 12px}
+.xbtn{background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px}
+.by{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body data-slug="__SLUG__">
+<header class="top"><div class="in">
+  <div class="logo">
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="rgba(255,255,255,.16)"/><path d="M16 6c0 0-7 8.2-7 12.6a7 7 0 0 0 14 0C23 14.2 16 6 16 6z" fill="currentColor"/><path d="M12.6 19.4l2.4 2.4 4.6-4.8" stroke="var(--brand)" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div>Compliance<small id="sysname"></small></div>
+  </div>
+  <div class="hdr-r">
+    <a class="back" id="back" href="./">‹ Back</a>
+    <button class="iconbtn" data-go="settings" aria-label="System settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+  </div>
+</div></header>
+<div class="err" id="err" hidden></div>
+<main id="view"><p class="muted">Loading…</p></main>
+<nav class="tabs"><div class="in" id="tabs"></div></nav>
+<script src="/compliance.js"></script>
+</body>
+</html>

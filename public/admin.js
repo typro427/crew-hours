@@ -25,6 +25,7 @@
 
   /* ------------------------------- tabs ------------------------------- */
   function showTab(name) {
+    if (name === 'compliance') { location.href = '/compliance'; return; }   // its own page (also used by managers in the crew app)
     document.querySelectorAll('.tabs button').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-tab') === name); });
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
     if (name === 'crew') loadCrew();
