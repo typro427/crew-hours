@@ -223,7 +223,7 @@ r.get('/:slug/day-photo/:id', A.requireCrew, async (req, res) => {
 const DR = require('../drives');
 const drives = (req, res, next) => (req.crew.is_manager || require('../features').can(req.crew, 'drives')) ? next() : res.status(403).json({ error: 'The roads driven checklist is not switched on for you.' });
 r.post('/:slug/drives/trip', A.requireCrew, drives, async (req, res) => res.json(await DR.trip(req.company, req.crew, req.body || {})));
-r.get('/:slug/drives/map', A.requireCrew, drives, async (req, res) => res.json(await DR.map(req.company, req.query.day)));
+r.get('/:slug/drives/map', A.requireCrew, drives, async (req, res) => res.json(await DR.map(req.company, req.query.day, { crewId: req.crew.id, open: true })));   // the phone's map: only the track not saved yet
 r.get('/:slug/drives', A.requireCrew, drives, async (req, res) => res.json(await DR.list(req.company, req.query.day)));
 r.post('/:slug/drives/:roadId', A.requireCrew, drives, async (req, res) => res.json(await DR.check(req.company, req.crew, Number(req.params.roadId), req.body || {})));
 // Compliance (daily log, samples, testing, monthly report): managers, and anyone it's switched on for.

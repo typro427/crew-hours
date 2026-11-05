@@ -70,9 +70,10 @@ const COVER = 0.6;          // a road is driven when 60% of it is along the rout
 const LEARN_MIN = 10;       // a hand tick learns the road from the last 10 minutes driven at most
 
 /** The route driven that day (every trip, everyone), as lines; or one person's, or since a time. */
-async function routeLines(companyId, day, { crewId, since } = {}) {
+async function routeLines(companyId, day, { crewId, since, open } = {}) {
   const pts = await db.q(`SELECT p.trip_id, p.lat, p.lon FROM drive_points p JOIN drive_trips t ON t.id=p.trip_id
     WHERE t.company_id=$1 AND t.day=$2 ${crewId ? 'AND t.crew_id=$3' : ''} ${since ? `AND p.t >= $${crewId ? 4 : 3}` : ''} AND (p.acc IS NULL OR p.acc <= ${MAX_ACC})
+    ${open ? "AND t.ended_at IS NULL AND t.started_at > now() - interval '12 hours'" : ''}
     ORDER BY p.trip_id, p.t`, [companyId, day, ...(crewId ? [crewId] : []), ...(since ? [since] : [])]);
   const lines = []; let cur = null, last = null;
   pts.forEach(p => {
@@ -139,13 +140,13 @@ async function trip(company, crew, b) {
 }
 
 /** For a map: each road's shape (driven or not) and the route(s) driven that day. */
-async function map(company, day, { crewId, any } = {}) {
+async function map(company, day, { crewId, any, open } = {}) {
   const d = any && T.isDate(String(day || '')) ? String(day) : checkDay(company, day);   // the dashboard can look further back
   const roads = await db.q(`SELECT r.id, r.name, s.shape, s.source, COALESCE(x.done, FALSE) AS done FROM roads r
     JOIN road_shapes s ON s.road_id=r.id LEFT JOIN road_drives x ON x.road_id=r.id AND x.day=$2
     WHERE r.company_id=$1 AND r.kind='road' AND r.active ORDER BY r.position`, [company.id, d]);
   const c = await db.one('SELECT weather_lat AS lat, weather_lon AS lon FROM companies WHERE id=$1', [company.id]);
-  return { day: d, roads, route: await routeLines(company.id, d, { crewId }), center: c && c.lat != null ? [Number(c.lat), Number(c.lon)] : null };
+  return { day: d, roads, route: await routeLines(company.id, d, { crewId, open }), center: c && c.lat != null ? [Number(c.lat), Number(c.lon)] : null };
 }
 
 /* ---------------------------- road shapes ---------------------------- */

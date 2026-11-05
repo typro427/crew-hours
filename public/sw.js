@@ -1,5 +1,5 @@
 // Keeps the crew app's screens on the phone so it opens instantly, and with no signal. Saves made offline wait in the app's outbox.
-const CACHE = 'crew-hours-v4';
+const CACHE = 'crew-hours-v5';
 const SHELL = ['./', '/crew.css', '/crew.js', '/icon-192.png', '/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', e => {

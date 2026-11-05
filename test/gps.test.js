@@ -108,7 +108,14 @@ test('untick a GPS tick and it stays unticked; the maps', async () => {
   assert.ok(!r.body.list.roads.find(x => x.name === 'Deer Run').done);
   assert.ok((await db.one('SELECT ended_at FROM drive_trips')).ended_at);
   const m = (await scott('GET', '/drives/map')).body;
-  assert.strictEqual(m.roads.length, 3); assert.ok(m.route.length >= 1); assert.deepStrictEqual(m.center, [36.4, -84.1]);
+  assert.strictEqual(m.roads.length, 3); assert.deepStrictEqual(m.center, [36.4, -84.1]);
+  assert.deepStrictEqual(m.route, [], 'the saved track is cleared off the phone map');
+  const dash = (await O('GET', '/api/admin/drives/map?day=' + today)).body;
+  assert.ok(dash.route.length >= 1, 'the dashboard still has it');
+  // a new drive shows only itself on the phone
+  await scott('POST', '/drives/trip', { ref: 'trip-bbbbbbbb2', points: drive(36.43, -84.1, -84.099, Date.now() - 5e3) });
+  const m2 = (await scott('GET', '/drives/map')).body;
+  assert.strictEqual(m2.route.length, 1); assert.ok(m2.route[0].every(p => p[0] > 36.429));
   const a = (await O('GET', '/api/admin/drives/map?day=2026-01-05')).body;
   assert.strictEqual(a.day, '2026-01-05'); assert.deepStrictEqual(a.route, []);
   assert.strictEqual((await O('DELETE', '/api/admin/drives/shapes/' + ids['Fairway Vista'])).body.learned, 0);

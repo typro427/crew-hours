@@ -298,3 +298,4 @@ tfoot td{font-weight:700;border-bottom:0}
 .dgrow .danger{background:var(--err);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
 .dginfo{font-size:13px;font-weight:600;color:var(--ok)}.dginfo.weak{color:var(--warn)}
 .dmap{height:340px;border-radius:12px;border:1px solid var(--line);overflow:hidden;z-index:1}
+.dgrow .dsave{background:var(--ok);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}

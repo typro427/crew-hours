@@ -1066,7 +1066,7 @@
     var tools=el("div","dtools"), find=el("input"); find.type="search"; find.placeholder="Search roads"; find.autocomplete="off"; find.setAttribute("aria-label","Search roads");
     var hideL=el("label"), hide=el("input"); hide.type="checkbox"; hideL.appendChild(hide); hideL.appendChild(document.createTextNode("Hide driven"));
     tools.appendChild(find); tools.appendChild(hideL); top.appendChild(tools);
-    var hint=el("p","hint","Tap Start drive and the app ticks each road as you drive it (keep this screen open). Or tap the box yourself. Tap Note if something needs fixing."); hint.style.margin="0";
+    var hint=el("p","hint","Tap Start drive and the app ticks each road as you drive it (keep this screen open). Tap Save track when you\u2019re done: it saves your route and clears the map. Or tick a road yourself; tap Note if something needs fixing."); hint.style.margin="0";
     var list=el("div","dlist"), empty=el("p","hint",""); empty.style.cssText="margin:0;text-align:center";
     var st=statusLine();
     var mapBox=el("div","dmap"); mapBox.hidden=true;
@@ -1119,8 +1119,8 @@
     function wake(){ if(rec.on && navigator.wakeLock && document.visibilityState==="visible") navigator.wakeLock.request("screen").then(function(l){ rec.lock=l; }).catch(function(){}); }
     document.addEventListener("visibilitychange", function(){ if(!rec.on) return; if(document.visibilityState==="visible") wake(); else flushGps(); drawGps(); });
     function drawGps(){
-      gpsBtn.textContent = rec.on ? "■ Stop drive" : "▶ Start drive (GPS)";
-      gpsBtn.className = rec.on ? "danger dgps" : "primary dgps";
+      gpsBtn.textContent = rec.on ? "✔ Save track" : "▶ Start drive (GPS)";
+      gpsBtn.className = rec.on ? "dgps dsave" : "primary dgps";
       gInfo.hidden=!rec.on;
       if(rec.on) gInfo.textContent = (rec.weak ? "Weak GPS signal… " : "● Recording your route. ") + "Keep this screen open; it pauses if you lock the phone or switch apps.";
       gInfo.className="dginfo"+(rec.weak ? " weak" : "");
@@ -1152,7 +1152,15 @@
       clearInterval(rec.timer); rec.watch=null;
       if(rec.lock){ try{ rec.lock.release(); }catch(e){} rec.lock=null; }
       var was=rec.on; rec.on=false; drawGps();
-      if(was) flushGps(true).then(function(){ if(!quiet && me.data) say(st,"Drive stopped. "+me.data.driven+" of "+me.data.roads.length+" roads driven today.","ok"); });
+      if(was){
+        say(st,"Saving your track\u2026");
+        flushGps(true).then(function(){
+          rec.local=[]; rec.last=null;   // clear the map for the next drive
+          if(map && layers){ if(live){ layers.removeLayer(live); live=null; } if(here){ layers.removeLayer(here); here=null; } }
+          refreshMap();
+          if(!quiet && me.data) say(st,"Track saved"+(rec.n ? " ("+rec.n+" points)" : "")+" and the map is cleared. "+me.data.driven+" of "+me.data.roads.length+" roads driven today.","ok");
+        });
+      }
     }
     gpsBtn.onclick=function(){ if(rec.on) stopGps(); else startGps(); };
     function flushGps(ended){
