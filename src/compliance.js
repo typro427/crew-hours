@@ -128,6 +128,8 @@ function mount(r, prefix, guard, who) {
   r.post(prefix + '/items', ...g, async (req, res) => res.json(await saveItem(req.company, req.body || {})));
   r.delete(prefix + '/items/:id', ...g, async (req, res) => res.json(await removeItem(req.company, Number(req.params.id))));
   r.post(prefix + '/items/:id/record', ...g, async (req, res) => res.json(await record(req.company, who(req), Number(req.params.id), req.body || {})));
+  r.post(prefix + '/import/read', ...g, async (req, res) => res.json(await require('./cwimport').read(req.company, req.body)));
+  r.post(prefix + '/import', ...g, async (req, res) => res.json(await require('./cwimport').apply(req.company, req.body || {})));
   r.delete(prefix + '/history/:id', ...g, async (req, res) => res.json(await removeRecord(req.company, Number(req.params.id))));
 }
 

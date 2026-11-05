@@ -22,10 +22,10 @@ before(async () => {
   await O('POST', '/api/admin/crew', { name: 'Scott', pin: '2222' });
   await O('POST', '/api/admin/crew', { name: 'Jake', pin: '1111' });
   await db.q("UPDATE crew SET is_manager = (name='Scott')");
-  const crew = tok => async (method, path, body) => {
+  const crew = tok => { const f = async (method, path, body) => {
     const r = await fetch(`${base}/api/c/${slug}${path}`, { method, headers: { 'x-ch': '1', 'Content-Type': 'application/json', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: r.status, body: await r.json().catch(() => null) };
-  };
+  }; f.tok = 'Bearer ' + tok; return f; };
   const login = async pin => (await crew()('POST', '/login', { pin })).body.token;
   scott = crew(await login('2222')); jake = crew(await login('1111'));
 });
@@ -96,4 +96,39 @@ test('the pages', async () => {
   assert.match(await p.text(), new RegExp(`data-slug="${slug}"`));
   assert.strictEqual((await fetch(base + '/compliance')).status, 200);
   assert.strictEqual((await fetch(base + '/compliance.js')).status, 200);
+});
+
+test('import a sample schedule: CSV with headings, an Excel file, pasted rows; preview, then import', async () => {
+  const raw = async (path, body) => { const r = await fetch(`${base}/api/c/${slug}/cw${path}`, { method: 'POST', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream', Authorization: scott.tok }, body }); return { status: r.status, body: await r.json() }; };
+  // a TDEC-style CSV: a title line, then headings in a different order, next due instead of last
+  const csv = 'Deerfield Water System monitoring schedule\r\nContaminant,No. of samples,Frequency,Next due,Comments\r\n"Total Coliform",1,Monthly,,Rotate sites\r\nNITRATE,1,1/Year,11/30/2026,\r\nLead & Copper,5,Every 3 years,9/30/2027,Tier 1 sites\r\nArsenic,1,,,\r\n';
+  let r = await raw('/import/read', csv);
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const by = Object.fromEntries(r.body.rows.map(x => [x.name, x]));
+  assert.strictEqual(by['Total Coliform'].months, 1); assert.strictEqual(by['Total Coliform'].action, 'update'); assert.strictEqual(by['Total Coliform'].matchName, 'Total coliform (bacteriological)');
+  assert.strictEqual(by.NITRATE.months, 12); assert.strictEqual(by.NITRATE.last, '2025-11-30', 'worked back from next due');
+  assert.strictEqual(by.NITRATE.action, 'update'); assert.strictEqual(by['Lead & Copper'].note, '5 samples · Tier 1 sites');
+  assert.strictEqual(by.Arsenic.months, null); assert.match(by.Arsenic.problem, /How often/);
+  // pasted from Excel, no headings
+  r = await raw('/import/read', 'Gross alpha\tEvery 6 years\t3/15/2022\nRadium 226/228\t6 YR\t');
+  assert.deepStrictEqual(r.body.rows.map(x => [x.name, x.months, x.last]), [['Gross alpha', 72, '2022-03-15'], ['Radium 226/228', 72, null]]);
+  // an Excel file
+  const ExcelJS = require('exceljs'); const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Schedule');
+  ws.addRow(['Sample', 'How often', 'Last sampled']); ws.addRow(['Chlorine residual', 'Monthly', new Date(Date.UTC(2026, 9, 1))]);
+  r = await raw('/import/read', Buffer.from(await wb.xlsx.writeBuffer()));
+  assert.deepStrictEqual(r.body.rows.map(x => [x.name, x.months, x.last]), [['Chlorine residual', 1, '2026-10-01']]);
+  assert.strictEqual((await raw('/import/read', '%PDF-1.4 junk')).status, 400);
+  assert.strictEqual((await raw('/import/read', '')).status, 400);
+  // import: NITRATE updates "Nitrate"; Arsenic needs a frequency; remove the ones not in the file (unless recorded)
+  const rows = (await raw('/import/read', csv)).body.rows.map(x => (x.name === 'Arsenic' ? { ...x, months: 12 } : x));
+  r = await scott('POST', '/cw/import', { rows, removeOthers: true });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  const names = r.body.samples.map(x => x.name);
+  assert.ok(names.includes('Nitrate') && !names.includes('NITRATE'), 'kept the existing name');
+  assert.strictEqual(r.body.samples.find(x => x.name === 'Nitrate').last, '2025-11-30');
+  assert.ok(names.includes('Arsenic') && names.includes('Lead & copper (5 taps)'), 'matched names are kept as yours');
+  assert.strictEqual(r.body.samples.find(x => x.name === 'Lead & copper (5 taps)').note, '5 samples · Tier 1 sites');
+  assert.ok(!names.includes('Gross alpha / radium') && !names.includes('TTHM / HAA5 (disinfection byproducts)'), 'removed: not in the file, nothing recorded');
+  assert.strictEqual(r.body.added + r.body.updated, 4);
+  assert.strictEqual((await scott('POST', '/cw/import', { rows: [{ name: 'X', months: null }] })).status, 400);
 });

@@ -42,6 +42,7 @@ app.use(/^\/api\/p\/[^/]+\/report$/, express.json({ limit: '25mb' }));   // phot
 app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
 app.use(/^\/api\/admin\/(tasks|jobs)(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
 app.use(/^\/api\/c\/[^/]+\/drives\/trip$/, express.json({ limit: '2mb' }));   // GPS points from a drive
+app.use(/^\/api\/(c\/[^/]+|admin)\/cw\/import\/read$/, express.raw({ type: () => true, limit: '5mb' }));   // a sampling schedule file
 app.use(express.json({ limit: '100kb' }));
 
 // Requests that change things must come from our own pages (blocks cross-site form tricks).

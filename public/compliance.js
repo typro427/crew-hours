@@ -225,6 +225,7 @@ function listScreen({title, intro, key, kindField, addLabel, recordLabel}){
         <div class="row wrap" style="margin-top:12px"><button class="btn small primary" data-rec="${x.id}">${recordLabel}</button><button class="btn small" data-ed="${x.id}">Edit</button></div>
         <div data-slot="${x.id}"></div>
       </div>`).join("")}
+    ${key==="samples"?`<div class="card"><div class="row between wrap"><div><h3>Import your sample schedule</h3><div class="small muted">From an Excel or CSV file, or rows copied out of a spreadsheet or PDF.</div></div><button class="btn primary" id="impbtn" type="button">Import schedule</button></div><div id="impslot"></div></div>`:""}
     <button class="btn block" id="addbtn">+ ${addLabel}</button><div id="addslot"></div>`;
   const find = id => DB[key].find(x=>x.id===id);
   document.querySelectorAll("[data-rec]").forEach(b => b.onclick = () => {
@@ -257,6 +258,68 @@ function listScreen({title, intro, key, kindField, addLabel, recordLabel}){
   document.querySelectorAll("[data-hx]").forEach(b => b.onclick = () => { if(!b.dataset.armed){ b.dataset.armed=1; b.textContent="Remove?"; b.style.color="var(--crit-text)"; return; } change("DELETE", "/history/"+b.dataset.hx).catch(()=>{}); });
   document.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => editForm(find(b.dataset.ed), document.querySelector(`[data-slot="${b.dataset.ed}"]`), false));
   document.getElementById("addbtn").onclick = () => editForm({months:12, kind:"Backflow test"}, document.getElementById("addslot"), true);
+  if(key==="samples") document.getElementById("impbtn").onclick = () => importForm(document.getElementById("impslot"));
+}
+/* ---- import a sampling schedule ---- */
+function importForm(slot){
+  slot.innerHTML = `<div class="inline-form">
+    <div class="field"><label for="imp-file">Excel (.xlsx) or CSV file</label><input type="file" id="imp-file" accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+    <div class="field"><label for="imp-text">Or paste the rows</label><textarea id="imp-text" rows="5" placeholder="Copy the table from Excel, Google Sheets or your TDEC schedule and paste it here.&#10;Example:&#10;Nitrate&#9;Annual&#9;11/14/2025&#10;Lead & copper&#9;Every 3 years&#9;7/1/2024"></textarea>
+      <div class="hint">Columns: sample name, how often, last date sampled (or next due), notes. A heading row is fine; the app finds the columns by their names.</div></div>
+    <div class="row wrap"><button class="btn primary small" type="button" id="imp-read">Read it</button><button class="btn small" type="button" id="imp-tpl">Download a template</button><button class="btn small" type="button" id="imp-x">Cancel</button></div>
+    <div id="imp-out"></div></div>`;
+  slot.querySelector("#imp-x").onclick = () => slot.innerHTML = "";
+  slot.querySelector("#imp-tpl").onclick = () => {
+    const rows = [["Sample","How often","Last sampled","Notes"],["Total coliform (bacteriological)","Monthly","",""],["Nitrate","Annual","",""],["Lead & copper (5 taps)","Every 3 years","",""],["TTHM / HAA5","Annual","",""]];
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rows.map(r=>r.map(c=>`"${c}"`).join(",")).join("\r\n")], {type:"text/csv"}));
+    a.download = "sample-schedule.csv"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  };
+  const out = slot.querySelector("#imp-out");
+  slot.querySelector("#imp-read").onclick = async () => {
+    const f = slot.querySelector("#imp-file").files[0], t = slot.querySelector("#imp-text").value;
+    if(!f && !t.trim()){ out.innerHTML = '<p class="flag small" style="margin-top:10px">Pick a file or paste the rows first.</p>'; return; }
+    out.innerHTML = '<p class="small muted" style="margin-top:10px">Reading…</p>';
+    try{
+      const h = { "x-ch":"1", "Content-Type":"application/octet-stream" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
+      const r = await fetch(API + "/import/read", { method:"POST", headers:h, body: f ? await f.arrayBuffer() : new Blob([t]), credentials:"same-origin" });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error || "That couldn't be read.");
+      preview(out, j);
+    }catch(e){ out.innerHTML = `<p class="flag small" style="margin-top:10px">${esc(e.message)}</p>`; }
+  };
+}
+function preview(out, d){
+  const opts = m => { const list = FREQS.slice(); if(m && !list.some(f=>f[0]===m)) list.push([m, freqName(m)]);
+    return `<option value="">Pick…</option>` + list.sort((a,b)=>a[0]-b[0]).map(([v,l])=>`<option value="${v}" ${v===m?"selected":""}>${l}</option>`).join(""); };
+  out.innerHTML = `<h3 style="margin:14px 0 4px">Found ${d.rows.length} sample type${d.rows.length===1?"":"s"}</h3>
+    <p class="small muted">Check them over. Untick any you don't want; fix anything that's wrong. Nothing changes until you tap Import.</p>
+    <div class="imp-list">
+    ${d.rows.map((r,i)=>`<div class="imp-row" data-i="${i}">
+      <div class="imp-top"><input type="checkbox" class="ic" ${r.action==="skip"?"":"checked"} aria-label="Import ${esc(r.name)}"><input class="in" value="${esc(r.name)}" aria-label="Sample name">
+        ${r.action==="update"?'<span class="badge neutral">Updates yours</span>':r.action==="skip"?'<span class="badge warn">Skipped</span>':'<span class="badge good">New</span>'}</div>
+      <div class="grid2"><div><label>How often</label><select class="im" style="${r.months?"":"border-color:var(--crit)"}">${opts(r.months)}</select></div>
+        <div><label>Last sampled</label><input type="date" class="il" value="${r.last||""}" max="${TODAY}"></div></div>
+      ${r.action==="update"?`<div class="tiny muted">Matches your “${esc(r.matchName||"")}”${r.was?`: was ${freqName(r.was.months).toLowerCase()}${r.was.last?", last "+short(r.was.last):""}`:""}</div>`:""}
+      ${r.note?`<div class="tiny muted">Notes: ${esc(r.note)}</div>`:""}${r.next&&!r.last?"":""}
+      ${r.problem?`<div class="tiny" style="color:var(--crit-text)">${esc(r.problem)}</div>`:""}
+    </div>`).join("")}
+    </div>
+    ${d.notInFile.length?`<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:500"><input type="checkbox" id="imp-rm" style="width:20px;min-height:0;margin-top:2px"><span>Also remove the ${d.notInFile.length} sample type${d.notInFile.length===1?"":"s"} not in this file (${esc(d.notInFile.map(x=>x.name).join(", "))}). Any with samples recorded are kept.</span></label>`:""}
+    <div class="row wrap" style="margin-top:12px"><button class="btn primary" type="button" id="imp-go">Import</button><span class="small" id="imp-msg"></span></div>`;
+  out.querySelector("#imp-go").onclick = () => {
+    const rows = [...out.querySelectorAll(".imp-row")].map(tr => { const r = d.rows[+tr.dataset.i];
+      return { skip: !tr.querySelector(".ic").checked, name: tr.querySelector(".in").value.trim(), months: +tr.querySelector(".im").value || null, last: tr.querySelector(".il").value || null, note: r.note }; });
+    const bad = rows.filter(r => !r.skip && (!r.months || !r.name));
+    if(bad.length){ out.querySelector("#imp-msg").innerHTML = `<span class="flag">Pick how often for ${esc(bad.map(r=>r.name||"each one").join(", "))}, or untick ${bad.length===1?"it":"them"}.</span>`; return; }
+    if(!rows.some(r=>!r.skip)){ out.querySelector("#imp-msg").innerHTML = '<span class="flag">Tick at least one.</span>'; return; }
+    const rm = out.querySelector("#imp-rm");
+    out.querySelector("#imp-go").disabled = true;
+    change("POST", "/import", { rows, removeOthers: !!(rm && rm.checked) }, () => {
+      const res = DB; render();
+      const msg = document.createElement("div"); msg.className = "alert good"; msg.innerHTML = `<span class="badge good">${ICON.good}Imported</span><div class="small"><b>${res.added} added, ${res.updated} updated${res.removed?", "+res.removed+" removed":""}.</b>Due dates are worked out from each last sampled date.</div>`;
+      $view.insertBefore(msg, $view.children[2] || null);
+    }).catch(() => { out.querySelector("#imp-go").disabled = false; });
+  };
 }
 const Samples = () => listScreen({title:"Sampling schedule", key:"samples", kindField:false, addLabel:"Add sample type", recordLabel:"Record sample",
   intro:"Set each frequency to match the monitoring schedule TDEC gave your system. Due dates update when you record a sample."});
