@@ -507,6 +507,17 @@ r.post('/email-me', async (req, res) => {
   res.json({ ok: true, to: await R.recipients(req.company) });
 });
 
+/* -------------------------------- payroll ---------------------------------- */
+const PY = require('../payroll');
+r.get('/payroll', async (req, res) => res.json(await PY.week(req.company, req.query.start)));
+r.put('/payroll/pay/:crewId', async (req, res) => { await PY.setPay(req.company, Number(req.params.crewId), req.body || {}); res.json(await PY.week(req.company, (req.body || {}).weekStart)); });
+r.put('/payroll/extra', async (req, res) => { const ws = await PY.setExtra(req.company, req.body || {}); res.json(await PY.week(req.company, ws)); });
+r.put('/payroll/settings', async (req, res) => { await PY.saveSettings(req.company, req.body || {}); res.json(await PY.week(req.company, (req.body || {}).weekStart)); });
+r.get('/payroll.xlsx', async (req, res) => {
+  const f = await PY.xlsx(req.company, req.query.start);
+  res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${f.name}"`, 'Cache-Control': 'no-store' }).send(Buffer.from(f.buf));
+});
+
 /* -------------------------------- export ---------------------------------- */
 const csvCell = v => {
   let s = v == null ? '' : String(v);

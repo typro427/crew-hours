@@ -187,3 +187,17 @@ details.bulk textarea{width:100%;margin:10px 0}
 .dr-missing{margin:0;padding-left:18px;columns:2;font-size:.9rem}
 #dr-map{height:460px;border-radius:10px;border:1px solid var(--line);margin-top:8px}
 .dr-key{display:inline-block;width:14px;height:4px;border-radius:2px;margin:0 4px 2px 10px;vertical-align:middle}
+
+/* payroll */
+.py-table td.num input{width:96px;min-height:34px;padding:5px 8px;text-align:right}
+.py-table tr.py-first td{border-top:2px solid var(--line)}
+.py-table .py-job{font-size:.86rem;color:var(--muted)}
+.py-table .py-nopay{color:var(--err);font-weight:600}
+.py-table tfoot td{font-weight:700;border-top:2px solid var(--ink)}
+.py-sums{display:flex;flex-wrap:wrap;gap:10px}
+.py-sums > div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:200px;flex:1}
+.py-sums b{display:block;margin-bottom:4px}
+.py-sums .r{display:flex;justify-content:space-between;gap:12px;font-size:.92rem}
+.py-setup{display:flex;flex-direction:column;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--sunk)}
+.py-setup table input{min-height:34px;padding:5px 8px}
+.py-setup td.num input{width:96px;text-align:right}

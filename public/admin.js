@@ -289,8 +289,87 @@
   function loadWeek(ws) {
     status('w-status', 'Loading…');
     return api('GET', '/api/admin/week?start=' + encodeURIComponent(ws || '')).then(function (r) {
-      week = r; weekStart = r.weekStart; drawWeek(); status('w-status', '');
+      week = r; weekStart = r.weekStart; drawWeek(); status('w-status', ''); loadPayroll(r.weekStart);
     }).catch(function (e) { status('w-status', e.message, 'err'); });
+  }
+  /* ------------------------------- payroll ------------------------------- */
+  var py = null;
+  function loadPayroll(ws) {
+    return api('GET', '/api/admin/payroll?start=' + encodeURIComponent(ws || '')).then(function (d) { py = d; drawPayroll(); })
+      .catch(function (e) { status('py-status', e.message, 'err'); });
+  }
+  function m2(v) { return v == null ? '' : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function pySave(method, url, body, msg) {
+    status('py-status', 'Saving…');
+    body.weekStart = py.weekStart;
+    return api(method, url, body).then(function (d) { py = d; drawPayroll(); status('py-status', msg || 'Saved.', 'ok'); }).catch(function (e) { status('py-status', e.message, 'err'); });
+  }
+  function drawPayroll() {
+    var d = py;
+    $('py-xlsx').href = '/api/admin/payroll.xlsx?start=' + d.weekStart;
+    $('py-sub').textContent = 'Hours split into ' + [d.main].concat(Object.keys(d.settings.jobs)).join(', ') + ', at each person’s rate, with how it’s paid.' + (d.approved ? '' : ' This week isn’t approved yet, so hours can still change.');
+    $('py-warn').hidden = !d.missingRates.length;
+    $('py-warn').textContent = d.missingRates.length ? 'No pay rate yet for ' + d.missingRates.join(', ') + '. Tap “Pay rates & checks” to add them.' : '';
+    var body = $('py-body'); body.innerHTML = '';
+    d.people.forEach(function (p) {
+      p.lines.forEach(function (l, i) {
+        var tr = el('tr', i === 0 ? 'py-first' : '');
+        tr.appendChild(el('td', '', i === 0 ? p.name : ''));
+        tr.appendChild(el('td', 'py-job', l.label));
+        tr.appendChild(el('td', 'num', l.hours ? l.hours.toFixed(2) : '–'));
+        var et = el('td', 'num'), ei = el('input'); ei.inputMode = 'decimal'; ei.placeholder = '$0'; ei.value = l.extra ? l.extra.toFixed(2) : ''; ei.setAttribute('aria-label', 'Extra or reimbursement for ' + p.name + ', ' + l.label);
+        ei.title = l.note || 'Extra pay or a reimbursement for this week';
+        ei.onchange = function () { pySave('PUT', '/api/admin/payroll/extra', { crewId: p.id, job: l.job, amount: ei.value }); };
+        et.appendChild(ei); tr.appendChild(et);
+        tr.appendChild(el('td', '', l.method || (l.job === '' ? 'Not set' : '')));
+        tr.appendChild(el('td', 'num' + (l.pay == null ? ' py-nopay' : ''), l.pay == null ? 'Set a rate' : m2(l.pay)));
+        body.appendChild(tr);
+      });
+    });
+    if (!d.people.length) { var tr0 = el('tr'), td0 = el('td', 'muted', 'No hours this week yet.'); td0.colSpan = 6; tr0.appendChild(td0); body.appendChild(tr0); }
+    var f = $('py-foot'); f.innerHTML = '';
+    var ft = el('tr'); ft.appendChild(el('td', '', 'Total payroll')); ft.appendChild(el('td', '')); ft.appendChild(el('td', 'num', d.total.hours.toFixed(2))); ft.appendChild(el('td', '')); ft.appendChild(el('td', '')); ft.appendChild(el('td', 'num', m2(d.total.pay))); f.appendChild(ft);
+    var sums = $('py-sums'); sums.innerHTML = '';
+    function box(title, rows) { var b = el('div'); b.appendChild(el('b', '', title)); rows.forEach(function (r) { var x = el('div', 'r'); x.appendChild(el('span', '', r[0])); x.appendChild(el('span', '', r[1])); b.appendChild(x); }); sums.appendChild(b); }
+    box('By job', d.jobs.map(function (j) { return [j.label, j.hours.toFixed(2) + ' h · ' + m2(j.pay)]; }));
+    box('By how it’s paid', Object.keys(d.methods).map(function (k) { return [k, m2(d.methods[k])]; }));
+    box('Each person', d.people.map(function (p) { return [p.name, p.hours.toFixed(2) + ' h · ' + (p.pay == null ? 'set a rate' : m2(p.pay))]; }));
+  }
+  $('py-setup-btn').onclick = function () { $('py-setup').hidden = !$('py-setup').hidden; if (!$('py-setup').hidden) drawPaySetup(); };
+  function drawPaySetup() {
+    var box = $('py-setup'), d = py; box.innerHTML = ''; box.className = 'py-setup';
+    box.appendChild(el('p', 'hint', 'Rates save as you change them. Weekly pay is for someone paid the same each week (it replaces their hours on the main job). Hours on other jobs use the same hourly rate.')).style.margin = '0';
+    var dl = el('datalist'); dl.id = 'py-methods'; d.settings.methods.forEach(function (m) { var o = el('option'); o.value = m; dl.appendChild(o); }); box.appendChild(dl);
+    var t = el('table', 'roads'), th = el('thead'), hr = el('tr');
+    ['Name', 'Rate ($/h)', 'Weekly pay', d.main + ' paid by'].forEach(function (h, i) { hr.appendChild(el('th', i === 1 || i === 2 ? 'num' : '', h)); });
+    th.appendChild(hr); t.appendChild(th);
+    var tb = el('tbody');
+    api('GET', '/api/admin/crew').then(function (cr) {
+      cr.crew.filter(function (c) { return c.active; }).forEach(function (c) {
+        var p = d.people.filter(function (x) { return x.id === c.id; })[0] || {};
+        var tr = el('tr'); tr.appendChild(el('td', '', c.name));
+        var rate = el('input'), flat = el('input'), meth = el('input');
+        rate.inputMode = flat.inputMode = 'decimal'; rate.placeholder = '15.00'; flat.placeholder = 'none';
+        rate.value = p.rate != null ? p.rate.toFixed(2) : (c.payRate != null ? c.payRate : '');
+        flat.value = p.flat != null ? p.flat.toFixed(2) : (c.payFlat != null ? c.payFlat : '');
+        meth.value = p.method || c.payMethod || ''; meth.setAttribute('list', 'py-methods'); meth.placeholder = 'Print from QuickBooks';
+        [rate, flat, meth].forEach(function (x) { x.onchange = function () { pySave('PUT', '/api/admin/payroll/pay/' + c.id, { rate: rate.value, flat: flat.value, method: meth.value }, 'Saved ' + c.name + '.'); }; });
+        [[rate, 'num'], [flat, 'num'], [meth, '']].forEach(function (x) { var td = el('td', x[1]); td.appendChild(x[0]); tr.appendChild(td); });
+        tb.appendChild(tr);
+      });
+    });
+    t.appendChild(tb); var tw = el('div', 'tablebox'); tw.appendChild(t); box.appendChild(tw);
+    var jobs = Object.keys(d.settings.jobs);
+    if (jobs.length) {
+      box.appendChild(el('b', '', 'Other jobs are paid with'));
+      var jt = el('div', 'row'); jt.style.gap = '10px';
+      jobs.forEach(function (j) {
+        var l = el('label', ''), i = el('input'); l.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1 1 220px;font-weight:600;font-size:.9rem'; l.appendChild(document.createTextNode(j)); i.value = d.settings.jobs[j];
+        i.onchange = function () { var all = {}; jobs.forEach(function (k) { all[k] = k === j ? i.value : d.settings.jobs[k]; }); pySave('PUT', '/api/admin/payroll/settings', { jobs: all }); };
+        l.appendChild(i); jt.appendChild(l);
+      });
+      box.appendChild(jt);
+    }
   }
   function drawWeek() {
     var r = week, dates = r.dates, s = r.settings;

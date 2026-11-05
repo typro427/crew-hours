@@ -80,6 +80,17 @@
       <button class="btn ghost small" id="email-missing">Email me who's missing hours</button>
     </div>
     <div class="status" id="w-status" role="status"></div>
+    <div class="card" id="py-card">
+      <div class="row" style="justify-content:space-between;gap:8px">
+        <div><h3>Payroll</h3><p class="hint" style="margin:0" id="py-sub">Each person's hours split by job, at their rate, with how it's paid.</p></div>
+        <div class="row" style="gap:8px"><button class="btn ghost small" type="button" id="py-setup-btn">Pay rates &amp; checks</button><a class="btn small" id="py-xlsx">Download payroll (Excel)</a></div>
+      </div>
+      <div class="notice" id="py-warn" hidden></div>
+      <div id="py-setup" hidden></div>
+      <div class="tablebox"><table class="roads py-table"><thead><tr><th>Name</th><th>Job</th><th class="num">Hours</th><th class="num">Extra / reimb.</th><th>Paid by</th><th class="num">Pay</th></tr></thead><tbody id="py-body"></tbody><tfoot id="py-foot"></tfoot></table></div>
+      <div class="py-sums" id="py-sums"></div>
+      <p class="status" id="py-status"></p>
+    </div>
   </section>
 
   <!-- TASKS (drawn by admin.js) -->

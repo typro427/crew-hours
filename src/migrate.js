@@ -545,6 +545,21 @@ CREATE TABLE IF NOT EXISTS cw_history (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS cw_history_item ON cw_history (item_id, day);
+-- Payroll: each person's rate (or a flat weekly amount) and how their main pay goes out; extras per week per job;
+-- what check each other job is paid with.
+ALTER TABLE crew ADD COLUMN IF NOT EXISTS pay_rate NUMERIC;
+ALTER TABLE crew ADD COLUMN IF NOT EXISTS pay_flat NUMERIC;
+ALTER TABLE crew ADD COLUMN IF NOT EXISTS pay_method TEXT NOT NULL DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payroll JSONB;
+CREATE TABLE IF NOT EXISTS payroll_extras (
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  week_start DATE NOT NULL,
+  crew_id    INTEGER NOT NULL REFERENCES crew(id) ON DELETE CASCADE,
+  job        TEXT NOT NULL,           -- '' = the main job (Deerfield), else the other job's name
+  amount     NUMERIC NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (company_id, week_start, crew_id, job)
+);
 CREATE TABLE IF NOT EXISTS road_shapes (
   road_id    INTEGER PRIMARY KEY REFERENCES roads(id) ON DELETE CASCADE,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
