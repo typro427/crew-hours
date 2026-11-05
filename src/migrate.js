@@ -494,6 +494,20 @@ CREATE TABLE IF NOT EXISTS board_reports (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS board_reports_token ON board_reports (token);
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS board_emails TEXT NOT NULL DEFAULT '';
+-- Roads driven: a checklist a manager ticks off while driving the roads (one row per road per day), with a note.
+CREATE TABLE IF NOT EXISTS road_drives (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  road_id    INTEGER NOT NULL REFERENCES roads(id) ON DELETE CASCADE,
+  day        DATE NOT NULL,
+  crew_id    INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  done       BOOLEAN NOT NULL DEFAULT TRUE,
+  note       TEXT NOT NULL DEFAULT '',
+  task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (road_id, day)
+);
+CREATE INDEX IF NOT EXISTS road_drives_day ON road_drives (company_id, day);
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

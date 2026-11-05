@@ -219,6 +219,11 @@ r.get('/:slug/day-photo/:id', A.requireCrew, async (req, res) => {
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
 });
+// Roads driven checklist: managers, and anyone the boss switches it on for.
+const DR = require('../drives');
+const drives = (req, res, next) => (req.crew.is_manager || require('../features').can(req.crew, 'drives')) ? next() : res.status(403).json({ error: 'The roads driven checklist is not switched on for you.' });
+r.get('/:slug/drives', A.requireCrew, drives, async (req, res) => res.json(await DR.list(req.company, req.query.day)));
+r.post('/:slug/drives/:roadId', A.requireCrew, drives, async (req, res) => res.json(await DR.check(req.company, req.crew, Number(req.params.roadId), req.body || {})));
 // Crew members ticked as Manager also get the boss screen in the app.
 const manager = (req, res, next) => req.crew.is_manager ? next() : res.status(403).json({ error: 'Only managers can see the whole crew.' });
 r.get('/:slug/crew-week', A.requireCrew, manager, async (req, res) => res.json(await H.crewWeek(req.company, req.query.start)));

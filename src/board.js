@@ -108,6 +108,10 @@ async function build(company, from, to) {
   const orders = await db.q(`SELECT t.id, t.title, t.qty, t.actual_cost, t.arrived_at,
       COALESCE((SELECT json_agg(p.id ORDER BY p.id) FROM task_photos p WHERE p.task_id=t.id), '[]') AS photos
     FROM tasks t WHERE t.company_id=$1 AND t.kind='order' AND ${local('t.arrived_at')} BETWEEN $3 AND $4 ORDER BY t.arrived_at`, [id, tz, from, to]);
+  const drv = await db.q(`SELECT x.id, to_char(x.day, 'YYYY-MM-DD') AS day, x.done, x.note, r.name AS road, c.name AS by
+    FROM road_drives x JOIN roads r ON r.id=x.road_id LEFT JOIN crew c ON c.id=x.crew_id
+    WHERE x.company_id=$1 AND x.day BETWEEN $2 AND $3 ORDER BY x.day, r.position`, [id, from, to]);
+  const driveDays = new Set(drv.filter(x => x.done).map(x => x.day)).size, drivenRoads = new Set(drv.filter(x => x.done).map(x => x.road)).size;
   const spent = orders.reduce((a, o) => a + Number(o.actual_cost || 0), 0);
 
   const summary = [
@@ -117,6 +121,7 @@ async function build(company, from, to) {
     roads.length && { label: 'Roads mowed', value: roads.length + (counts.road_total ? ` <small>of ${counts.road_total}</small>` : '') },
     counts.checks && { label: 'Water system checks', value: String(counts.checks) },
     (counts.reads || counts.cant_read) && { label: 'Meters read', value: String(counts.reads) + (counts.cant_read ? ` <small>${counts.cant_read} couldn't be read</small>` : '') },
+    driveDays && { label: 'Days the roads were driven', value: driveDays + ` <small>${drivenRoads}${counts.road_total ? ' of ' + counts.road_total : ''} roads checked</small>` },
     orders.length && { label: 'Spent on parts', value: money(spent) }
   ].filter(Boolean);
 
@@ -125,6 +130,8 @@ async function build(company, from, to) {
     { key: 'open', title: 'Leaks & repairs still open', list: open.map(o => ({ key: 'open' + o.id, title: o.title, priority: o.priority !== 'normal' ? o.priority : '',
         sub: [o.address, 'reported ' + T.pretty(o.reported)].filter(Boolean).join(' · ') })) },
     { key: 'tasks', title: 'Tasks completed', items: tasks },
+    { key: 'drives', title: 'Seen while driving the roads', list: drv.filter(x => x.note).map(x => ({ key: 'drv' + x.id, title: x.road,
+        sub: `${x.note} · ${T.dayName(x.day)} ${T.pretty(x.day)}${x.by ? ' (' + x.by + ')' : ''}` })) },
     { key: 'roads', title: 'Roads mowed', items: roads },
     { key: 'water', title: 'Water system checks', items: water },
     { key: 'orders', title: 'Parts & supplies received', items: orders.map(o => ({ key: 'ord' + o.id, title: o.title,

@@ -29,7 +29,7 @@
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
     if (name === 'crew') loadCrew();
     if (name === 'tasks') { loadTasks(); loadWeather(); }
-    if (name === 'roads') loadRoads();
+    if (name === 'roads') { loadRoads(); loadDrives(); }
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
     if (name === 'orders') orderPanel.load();
@@ -41,6 +41,25 @@
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
   document.querySelectorAll('[data-goto]').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-goto')); }; });
   $('logout').onclick = function () { api('POST', '/api/logout').then(function () { location.href = '/login'; }); };
+
+  /* --------------------------- roads driven --------------------------- */
+  function loadDrives() {
+    return api('GET', '/api/admin/drives?days=' + $('dr-days').value).then(function (d) {
+      var body = $('dr-body'); body.innerHTML = '';
+      if (!d.days.length) { var tr = el('tr'), td = el('td', 'muted', 'Nothing yet. Managers tick roads off in the crew app under Roads driven.'); td.colSpan = 4; tr.appendChild(td); body.appendChild(tr); }
+      d.days.forEach(function (g) {
+        var tr = el('tr'), dt = new Date(g.day + 'T12:00:00Z');
+        tr.appendChild(el('td', '', dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })));
+        tr.appendChild(el('td', '', g.driven + ' of ' + g.total));
+        tr.appendChild(el('td', '', g.who.join(', ')));
+        var nt = el('td');
+        g.notes.forEach(function (n) { var p = el('div'); p.appendChild(el('b', '', n.road + ': ')); p.appendChild(document.createTextNode(n.note + (n.task ? ' (on Tasks)' : ''))); nt.appendChild(p); });
+        tr.appendChild(nt); body.appendChild(tr);
+      });
+      status('dr-status', '');
+    }).catch(function (e) { status('dr-status', e.message, 'err'); });
+  }
+  $('dr-days').onchange = loadDrives;
 
   /* --------------------------- board report --------------------------- */
   var br = { data: null, timer: null };

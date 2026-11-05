@@ -9,9 +9,10 @@ const FEATURES = {
   w_meters:   'Water: meter reading',
   members:    'Members list (private contact info)',
   orders:     'Needs to order',
-  jobs:       'Bill\u2019s Billables (address jobs: time in/out, costs, receipts)'
+  jobs:       'Bill\u2019s Billables (address jobs: time in/out, costs, receipts)',
+  drives:     'Roads driven checklist (managers always have it)'
 };
-const OFF_BY_DEFAULT = new Set(['members', 'orders', 'jobs']);
+const OFF_BY_DEFAULT = new Set(['members', 'orders', 'jobs', 'drives']);
 const can = (crew, key) => OFF_BY_DEFAULT.has(key) ? !!(crew.features && crew.features[key] === true)
   : !crew.features || crew.features[key] !== false;
 const forCrew = crew => Object.fromEntries(Object.keys(FEATURES).map(k => [k, can(crew, k)]));

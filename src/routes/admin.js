@@ -187,6 +187,7 @@ r.delete('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.co
 /* --------------------------------- roads ----------------------------------- */
 const RD = require('../roads');
 // kind=road (Roads mowed) or kind=water (water system sites).
+r.get('/drives', async (req, res) => res.json(await require('../drives').history(req.company, req.query.days)));
 r.get('/roads', async (req, res) => res.json({ roads: await RD.list(req.company.id, req.query.kind) }));
 r.put('/roads', async (req, res) => { const b = req.body || {}; await RD.setList(req.company.id, b.names, b.kind); res.json({ roads: await RD.list(req.company.id, b.kind) }); });
 r.put('/roads/:id/readings', async (req, res) => {

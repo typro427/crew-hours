@@ -64,11 +64,13 @@
     doneTask:        function(a){ return ["POST", "/tasks/" + a[1] + "/done", { notes:a[2], photos:a[3] }]; },
     arrivedTask:     function(a){ return ["POST", "/tasks/" + a[1] + "/arrived", { actualCost:a[2] }]; },
     progressTask:    function(a){ return ["POST", "/tasks/" + a[1] + "/progress", { notes:a[2], photos:a[3], clientRef:a[4] }]; },
-    delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; }
+    delUpdate:       function(a){ return ["DELETE", "/tasks/updates/" + a[1]]; },
+    getDrives:       function(a){ return ["GET", "/drives?day=" + encodeURIComponent(a[1]||"")]; },
+    checkRoad:       function(a){ return ["POST", "/drives/" + a[1], a[2]]; }
   };
   // ---- Offline: saves wait in an outbox on the phone; the last lists loaded are kept so screens open with no signal. ----
-  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job" };
-  var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1 };
+  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked" };
+  var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1, getDrives:1 };
   var memBox=[], memCache={}, memId=1;
   var IDB=(function(){
     var dbp=null;
@@ -284,7 +286,7 @@
   // Where to land: the boss sees the crew week; someone without a time sheet lands on their first tab.
   function homeScreen(){
     // opened from a phone notification: go to that tab if they can use it
-    var h=(location.hash||"").slice(1), TABS={ tasks:"tab-tasks", water:"tab-water", orders:"tab-orders", jobs:"tab-jobs", roads:"tab-roads" };
+    var h=(location.hash||"").slice(1), TABS={ tasks:"tab-tasks", water:"tab-water", orders:"tab-orders", jobs:"tab-jobs", roads:"tab-roads", drives:"tab-drives" };
     if(TABS[h] && !$(TABS[h]).hidden){ try{ history.replaceState(null,"",location.pathname); }catch(e){} return h; }
     if(isBoss) return "crew";
     if(features.hours!==false) return "mine";
@@ -293,7 +295,7 @@
   function signOut(msg){
     IDB.clearCache(); outboxFailed=[]; $("bell").hidden=true; $("pushask").hidden=true;
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("drive-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -318,6 +320,9 @@
     $("tab-tasks").setAttribute("aria-selected", which==="tasks");
     $("tab-roads").setAttribute("aria-selected", which==="roads");
     $("road-screen").hidden = which!=="roads";
+    $("tab-drives").setAttribute("aria-selected", which==="drives");
+    $("drive-screen").hidden = which!=="drives";
+    if(which==="drives") driveBoard.load();
     $("tab-water").setAttribute("aria-selected", which==="water");
     $("water-screen").hidden = which!=="water";
     $("tab-members").setAttribute("aria-selected", which==="members");
@@ -343,6 +348,7 @@
   $("tab-members").onclick = function(){ showScreen("members"); };
   $("tab-roads").onclick = function(){ roadBoard.reset(); showScreen("roads"); };
   $("tab-water").onclick = function(){ showScreen("water"); };
+  $("tab-drives").onclick = function(){ showScreen("drives"); };
   $("tab-mine").onclick = function(){ showScreen("mine"); if(week) loadWeek(week, sel); };
   $("tab-tasks").onclick = function(){ showScreen("tasks"); };
   $("tab-crew").onclick = function(){ showScreen("crew"); };
@@ -1044,6 +1050,87 @@
   var siteBoard=PlaceBoard("water", $("wp-sites"), { searchPh:"Search sites", hint:"Tap a site to log a check and its readings.", empty:"The boss hasn't added any sites yet.", back:"‹ All sites", dateLabel:"Date you checked it", save:"Save: checked",
     never:"Not checked yet", lastWord:"Last checked", oldDays:7, savedMsg:function(n,d){ return "Saved. "+n+" checked "+d+"."; } });
 
+  // ---- roads driven: a checklist to tick while driving the roads (managers) ----
+  var driveBoard=(function(){
+    var me={ data:null, day:"", open:null };
+    var root=$("drive-screen");
+    var top=el("div","dtop"), r1=el("div","drow1"), cnt=el("b","dcount"), daySel=el("select"); daySel.setAttribute("aria-label","Day");
+    r1.appendChild(cnt); r1.appendChild(daySel); top.appendChild(r1);
+    var bar=el("div","dbar"), fill=el("i"); bar.appendChild(fill); top.appendChild(bar);
+    var tools=el("div","dtools"), find=el("input"); find.type="search"; find.placeholder="Search roads"; find.autocomplete="off"; find.setAttribute("aria-label","Search roads");
+    var hideL=el("label"), hide=el("input"); hide.type="checkbox"; hideL.appendChild(hide); hideL.appendChild(document.createTextNode("Hide driven"));
+    tools.appendChild(find); tools.appendChild(hideL); top.appendChild(tools);
+    var hint=el("p","hint","Tap the box as you drive each road. Tap Note if something needs fixing."); hint.style.margin="0";
+    var list=el("div","dlist"), empty=el("p","hint",""); empty.style.cssText="margin:0;text-align:center";
+    var st=statusLine();
+    [top,hint,st,list,empty].forEach(function(n){ root.appendChild(n); });
+    find.oninput=draw; hide.onchange=draw;
+    daySel.onchange=function(){ me.day=daySel.value; me.open=null; me.load(); };
+    function fillDays(d){
+      if(daySel.options.length && daySel.dataset.today===d.today) { daySel.value=d.day; return; }
+      daySel.innerHTML=""; daySel.dataset.today=d.today;
+      for(var i=0;i<=d.daysBack;i++){ var x=shiftDay(d.today,-i), o=el("option","", i===0 ? "Today" : i===1 ? "Yesterday" : dayLabel(x)); o.value=x; daySel.appendChild(o); }
+      daySel.value=d.day;
+    }
+    function shiftDay(s,n){ var x=toUTC(s); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
+    function timeOf(ts){ if(!ts) return ""; var d=new Date(ts); var h=d.getHours(), m=d.getMinutes(); return ((h%12)||12)+":"+(m<10?"0":"")+m+(h>=12?" PM":" AM"); }
+    me.load=function(){
+      if(!token) return;
+      say(st, me.data ? "" : "Loading…");
+      call("getDrives",[token, me.day], function(res){
+        me.data=res; if(!me.day) me.day=res.day; fillDays(res);
+        say(st, res.offline ? "No signal. Showing the list from when you last had it; ticks are saved on this phone." : "", res.offline ? "err" : "");
+        draw();
+      }, function(msg){ say(st,msg,"err"); });
+    };
+    function counts(){ var rs=me.data.roads, n=rs.filter(function(r){ return r.done; }).length; cnt.textContent=n+" of "+rs.length+" roads driven"; fill.style.width=(rs.length ? Math.round(100*n/rs.length) : 0)+"%"; }
+    function draw(){
+      if(!me.data) return;
+      counts();
+      var q=find.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      var shown=me.data.roads.filter(function(r){ if(hide.checked && r.done && me.open!==r.id) return false; var t=(r.name+" "+(r.surface||"")+" "+r.note).toLowerCase(); return q.every(function(w){ return t.indexOf(w)!==-1; }); });
+      list.innerHTML=""; list.hidden=!shown.length; empty.hidden=shown.length>0;
+      empty.textContent = !me.data.roads.length ? "No roads yet. The boss adds them on the dashboard." : hide.checked && !q.length ? "All roads driven. Nice work." : "Nothing matches “"+find.value.trim()+"”.";
+      shown.forEach(function(r){ list.appendChild(row(r)); });
+    }
+    function sub(r){
+      if(r.done) return "Driven"+(r.checkedAt ? " "+timeOf(r.checkedAt) : "")+(r.byName ? " by "+r.byName : "");
+      return r.lastDay ? "Last driven "+short(r.lastDay)+" · "+ago(r.lastDay)+(r.lastBy ? " ("+r.lastBy+")" : "") : "Not driven yet";
+    }
+    function send(r, body, after){
+      body.day=me.data.day;
+      call("checkRoad",[token, r.id, body], function(res){
+        if(res.queued){ r.pending=true; draw(); say(st,"No signal. Saved on this phone; it sends when you're back in range.","ok"); if(after) after(); return; }
+        me.data=res; draw(); if(after) after();
+      }, function(msg){ say(st,msg,"err"); me.load(); });
+    }
+    function row(r){
+      var box=el("div","drive"+(r.done ? " done" : "")), m=el("div","dmain");
+      var tick=el("button","dtick", r.done ? "✓" : ""); tick.type="button"; tick.setAttribute("aria-pressed", r.done); tick.setAttribute("aria-label",(r.done ? "Untick " : "Tick ")+r.name);
+      var nm=el("div","dname"); nm.appendChild(el("b","",r.name)); nm.appendChild(el("span","",sub(r)));
+      if(r.note) nm.appendChild(el("span","dn","⚠ "+r.note+(r.taskId ? " (on Tasks)" : "")));
+      if(r.pending) nm.appendChild(el("span","dpend","Waiting for signal"));
+      var nb=el("button","dnote"+(r.note ? " has" : ""), r.note ? "Note ✎" : "Note"); nb.type="button";
+      tick.onclick=function(){ r.done=!r.done; if(r.done){ r.checkedAt=new Date().toISOString(); r.byName=me_name(); } box.replaceWith(row(r)); counts(); send(r,{ done:r.done }); };
+      nm.onclick=tick.onclick;
+      nb.onclick=function(){ me.open = me.open===r.id ? null : r.id; draw(); };
+      m.appendChild(tick); m.appendChild(nm); m.appendChild(nb); box.appendChild(m);
+      if(me.open===r.id){
+        var f=el("div","dform"), t=el("textarea"); t.maxLength=1000; t.placeholder="What did you see? e.g. pothole by the culvert, tree down, ditch washing out"; t.value=r.note||"";
+        var cl=el("label","chk"), cb=el("input"); cb.type="checkbox"; cl.appendChild(cb); cl.appendChild(document.createTextNode(r.taskId ? "Already on the task list" : "Also add it to Tasks"));
+        cb.checked=!!r.taskId; cb.disabled=!!r.taskId;
+        var rr=el("div","row"), sv=el("button","primary","Save note"), cn=el("button","ghost","Cancel"); sv.type=cn.type="button";
+        sv.onclick=function(){ r.note=t.value.trim(); if(r.note && !r.done){ r.done=true; r.checkedAt=new Date().toISOString(); r.byName=me_name(); } me.open=null; draw(); send(r,{ done:r.done, note:r.note, toTasks:cb.checked && !r.taskId }, function(){ say(st, r.note ? (cb.checked && !r.taskId ? "Note saved and added to Tasks." : "Note saved.") : "Note removed.","ok"); }); };
+        cn.onclick=function(){ me.open=null; draw(); };
+        rr.appendChild(sv); rr.appendChild(cn);
+        [t,cl,rr].forEach(function(n){ f.appendChild(n); });
+        box.appendChild(f); setTimeout(function(){ t.focus(); },0);
+      }
+      return box;
+    }
+    return me;
+  })();
+
   // ---- water readings ----
   var rTypes=[], rList=[];
   function loadReadings(quiet){
@@ -1450,6 +1537,7 @@
     var p=waterParts();
     $("tab-tasks").hidden=!features.tasks;
     $("tab-roads").hidden=!(features.roads && setup.roads>0);
+    $("tab-drives").hidden=!((features.drives || isBoss) && setup.roads>0);
     $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
     $("tab-orders").hidden=!features.orders;

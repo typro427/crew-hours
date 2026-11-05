@@ -237,6 +237,16 @@
 
   <!-- ROADS (drawn by admin.js) -->
   <section data-panel="roads" class="panel" hidden id="roads-panel"></section>
+  <section data-panel="roads" class="panel" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;gap:8px">
+        <div><h3>Roads driven</h3><p class="hint" style="margin:0">The checklist managers tick in the crew app as they drive the roads, with anything they noted. Switch it on for others in Crew &amp; PINs.</p></div>
+        <select id="dr-days" aria-label="How far back" style="width:auto"><option value="14">Last 2 weeks</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select>
+      </div>
+      <div class="tablebox"><table class="roads"><thead><tr><th>Day</th><th>Driven</th><th>Who</th><th>Notes</th></tr></thead><tbody id="dr-body"></tbody></table></div>
+      <p class="status" id="dr-status"></p>
+    </div>
+  </section>
 
   <!-- WATER SYSTEM -->
   <section data-panel="water" class="panel" hidden>
