@@ -507,6 +507,15 @@ r.post('/email-me', async (req, res) => {
   res.json({ ok: true, to: await R.recipients(req.company) });
 });
 
+/* -------------------------------- contract ---------------------------------- */
+const CT = require('../contract');
+r.get('/contract', async (req, res) => res.json(await CT.view(req.company, req.query.year)));
+r.post('/contract/pricing', async (req, res) => res.json(await CT.importPricing(req.company, req.body)));
+r.post('/contract/payroll', async (req, res) => res.json(await CT.importPayroll(req.company, req.body)));
+r.put('/contract/settings', async (req, res) => res.json(await CT.settings(req.company, req.body || {})));
+r.post('/contract/expenses', async (req, res) => res.json(await CT.addExpense(req.company, req.body || {})));
+r.delete('/contract/expenses/:id', async (req, res) => res.json(await CT.removeExpense(req.company, Number(req.params.id))));
+
 /* -------------------------------- payroll ---------------------------------- */
 const PY = require('../payroll');
 r.get('/payroll', async (req, res) => res.json(await PY.week(req.company, req.query.start)));

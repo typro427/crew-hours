@@ -37,6 +37,7 @@
     if (name === 'jobs') loadJobs();
     if (name === 'portal') loadPortal();
     if (name === 'board') loadBoard();
+    if (name === 'contract') loadContract();
     if (name === 'week') loadWeek(weekStart);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { showTab(b.getAttribute('data-tab')); }; });
@@ -98,6 +99,172 @@
       $('dr-map-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }).catch(function (e) { status('dr-status', e.message, 'err'); });
   }
+
+  /* ----------------------------- contract ----------------------------- */
+  var ct = { data: null, year: null };
+  function $m(v) { return '$' + Math.round(Number(v) || 0).toLocaleString(); }
+  function loadContract(year) {
+    status('ct-status', 'Loading…');
+    return api('GET', '/api/admin/contract' + (year || ct.year ? '?year=' + (year || ct.year) : '')).then(function (d) { ct.data = d; ct.year = d.year; drawContract(); status('ct-status', ''); })
+      .catch(function (e) { status('ct-status', e.message, 'err'); });
+  }
+  function ctSet(d, msg) { ct.data = d; ct.year = d.year; drawContract(); if (msg) status('ct-status', msg, 'ok'); }
+  function drawContract() {
+    var d = ct.data;
+    $('ct-empty').hidden = d.hasBudget;
+    $('ct-sub').textContent = d.contractYear ? d.year + ' is contract year ' + d.contractYear + ' of 3.' : d.hasBudget ? d.year + ' is outside the 3 contract years (' + d.startYear + '–' + (d.startYear + 2) + '), so there is no budget to compare.' : 'Upload the pricing workbook to see the budget.';
+    var yb = $('ct-years'); yb.innerHTML = '';
+    d.years.forEach(function (y) {
+      var b = el('button', '', String(y)); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', y === d.year);
+      var n = y - d.startYear; if (n >= 0 && n <= 2 && d.hasBudget) b.appendChild(el('small', '', 'Yr ' + (n + 1)));
+      b.onclick = function () { loadContract(y); }; yb.appendChild(b);
+    });
+    // headline tiles
+    var t = $('ct-tiles'); t.innerHTML = '';
+    function tile(k, v, sub, cls) { var x = el('div', 'tile'); x.appendChild(el('div', 'k', k)); x.appendChild(el('div', 'v' + (cls ? ' ' + cls : ''), v)); if (sub) x.appendChild(el('div', 's', sub)); t.appendChild(x); }
+    var diff = d.projected - d.value;
+    tile(d.year + ' contract value', d.value ? $m(d.value) : '–', d.contractYear ? 'Year ' + d.contractYear + ' of the pricing' : 'no budget this year');
+    tile('Spent so far', $m(d.spent), 'with benefits, overhead and profit');
+    tile('Budget to date', $m(d.budgetToDate), d.elapsed < 12 ? Math.round(d.elapsed / 12 * 100) + '% of the year has passed' : 'the whole year');
+    tile(d.elapsed < 12 ? 'On pace for' : 'Year total', $m(d.projected), d.value ? (diff > 0 ? $m(diff) + ' over the contract' : $m(-diff) + ' under the contract') : '', d.value ? (diff > 0 ? 'over' : 'under') : '');
+    // pace bar: share of the contract spent, with a tick for the share of the year passed
+    var pc = $('ct-pace'); pc.innerHTML = '';
+    if (d.value) {
+      var spentPct = Math.min(100, d.spent / d.value * 100), yearPct = d.elapsed / 12 * 100;
+      var row = el('div', 'row'); row.style.justifyContent = 'space-between';
+      row.appendChild(el('b', '', Math.round(d.spent / d.value * 100) + '% of the year’s contract spent'));
+      row.appendChild(el('span', 'hint', Math.round(yearPct) + '% of the year passed'));
+      pc.appendChild(row);
+      var bar = el('div', 'ct-bar'), fill = el('i', spentPct > yearPct + 3 ? 'over' : ''), tick = el('b');
+      fill.style.width = spentPct + '%'; tick.style.left = 'calc(' + yearPct + '% - 1px)'; tick.title = 'Where spending should be today';
+      bar.appendChild(fill); bar.appendChild(tick); pc.appendChild(bar);
+    }
+    // by category
+    var cb = $('ct-cats'); cb.innerHTML = '';
+    d.cats.forEach(function (c) {
+      if (!c.loadedBudget && !c.loadedActual) return;
+      var r = el('div', 'ct-cat'); r.appendChild(el('div', 'n', c.label));
+      var bar = el('div', 'ct-bar'), max = Math.max(c.loadedBudget, c.loadedActual) || 1, fill = el('i', c.loadedActual > c.loadedBudgetToDate * 1.03 && c.loadedBudget ? 'over' : ''), tick = el('b');
+      fill.style.width = (c.loadedActual / max * 100) + '%'; tick.style.left = 'calc(' + (c.loadedBudgetToDate / max * 100) + '% - 1px)';
+      bar.title = $m(c.loadedActual) + ' spent; ' + $m(c.loadedBudgetToDate) + ' budgeted by today; ' + $m(c.loadedBudget) + ' for the year';
+      bar.appendChild(fill); if (c.loadedBudget) bar.appendChild(tick); r.appendChild(bar);
+      var m = el('div', 'm', $m(c.loadedActual) + ' of ' + $m(c.loadedBudget)); var df = c.loadedActual - c.loadedBudgetToDate;
+      m.appendChild(el('small', '', c.loadedBudget ? (df > 0 ? $m(df) + ' ahead of budget' : $m(-df) + ' under budget so far') : 'no budget'));
+      r.appendChild(m); cb.appendChild(r);
+    });
+    drawCtChart(d);
+    // hours per week
+    var g = $('ct-goals'); g.innerHTML = '';
+    if (!d.goals.length) g.appendChild(el('p', 'hint', 'No guard or office hours yet.'));
+    d.goals.forEach(function (x) {
+      var w = el('div', 'ct-goal'), r = el('div', 'row');
+      r.appendChild(el('b', '', x.label)); r.appendChild(el('span', '', x.perWeek.toFixed(1) + ' h a week on average'));
+      w.appendChild(r);
+      var target = x.contractMin || x.budgetPerWeek;
+      var bar = el('div', 'ct-bar'), max = Math.max(target, x.perWeek) * 1.1 || 1, fill = el('i', x.contractMin && x.perWeek < x.contractMin ? 'over' : ''), tick = el('b');
+      fill.style.width = (x.perWeek / max * 100) + '%'; tick.style.left = 'calc(' + (target / max * 100) + '% - 1px)';
+      bar.appendChild(fill); bar.appendChild(tick); w.appendChild(bar);
+      w.appendChild(el('span', 'hint', x.contractMin ? 'The contract asks for at least ' + x.contractMin + ' a week (the tick). Budgeted ' + x.budgetPerWeek.toFixed(1) + '.' : 'Budgeted ' + x.budgetPerWeek.toFixed(1) + ' a week (the tick).'));
+      g.appendChild(w);
+    });
+    var o = $('ct-outside'); o.innerHTML = '';
+    if (!d.outside.length) o.appendChild(el('p', 'hint', 'None this year.'));
+    d.outside.forEach(function (x) { var r = el('div', 'row'); r.style.cssText = 'justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)'; r.appendChild(el('span', '', x.job)); r.appendChild(el('b', '', $m(x.amount))); o.appendChild(r); });
+    if (d.outside.length) { var tr0 = el('div', 'row'); tr0.style.cssText = 'justify-content:space-between;padding:6px 0'; tr0.appendChild(el('span', 'hint', 'Total')); tr0.appendChild(el('b', '', $m(d.outside.reduce(function (a, x) { return a + x.amount; }, 0)))); o.appendChild(tr0); }
+    // every line
+    var lb = $('ct-lines'); lb.innerHTML = '';
+    d.cats.forEach(function (c) {
+      var rs = d.rows.filter(function (r) { return r.cat === c.key; });
+      if (!rs.length) return;
+      var h = el('tr', 'cat'); h.appendChild(el('td', '', c.label + (c.key === 'mgmt' || c.key === 'staff' ? ' (cost, before factors)' : '')));
+      [c.budget, c.budgetToDate, c.actual].forEach(function (v) { h.appendChild(el('td', 'num', $m(v))); });
+      var dd = c.actual - c.budgetToDate; h.appendChild(el('td', 'num ' + (dd > 0 ? 'over' : 'under'), (dd > 0 ? '+' : '−') + $m(Math.abs(dd)))); h.appendChild(el('td', '')); lb.appendChild(h);
+      rs.forEach(function (r) {
+        var tr = el('tr'), n = el('td'); n.appendChild(document.createTextNode(r.name)); if (r.who) n.appendChild(el('span', 'who', ' · ' + r.who)); tr.appendChild(n);
+        [r.budget, r.budgetToDate, r.actual].forEach(function (v) { tr.appendChild(el('td', 'num', v ? $m(v) : '–')); });
+        var df = r.actual - r.budgetToDate; tr.appendChild(el('td', 'num ' + (r.budget || r.actual ? (df > 0 ? 'over' : 'under') : ''), r.budget || r.actual ? (df > 0 ? '+' : '−') + $m(Math.abs(df)) : ''));
+        tr.appendChild(el('td', 'who', r.people.join(', '))); lb.appendChild(tr);
+      });
+    });
+    // people
+    var pb = $('ct-people'); pb.innerHTML = '';
+    d.people.forEach(function (p) {
+      var tr = el('tr'); tr.appendChild(el('td', '', p.person)); tr.appendChild(el('td', 'num', $m(p.deerfield))); tr.appendChild(el('td', 'num', p.other ? $m(p.other) : '–'));
+      var td = el('td'), sel = el('select'); sel.setAttribute('aria-label', 'Budget line for ' + p.person);
+      [['', 'Not matched'], ['skip', 'Leave out (not part of the contract)']].concat(d.lines.filter(function (l) { return l.cat === 'mgmt' || l.cat === 'staff'; }).map(function (l) { return [l.key, l.name + (l.who ? ' · ' + l.who : '')]; }))
+        .forEach(function (x) { var op = el('option', '', x[1]); op.value = x[0]; sel.appendChild(op); });
+      sel.value = p.line === 'none' ? '' : (p.line || '');
+      sel.onchange = function () { var map = {}; map[p.person] = sel.value || 'none';
+        api('PUT', '/api/admin/contract/settings', { people: map }).then(function (r) { ctSet(r, 'Saved. ' + p.person + (sel.value === 'skip' ? ' is left out.' : sel.value ? ' counts against that line.' : ' is not matched to a line.')); }).catch(function (e) { status('ct-status', e.message, 'err'); }); };
+      td.appendChild(sel); if (p.guessed && p.line) td.appendChild(el('span', 'hint', ' (guessed from the pricing)')); tr.appendChild(td); pb.appendChild(tr);
+    });
+    // expenses
+    var ls = $('ct-exp-line'); var keep = ls.value; ls.innerHTML = '';
+    d.lines.forEach(function (l) { var op = el('option', '', (({ mgmt: 'Mgmt', staff: 'Staff', sub: 'Sub', equip: 'Equip' })[l.cat]) + ': ' + l.name); op.value = l.key; ls.appendChild(op); });
+    if (keep) ls.value = keep;
+    if (!$('ct-exp-day').value) $('ct-exp-day').value = d.today;
+    var eb = $('ct-exp'); eb.innerHTML = '';
+    d.expenses.forEach(function (x) {
+      var tr = el('tr'); tr.appendChild(el('td', '', x.day)); var ln = d.lines.filter(function (l) { return l.key === x.line; })[0];
+      tr.appendChild(el('td', '', ln ? ln.name : x.line)); tr.appendChild(el('td', 'num', $m(x.amount))); tr.appendChild(el('td', 'who', x.note || ''));
+      var td = el('td'), b = el('button', 'linkish', 'Remove'); b.type = 'button'; b.onclick = function () { api('DELETE', '/api/admin/contract/expenses/' + x.id).then(function (r) { ctSet(r, 'Removed.'); }); };
+      td.appendChild(b); tr.appendChild(td); eb.appendChild(tr);
+    });
+    // setup
+    var st = $('ct-start'); st.innerHTML = ''; var cy = Number(d.today.slice(0, 4));
+    for (var y = cy - 2; y <= cy + 2; y++) { var op = el('option', '', String(y)); op.value = y; st.appendChild(op); }
+    st.value = d.startYear;
+    var src = d.sources;
+    $('ct-sources').textContent = [src.pricingAt ? 'Pricing uploaded ' + new Date(src.pricingAt).toLocaleDateString() + '.' : 'No pricing yet.',
+      src.historyTo ? 'Payroll history through ' + src.historyTo + (src.liveWeeks ? '; after that, ' + src.liveWeeks + ' week' + (src.liveWeeks === 1 ? '' : 's') + ' from Crew Hours.' : '.') : 'No payroll history yet; using Crew Hours payroll.',
+      d.estimated ? d.estimated + ' older payroll lines had hours but no pay, so pay was worked out at that person’s usual rate.' : ''].join(' ');
+  }
+  function drawCtChart(d) {
+    var box = $('ct-chart'); box.innerHTML = '';
+    var bud = d.months.map(function (_, i) { return d.cats.reduce(function (a, c) { var f = c.key === 'mgmt' || c.key === 'staff' ? (1 + d.factors.benefits) * (1 + d.factors.overhead) * (1 + d.factors.profit) : 1; return a + c.budgetMonths[i] * f; }, 0); });
+    var act = d.months.map(function (_, i) { return d.cats.reduce(function (a, c) { var f = c.key === 'mgmt' || c.key === 'staff' ? (1 + d.factors.benefits) * (1 + d.factors.overhead) * (1 + d.factors.profit) : 1; return a + c.months[i] * f; }, 0); });
+    var W = 720, H = 240, m = { t: 12, r: 8, b: 26, l: 54 }, max = Math.max.apply(null, bud.concat(act)) * 1.1 || 1;
+    var step = Math.pow(10, Math.floor(Math.log10(max / 4))), nice = [1, 2, 2.5, 5, 10].map(function (k) { return k * step; }).filter(function (v) { return max / v <= 5; })[0] || step * 10;
+    var x = function (i) { return m.l + i * (W - m.l - m.r) / 12; }, bw = (W - m.l - m.r) / 12, y = function (v) { return m.t + (1 - v / max) * (H - m.t - m.b); };
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Budget and actual spending by month">';
+    for (var v = 0; v <= max; v += nice) svg += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (m.l - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end" font-size="11" fill="var(--muted)">' + (v >= 1000 ? '$' + Math.round(v / 1000) + 'k' : '$' + v) + '</text>';
+    d.months.forEach(function (lab, i) {
+      var bx = x(i) + bw * 0.14, w = bw * 0.34;
+      if (bud[i]) svg += '<path d="M' + bx + ',' + y(0) + 'V' + (y(bud[i]) + 4) + 'q0,-4 4,-4h' + (w - 8) + 'q4,0 4,4V' + y(0) + 'z" fill="var(--sunk)" stroke="var(--muted)" stroke-width="1.2"/>';
+      if (act[i]) svg += '<path d="M' + (bx + w + 2) + ',' + y(0) + 'V' + (y(act[i]) + 4) + 'q0,-4 4,-4h' + (w - 8) + 'q4,0 4,4V' + y(0) + 'z" fill="var(--accent)"/>';
+      svg += '<text x="' + (x(i) + bw / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + lab + '</text>';
+      svg += '<rect class="hit" data-i="' + i + '" x="' + x(i) + '" y="0" width="' + bw + '" height="' + H + '" fill="transparent"/>';
+    });
+    svg += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="var(--muted)" stroke-width="1"/></svg>';
+    box.innerHTML = svg;
+    var tip = el('div', 'ct-tip'); box.appendChild(tip);
+    box.querySelectorAll('.hit').forEach(function (h) {
+      var i = Number(h.getAttribute('data-i'));
+      h.onmouseenter = h.onclick = function () { var r = box.getBoundingClientRect(); tip.innerHTML = '<b>' + d.months[i] + ' ' + d.year + '</b><br>Budget ' + $m(bud[i]) + '<br>Actual ' + $m(act[i]); tip.style.display = 'block'; tip.style.left = ((x(i) + bw / 2) / W * r.width) + 'px'; tip.style.top = (y(Math.max(bud[i], act[i])) / H * r.height) + 'px'; };
+      h.onmouseleave = function () { tip.style.display = 'none'; };
+    });
+    var tb = '<table class="roads"><thead><tr><th>Month</th><th class="num">Budget</th><th class="num">Actual</th></tr></thead><tbody>' + d.months.map(function (lab, i) { return '<tr><td>' + lab + '</td><td class="num">' + $m(bud[i]) + '</td><td class="num">' + $m(act[i]) + '</td></tr>'; }).join('') + '</tbody></table>';
+    $('ct-month-table').innerHTML = tb;
+  }
+  function ctUpload(input, url, label) {
+    input.onchange = function () {
+      var f = input.files[0]; if (!f) return;
+      status('ct-status', 'Reading the ' + label + '…');
+      f.arrayBuffer().then(function (buf) {
+        return fetch(url, { method: 'POST', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream' }, body: buf, credentials: 'same-origin' });
+      }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'That file could not be read.'); return j; }); })
+        .then(function (d) { ct.year = null; ctSet(d, d.weeks ? 'Read ' + d.weeks + ' weeks of payroll (' + d.from + ' to ' + d.to + ')' + (d.equipment ? ' and ' + d.equipment + ' weeks of equipment pay' : '') + '.' : 'Pricing read: ' + d.lines.length + ' budget lines.'); input.value = ''; })
+        .catch(function (e) { status('ct-status', e.message, 'err'); input.value = ''; });
+    };
+  }
+  ctUpload($('ct-pricing'), '/api/admin/contract/pricing', 'pricing workbook');
+  ctUpload($('ct-payroll'), '/api/admin/contract/payroll', 'payroll history');
+  $('ct-start').onchange = function () { api('PUT', '/api/admin/contract/settings', { startYear: $('ct-start').value }).then(function (r) { ctSet(r, 'Saved.'); }).catch(function (e) { status('ct-status', e.message, 'err'); }); };
+  $('ct-exp-form').onsubmit = function (e) {
+    e.preventDefault();
+    api('POST', '/api/admin/contract/expenses', { day: $('ct-exp-day').value, line: $('ct-exp-line').value, amount: $('ct-exp-amount').value, note: $('ct-exp-note').value })
+      .then(function (r) { $('ct-exp-amount').value = ''; $('ct-exp-note').value = ''; ctSet(r, 'Added.'); }).catch(function (er) { status('ct-status', er.message, 'err'); });
+  };
 
   /* --------------------------- board report --------------------------- */
   var br = { data: null, timer: null };

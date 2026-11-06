@@ -560,6 +560,24 @@ CREATE TABLE IF NOT EXISTS payroll_extras (
   note       TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (company_id, week_start, crew_id, job)
 );
+-- The services contract: the budget (from the pricing workbook) and what was actually paid (payroll history,
+-- equipment pay, expenses entered by hand). Crew Hours' own payroll is added on top for the weeks after the history.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS contract JSONB;
+CREATE TABLE IF NOT EXISTS contract_actuals (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  day        DATE NOT NULL,
+  source     TEXT NOT NULL,            -- history | equipment | manual
+  person     TEXT NOT NULL DEFAULT '',
+  job        TEXT NOT NULL DEFAULT 'Deerfield',
+  hours      NUMERIC,
+  amount     NUMERIC NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  est        BOOLEAN NOT NULL DEFAULT FALSE,   -- pay worked out from hours x their usual rate (older weeks had no pay column)
+  line_key   TEXT,                             -- set for expenses entered by hand
+  line_hint  TEXT
+);
+CREATE INDEX IF NOT EXISTS contract_actuals_day ON contract_actuals (company_id, day);
 CREATE TABLE IF NOT EXISTS road_shapes (
   road_id    INTEGER PRIMARY KEY REFERENCES roads(id) ON DELETE CASCADE,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

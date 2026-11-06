@@ -25,6 +25,7 @@
     <button role="tab" data-tab="orders" aria-selected="false">Needs to order</button>
     <button role="tab" data-tab="jobs" aria-selected="false">Bill’s Billables</button>
     <button role="tab" data-tab="board" aria-selected="false">Board report</button>
+    <button role="tab" data-tab="contract" aria-selected="false">Contract</button>
     <button role="tab" data-tab="compliance" aria-selected="false">Compliance</button>
     <button role="tab" data-tab="members" aria-selected="false">Members</button>
     <button role="tab" data-tab="portal" aria-selected="false">Owner portal</button>
@@ -394,6 +395,38 @@
         <textarea id="br-intro" rows="3" placeholder="e.g. A busy month: the main break on Deerfield Way is fixed and all roads were mowed twice."></textarea></label>
       <div class="tiles" id="br-tiles"></div>
       <div id="br-sections"></div>
+    </div>
+  </section>
+
+  <section data-panel="contract" class="panel" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start">
+        <div><h3>Contract: budget vs actual</h3><p class="hint" style="margin:0" id="ct-sub">The services contract's yearly budget next to what's actually been paid out.</p></div>
+        <div class="ct-years" id="ct-years" role="tablist" aria-label="Year"></div>
+      </div>
+      <div class="notice" id="ct-empty" hidden>Start by uploading the pricing workbook (Exhibit B) and your payroll history below.</div>
+      <div class="tiles" id="ct-tiles"></div>
+      <div class="ct-pace" id="ct-pace"></div>
+      <p class="status" id="ct-status"></p>
+    </div>
+    <div class="card" id="ct-cats-card"><h3>By part of the contract</h3><p class="hint" style="margin:0">Staffing includes the contract's benefits, overhead and profit factors, as the HOA is billed. The tick marks where spending should be by today.</p><div id="ct-cats"></div></div>
+    <div class="card" id="ct-month-card"><div class="row" style="justify-content:space-between"><h3>Month by month</h3><span class="ct-legend"><i class="b"></i>Budget <i class="a"></i>Actual</span></div><div id="ct-chart" class="ct-chart"></div><details><summary class="hint">Show as a table</summary><div class="tablebox" id="ct-month-table"></div></details></div>
+    <div class="ct-two">
+      <div class="card" id="ct-goals-card"><h3>Hours per week</h3><div id="ct-goals"></div></div>
+      <div class="card" id="ct-outside-card"><h3>Other jobs <span class="hint">(not in this contract)</span></h3><div id="ct-outside"></div></div>
+    </div>
+    <div class="card"><h3>Every budget line</h3><div class="tablebox"><table class="roads ct-lines"><thead><tr><th>Line</th><th class="num">Budget (year)</th><th class="num">Budget to date</th><th class="num">Actual</th><th class="num">Over / under</th><th>Paid to</th></tr></thead><tbody id="ct-lines"></tbody></table></div></div>
+    <div class="card"><h3>Who counts against which line</h3><p class="hint" style="margin:0">Deerfield pay for each person this year. Pick their budget line once; it's remembered. People not matched show as "Not matched to a budget line".</p><div class="tablebox"><table class="roads"><thead><tr><th>Name</th><th class="num">Deerfield pay</th><th class="num">Other jobs</th><th>Budget line</th></tr></thead><tbody id="ct-people"></tbody></table></div></div>
+    <div class="card"><h3>Other expenses</h3><p class="hint" style="margin:0">Fuel, supplies, the mowing contractor, pool electric: anything not in payroll. Enter it against its budget line.</p>
+      <form class="row ct-exp-form" id="ct-exp-form" style="gap:8px;flex-wrap:wrap"><input type="date" id="ct-exp-day" aria-label="Date" required><select id="ct-exp-line" aria-label="Budget line" required></select><input id="ct-exp-amount" inputmode="decimal" placeholder="$ amount" aria-label="Amount" required><input id="ct-exp-note" placeholder="Note (optional)" aria-label="Note"><button class="btn small" type="submit">Add</button></form>
+      <div class="tablebox"><table class="roads"><tbody id="ct-exp"></tbody></table></div></div>
+    <div class="card"><h3>Setup</h3>
+      <div class="ct-setup">
+        <label>Pricing workbook (Exhibit B) <input type="file" id="ct-pricing" accept=".xlsx"></label>
+        <label>Payroll history workbook <input type="file" id="ct-payroll" accept=".xlsx"><span class="hint">From Google Sheets: File › Download › Microsoft Excel (.xlsx). Uploading it again replaces the history.</span></label>
+        <label>First contract year <select id="ct-start"></select><span class="hint">Year 1 of the pricing goes against this calendar year.</span></label>
+      </div>
+      <p class="hint" id="ct-sources" style="margin:0"></p>
     </div>
   </section>
 
