@@ -23,7 +23,9 @@ before(async () => {
   O = async (method, url, body) => {
     const r = await fetch(base + url, { method, headers: { 'x-ch': '1', 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const sc = r.headers.get('set-cookie'); if (sc) cookie = sc.split(';')[0];
-    return { status: r.status, body: await r.json().catch(() => null) };
+    const out = { status: r.status, body: await r.json().catch(() => null) };
+    if (/tasks/.test(url)) await new Promise(ok => setTimeout(ok, 150));   // notifications go out just after the reply
+    return out;
   };
   await O('POST', '/api/signup', { company: 'Deerfield Water', name: 'Tyler', email: 'boss@example.com', password: 'LongPass1!' });
   slug = (await db.one('SELECT slug FROM companies')).slug;
@@ -31,7 +33,9 @@ before(async () => {
   await O('POST', '/api/admin/crew', { name: 'Sam', pin: '2222' });
   const crewApi = token => async (method, path, body) => {
     const r = await fetch(`${base}/api/c/${slug}${path}`, { method, headers: { 'x-ch': '1', 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
-    return { status: r.status, body: await r.json().catch(() => null) };
+    const out = { status: r.status, body: await r.json().catch(() => null) };
+    if (/tasks/.test(path)) await new Promise(ok => setTimeout(ok, 150));
+    return out;
   };
   const login = async pin => (await crewApi()('POST', '/login', { pin })).body.token;
   jake = crewApi(await login('1111')); sam = crewApi(await login('2222'));
