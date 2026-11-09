@@ -61,7 +61,7 @@ async function payroll() {
   eqp.getRow(3).values = [new Date(Date.UTC(year, 0, 9)), 500, 200, 300, 0, 10];
   const wk = (name, d, rows, withPay) => { const ws = wb.addWorksheet(name); ws.getCell('A1').value = new Date(Date.UTC(year, d[0], d[1])); if (withPay) { ws.getCell('C1').value = 'Extra/ Rembursments'; ws.getCell('F1').value = 'Per Hour'; } rows.forEach((r, i) => { ws.getRow(i + 2).values = r; }); };
   wk('week1', [0, 9], [['Sam Smith', '20', null, 'print from Quickbooks', null, 300], ['Lee Jones', '90', null, 'handwritten Deerfield Management  Check', null, 1350],
-    ['Sam Smith', '4', null, 'Handwritten Water Check', null, 60], ['Pat Boss', null, null, 'Direct Deposit ', 'Payroll', 923], ['Lee Jones', null, null, 'Handwritten Mt Cloud check', null, 0]], true);
+    ['Sam Smith', '4', null, 'Handwritten Water Check', null, 60], ['Pat Boss', '5', 342, 'Handwritten Real Estate Check', null, 417], ['Pat Boss', null, null, 'Direct Deposit ', 'Payroll', 923], ['Lee Jones', null, null, 'Handwritten Mt Cloud check', null, 0]], true);
   wk('week2', [0, 16], [['Sam Smith', '10:30', 'print from Quickbooks'], ['Kim Who', '8', 'Direct Deposit']], false);   // an older layout: hours only
   wk('typo', [0, 23], [], true); wb.getWorksheet('typo').getCell('A1').value = new Date(Date.UTC(1936, 0, 23));
   wb.getWorksheet('typo').getRow(2).values = ['Sam Smith', '2', null, 'print from Quickbooks', null, 30];
@@ -97,7 +97,7 @@ test('upload both; people matched by name from the pricing; the year at a glance
   assert.strictEqual(line('mgmt:0').actual, 923, 'Pat Boss matched by first name');
   assert.strictEqual(line('equip:0').actual, 300, 'equipment pay on the excavator line');
   assert.strictEqual(line('staff:unassigned').actual, 120, 'Kim: 8 h x $15, not in the pricing');
-  assert.deepStrictEqual(v.outside, [{ job: 'Water System', amount: 60, hours: 4 }]);
+  assert.deepStrictEqual(v.outside, [{ job: 'Water System', amount: 60, hours: 4 }]);   // Real Estate is left out
   const staff = v.cats.find(c => c.key === 'staff');
   assert.strictEqual(staff.loadedActual, Math.round((487.5 + 1350 + 120) * 1.01 * 1.1 * 1.1 * 100) / 100);
   assert.ok(v.goals.find(g => g.label === 'Guards').contractMin === 90);

@@ -9,6 +9,8 @@ const H = require('./hours');
 
 const CATS = { mgmt: 'Management & Supervisory', staff: 'General Staffing', sub: 'Sub-Contractors', equip: 'Equipment & Supplies' };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Jobs left out of the contract view entirely (paid separately, nothing to do with the services contract).
+const LEFT_OUT = new Set(['Real Estate']);
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -163,7 +165,7 @@ function readPayroll(wb) {
   rows.filter(x => x.amount && x.hours && !x.extra && x.job === 'Deerfield').forEach(x => { const k = norm(x.person); (rate[k] = rate[k] || []).push(x.amount / x.hours); });
   const usual = k => { const a = (rate[k] || []).filter(v => v >= 10 && v <= 60).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : 15; };
   rows.forEach(x => { if (x.amount == null && x.hours) { x.amount = r2(x.hours * usual(norm(x.person))); x.est = true; } });
-  return { rows: rows.filter(x => x.amount), equip };
+  return { rows: rows.filter(x => x.amount && !LEFT_OUT.has(x.job)), equip };
 }
 
 /* ------------------------------ saved settings ------------------------------ */
@@ -263,7 +265,7 @@ async function view(company, yearIn) {
   const hist = await db.q("SELECT id, to_char(day,'YYYY-MM-DD') AS day, source, person, job, hours::float, amount::float, note, est, line_key, line_hint FROM contract_actuals WHERE company_id=$1 ORDER BY day", [company.id]);
   const lastHist = hist.filter(h => h.source === 'history').map(h => h.day).sort().pop();
   const live = lastHist || lines.length ? await livePayroll(company, lastHist || `${start - 1}-12-31`, today).catch(() => []) : [];
-  const all = [...hist, ...live];
+  const all = [...hist, ...live].filter(a => !LEFT_OUT.has(a.job));
   const years = [...new Set([start, start + 1, start + 2, ...all.map(a => Number(a.day.slice(0, 4)))])].filter(y => y >= start - 2).sort();
   const year = yearIn && years.includes(Number(yearIn)) ? Number(yearIn) : years.includes(Number(today.slice(0, 4))) ? Number(today.slice(0, 4)) : years[0];
   const yi = year - start;   // which contract year (0..2), if any
