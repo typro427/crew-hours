@@ -303,3 +303,9 @@ tfoot td{font-weight:700;border-bottom:0}
 
 /* Bill's Billables app: only the address jobs screen */
 body.only-jobs #tabs{display:none!important}
+
+/* Bill's Billables: the job form's Save / Cancel */
+.jobbtns{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.jobbtns button{width:100%;min-height:56px;font-size:18px;font-weight:700;border-radius:12px}
+.jobbtns .jobsave{box-shadow:0 2px 0 rgba(0,0,0,.18)}
+.jobbtns .jobcancel{min-height:48px;font-size:16px;font-weight:600}

@@ -1441,7 +1441,8 @@
       var pk=photoPicker(me.max-(j ? j.receipts.length : 0), fst, "🧾 Add receipt photo"); f.appendChild(pk.el);
       f.appendChild(el("label","","Notes (optional)"));
       var notes=el("textarea"); notes.maxLength=2000; notes.placeholder="What you did, chemicals used…"; notes.value=j ? j.notes||"" : ""; f.appendChild(notes);
-      var row=el("div","row"), sv=el("button","primary","Save"), cancel=el("button","ghost","Cancel"); sv.type=cancel.type="button";
+      // big buttons, easy to hit with gloves on: Save the job across the top, Cancel underneath
+      var row=el("div","jobbtns"), sv=el("button","primary jobsave", j ? "Save changes" : "Save job"), cancel=el("button","ghost jobcancel","Cancel"); sv.type=cancel.type="button";
       row.appendChild(sv); row.appendChild(cancel); f.appendChild(row); f.appendChild(fst);
       cancel.onclick=function(){ me.editing=null; draw(); };
       sv.onclick=function(){
