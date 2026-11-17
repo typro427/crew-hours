@@ -195,6 +195,14 @@ r.post('/:slug/push', A.requireCrew, async (req, res) => {
   if ((req.body || {}).test) await PU.notify(req.company, [req.crew.id], { feature: null, title: 'Notifications are on', body: "You'll get weather reminders, new tasks and urgent leaks here.", tab: '' });
   res.json({ ok: true, phones: await PU.countFor(req.crew.id) });
 });
+// The iPhone app: its Apple push token
+r.post('/:slug/push/apple', A.requireCrew, async (req, res) => {
+  const b = req.body || {};
+  try { await PU.subscribeApple(req.company, req.crew, b.token, b.sandbox, req.get('user-agent')); }
+  catch (e) { if (e.expose) return res.status(400).json({ error: e.message }); throw e; }
+  if (b.test) await PU.notify(req.company, [req.crew.id], { feature: null, title: 'Notifications are on', body: "You'll get weather reminders, new tasks and urgent leaks here.", tab: '' });
+  res.json({ ok: true, phones: await PU.countFor(req.crew.id) });
+});
 r.post('/:slug/push/off', A.requireCrew, async (req, res) => { await PU.unsubscribe(req.crew.id, (req.body || {}).endpoint); res.json({ ok: true, phones: await PU.countFor(req.crew.id) }); });
 
 // Members list: read-only search, only for people the boss has switched it on for.

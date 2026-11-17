@@ -1,0 +1,18 @@
+# Builds the iPhone app on a Mac whenever it changes, so a mistake shows up here before you open Xcode.
+# (No signing: this only checks that it compiles.)
+name: iPhone app builds
+on:
+  push:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build for the simulator
+        run: |
+          cd ios
+          xcodebuild -project CrewHours.xcodeproj -scheme CrewHours -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -40
+          exit ${PIPESTATUS[0]}

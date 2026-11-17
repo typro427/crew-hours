@@ -362,6 +362,9 @@ CREATE TABLE IF NOT EXISTS push_subs (
   last_ok    TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS push_subs_crew ON push_subs (crew_id);
+-- iPhone app phones (Apple push) sit alongside web-push phones: endpoint 'apns:<device token>'.
+ALTER TABLE push_subs ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'web';
+ALTER TABLE push_subs ADD COLUMN IF NOT EXISTS sandbox BOOLEAN NOT NULL DEFAULT FALSE;
 -- Weather reminders: the company's location, and rules (low below 40°F -> check the well house heaters...).
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_lat NUMERIC;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS weather_lon NUMERIC;

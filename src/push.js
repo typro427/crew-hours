@@ -5,6 +5,7 @@ const webpush = require('web-push');
 const db = require('./db');
 const config = require('./config');
 const F = require('./features');
+const APNS = require('./apns');
 
 /* ---- the app's own push keys (VAPID): made once, kept in the database; VAPID_* env vars win if set ---- */
 const key = () => crypto.createHash('sha256').update('vapid:' + config.secret).digest();
@@ -39,6 +40,14 @@ async function subscribe(company, crew, sub, ua) {
     ON CONFLICT (endpoint) DO UPDATE SET company_id=EXCLUDED.company_id, crew_id=EXCLUDED.crew_id, p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth, ua=EXCLUDED.ua, created_at=now()`,
     [company.id, crew.id, s.endpoint, k.p256dh, k.auth, String(ua || '').slice(0, 200)]);
 }
+/** The iPhone app's Apple push token for this crew member. sandbox: a build run from Xcode (not TestFlight / App Store). */
+async function subscribeApple(company, crew, token, sandbox, ua) {
+  const t = String(token || '');
+  if (!/^[0-9a-fA-F]{32,200}$/.test(t)) { const e = new Error("This phone's notification setup didn't come through. Try again."); e.expose = true; e.status = 400; throw e; }
+  await db.q(`INSERT INTO push_subs (company_id, crew_id, endpoint, p256dh, auth, ua, kind, sandbox) VALUES ($1,$2,$3,'','',$4,'apns',$5)
+    ON CONFLICT (endpoint) DO UPDATE SET company_id=EXCLUDED.company_id, crew_id=EXCLUDED.crew_id, ua=EXCLUDED.ua, sandbox=EXCLUDED.sandbox, created_at=now()`,
+    [company.id, crew.id, 'apns:' + t.toLowerCase(), String(ua || '').slice(0, 200), !!sandbox]);
+}
 const unsubscribe = (crewId, endpoint) => db.q('DELETE FROM push_subs WHERE crew_id=$1 AND endpoint=$2', [crewId, String(endpoint || '')]);
 const countFor = async crewId => (await db.one('SELECT count(*)::int AS n FROM push_subs WHERE crew_id=$1', [crewId])).n;
 
@@ -53,13 +62,24 @@ async function notify(company, who, payload) {
     const feature = payload.feature === undefined ? 'tasks' : payload.feature;   // null = anyone
     ids = (ids && ids.length ? crew.filter(c => ids.includes(c.id)) : crew).filter(c => (!feature || F.can(c, feature)) && c.id !== payload.except).map(c => c.id);
     if (!ids.length) return 0;
-    const subs = await db.q('SELECT id, endpoint, p256dh, auth FROM push_subs WHERE company_id=$1 AND crew_id = ANY($2::int[])', [company.id, ids]);
+    const subs = await db.q('SELECT id, endpoint, p256dh, auth, kind, sandbox FROM push_subs WHERE company_id=$1 AND crew_id = ANY($2::int[])', [company.id, ids]);
     if (!subs.length) return 0;
-    await vapid();
+    if (subs.some(s => s.kind !== 'apns')) await vapid();
     const body = JSON.stringify({ title: String(payload.title || '').slice(0, 120), body: String(payload.body || '').slice(0, 300),
       url: `/c/${company.slug}/${payload.tab ? '#' + payload.tab : ''}`, tag: payload.tag || undefined });
     let sent = 0;
+    const msg = { title: String(payload.title || '').slice(0, 120), body: String(payload.body || '').slice(0, 300), url: `${config.appUrl}/c/${company.slug}/${payload.tab ? '#' + payload.tab : ''}`, tag: payload.tag };
     await Promise.all(subs.map(async s => {
+      if (s.kind === 'apns') {   // the iPhone app
+        try {
+          if (!APNS.enabled() && !APNS.send.sender) return;
+          const r = await APNS.send(s.endpoint.slice(5), msg, s.sandbox);
+          if (r.gone) await db.q('DELETE FROM push_subs WHERE id=$1', [s.id]);
+          else if (r.ok) { sent++; await db.q('UPDATE push_subs SET last_ok=now() WHERE id=$1', [s.id]); }
+          else console.error('[apns]', r.status, r.reason);
+        } catch (e) { console.error('[apns]', e.message); }
+        return;
+      }
       try {
         await (notify.sender || webpush.sendNotification)({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body, { TTL: 12 * 3600, urgency: 'high' });
         sent++; await db.q('UPDATE push_subs SET last_ok=now() WHERE id=$1', [s.id]);
@@ -72,4 +92,4 @@ async function notify(company, who, payload) {
   } catch (e) { console.error('[push]', e.message); return 0; }
 }
 
-module.exports = { publicKey, subscribe, unsubscribe, countFor, notify };
+module.exports = { publicKey, subscribe, subscribeApple, unsubscribe, countFor, notify };

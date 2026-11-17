@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Recording a drive keeps going with the phone locked; notifications from the boss -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>remote-notification</string>
+	</array>
+	<!-- The crew app's site. Needed for its offline mode inside the app. Change it if your site's address changes (also Config.swift). -->
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>mycrewhours.com</string>
+	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Crew Hours uses your location only while you record a drive, to tick off the roads you drive and save your route. It keeps recording with the phone locked until you tap Save track.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Crew Hours uses the camera so you can take photos of jobs, leaks and receipts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Crew Hours lets you pick photos of jobs, leaks and receipts from your library.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Crew Hours doesn't record sound, but your phone asks when a video is taken with the camera.</string>
+	<!-- Only standard HTTPS: no export-compliance questions on every upload -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

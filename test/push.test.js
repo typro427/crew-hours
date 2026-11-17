@@ -105,3 +105,23 @@ test("a phone that turned notifications off is dropped; 'Not you?' forgets this 
   await P.notify(c, null, { title: 'x', body: 'y' });
   assert.strictEqual(sent.length, 0);
 });
+
+test('the iPhone app: an Apple push token is saved and gets notifications; a removed app is dropped', async () => {
+  const A = require('../src/apns');
+  const apple = [];
+  let goneTokens = new Set();
+  A.send.sender = async (token, msg, sandbox) => { if (goneTokens.has(token)) return { gone: true }; apple.push({ token, sandbox, ...msg }); return { ok: true }; };
+  const tok = 'ab'.repeat(32);
+  assert.strictEqual((await jake('POST', '/push/apple', { token: 'nope' })).status, 400);
+  const r = await jake('POST', '/push/apple', { token: tok, sandbox: true, test: true });
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.body.phones, 1);
+  assert.strictEqual(apple[0].title, 'Notifications are on'); assert.strictEqual(apple[0].sandbox, true);
+  apple.length = 0;
+  await O('POST', '/api/admin/tasks', { title: 'Check the pump house' });
+  assert.strictEqual(apple.length, 1); assert.match(apple[0].url, /^https?:\/\/.+\/c\/.+\/#tasks$/);
+  goneTokens.add(tok);
+  const c = await db.one('SELECT * FROM companies');
+  await P.notify(c, null, { title: 'x', body: 'y' });
+  assert.strictEqual((await jake('GET', '/push')).body.phones, 0, 'removed app forgotten');
+  A.send.sender = null;
+});

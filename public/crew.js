@@ -199,7 +199,10 @@
   // ---- phone notifications (Web Push) ----
   var pushReg=null;
   var isIOS=/iP(hone|ad|od)/.test(navigator.userAgent), standalone=window.matchMedia && window.matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
-  function pushSupported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+  // inside the iPhone app: Apple notifications through the app instead of Web Push
+  var NATIVE = window.CrewHoursNative && window.CrewHoursNative.platform==="ios" ? window.CrewHoursNative : null, nativeTok=null;
+  function nativeOff(v){ try{ if(v===undefined) return localStorage.getItem("pushOff:"+SLUG)==="1"; if(v) localStorage.setItem("pushOff:"+SLUG,"1"); else localStorage.removeItem("pushOff:"+SLUG); }catch(e){ return false; } }
+  function pushSupported(){ return !!NATIVE || ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window); }
   function b64key(s){ var p="=".repeat((4-s.length%4)%4), raw=atob((s+p).replace(/-/g,"+").replace(/_/g,"/")), a=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
   function later(){ try{ return Number(localStorage.getItem("pushLater:"+SLUG)||0) > Date.now(); }catch(e){ return false; } }
   function setBell(on){ var b=$("bell"); b.hidden=false; b.textContent = on ? "🔔" : "🔕"; b.title = on ? "Notifications are on. Tap to turn off." : "Turn on notifications"; b.dataset.on = on ? "1" : ""; }
@@ -208,6 +211,17 @@
     if(!pushSupported()){
       $("bell").hidden=true;
       if(isIOS && !standalone && !later()){ $("pushask").hidden=false; $("push-on").hidden=true; $("pushask-text").textContent="On iPhone: tap the Share button, then Add to Home Screen. Open Crew Hours from your home screen and turn on notifications there."; }
+      return;
+    }
+    if(NATIVE){
+      NATIVE.onPush=function(r){
+        if(r.token) nativeTok=r.token;
+        if(r.status==="granted" && r.token && !nativeOff()){ setBell(true); $("pushask").hidden=true; api("POST","/push/apple",{ token:r.token, sandbox:!!r.sandbox }).catch(function(){}); return; }
+        setBell(false);
+        $("pushask").hidden = later() || r.status==="denied" || nativeOff();
+        if(r.status==="denied") $("bell").title="Notifications are off for Crew Hours in your phone's Settings.";
+      };
+      NATIVE.post({ type:"push.status" });
       return;
     }
     navigator.serviceWorker.ready.then(function(reg){ pushReg=reg; return reg.pushManager.getSubscription(); }).then(function(sub){
@@ -221,6 +235,18 @@
   function pushOn(){
     if(!pushSupported()) return;
     say($("push-status"),"Turning on…");
+    if(NATIVE){
+      nativeOff(false);
+      NATIVE.onPush=function(r){
+        if(!r.token){ say($("push-status"), r.status==="denied" ? "Notifications are off for Crew Hours. Turn them on in Settings \u203a Notifications \u203a Crew Hours." : (r.error || "Notifications couldn't be turned on. Try again."),"err"); return; }
+        nativeTok=r.token;
+        api("POST","/push/apple",{ token:r.token, sandbox:!!r.sandbox, test:true })
+          .then(function(){ $("pushask").hidden=true; setBell(true); say($("push-status"),""); say($("outbox-st"),"Notifications are on. You should get a test one now.","ok"); })
+          .catch(function(e){ say($("push-status"),e.message,"err"); });
+      };
+      NATIVE.post({ type:"push.enable" });
+      return;
+    }
     Notification.requestPermission().then(function(p){
       if(p!=="granted") throw new Error(p==="denied" ? "Notifications are blocked. Turn them on for this app in your phone's settings." : "Tap Allow to get notifications.");
       return Promise.all([navigator.serviceWorker.ready, api("GET","/push")]);
@@ -230,6 +256,11 @@
       .catch(function(e){ say($("push-status"),e.message,"err"); });
   }
   function pushForget(){
+    if(NATIVE){
+      nativeOff(true);
+      if(nativeTok && token) fetch(API+"/push/off",{ method:"POST", headers:{ "x-ch":"1", "Content-Type":"application/json", Authorization:"Bearer "+token }, body: JSON.stringify({ endpoint:"apns:"+String(nativeTok).toLowerCase() }) }).catch(function(){});
+      $("bell").hidden=true; return;
+    }
     if(!pushReg || !token) return;
     var t=token;
     pushReg.pushManager.getSubscription().then(function(sub){ if(!sub) return;
@@ -240,6 +271,7 @@
   // a notification tapped while the app is already open only changes the #tab part of the address
   window.addEventListener("hashchange", function(){ if(token && /^#(tasks|water|orders|jobs|roads)$/.test(location.hash)) showScreen(homeScreen()); });
   $("push-on").onclick=pushOn;
+  if(NATIVE){ $("native-change").hidden=false; $("native-change-btn").onclick=function(){ NATIVE.post({ type:"setup" }); }; }   // the iPhone app: back to its crew link screen
   $("push-later").onclick=function(){ try{ localStorage.setItem("pushLater:"+SLUG, String(Date.now()+14*864e5)); }catch(e){} $("pushask").hidden=true; };
   $("bell").onclick=function(){
     if($("bell").dataset.on){ pushForget(); setBell(false); say($("outbox-st"),"Notifications are off on this phone.","ok"); }
@@ -1066,7 +1098,7 @@
     var tools=el("div","dtools"), find=el("input"); find.type="search"; find.placeholder="Search roads"; find.autocomplete="off"; find.setAttribute("aria-label","Search roads");
     var hideL=el("label"), hide=el("input"); hide.type="checkbox"; hideL.appendChild(hide); hideL.appendChild(document.createTextNode("Hide driven"));
     tools.appendChild(find); tools.appendChild(hideL); top.appendChild(tools);
-    var hint=el("p","hint","Tap Start drive and the app ticks each road as you drive it (keep this screen open). Tap Save track when you\u2019re done: it saves your route and clears the map. Or tick a road yourself; tap Note if something needs fixing."); hint.style.margin="0";
+    var hint=el("p","hint","Tap Start drive and the app ticks each road as you drive it"+(window.CrewHoursNative ? "." : " (keep this screen open).")+" Tap Save track when you\u2019re done: it saves your route and clears the map. Or tick a road yourself; tap Note if something needs fixing."); hint.style.margin="0";
     var list=el("div","dlist"), empty=el("p","hint",""); empty.style.cssText="margin:0;text-align:center";
     var st=statusLine();
     var mapBox=el("div","dmap"); mapBox.hidden=true;
@@ -1122,7 +1154,7 @@
       gpsBtn.textContent = rec.on ? "✔ Save track" : "▶ Start drive (GPS)";
       gpsBtn.className = rec.on ? "dgps dsave" : "primary dgps";
       gInfo.hidden=!rec.on;
-      if(rec.on) gInfo.textContent = (rec.weak ? "Weak GPS signal… " : "● Recording your route. ") + "Keep this screen open; it pauses if you lock the phone or switch apps.";
+      if(rec.on) gInfo.textContent = (rec.weak ? "Weak GPS signal… " : "● Recording your route. ") + (window.CrewHoursNative ? "It keeps recording with the phone locked." : "Keep this screen open; it pauses if you lock the phone or switch apps.");
       gInfo.className="dginfo"+(rec.weak ? " weak" : "");
     }
     function onPos(p){
