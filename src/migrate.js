@@ -581,6 +581,38 @@ CREATE TABLE IF NOT EXISTS contract_actuals (
   line_hint  TEXT
 );
 CREATE INDEX IF NOT EXISTS contract_actuals_day ON contract_actuals (company_id, day);
+-- Property transfers: each published county transfer list (WLAF) that's been read, and possible owner changes found
+-- on the members list, for the boss to approve or dismiss.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS transfers JSONB;
+CREATE TABLE IF NOT EXISTS transfer_sources (
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  day        DATE,
+  status     TEXT NOT NULL,             -- read | failed
+  chars      INTEGER NOT NULL DEFAULT 0,
+  ocr        BOOLEAN NOT NULL DEFAULT FALSE,
+  error      TEXT NOT NULL DEFAULT '',
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, url)
+);
+CREATE TABLE IF NOT EXISTS property_changes (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  day        DATE,
+  url        TEXT NOT NULL,
+  excerpt    TEXT NOT NULL,
+  key        TEXT NOT NULL,
+  reasons    JSONB NOT NULL DEFAULT '[]',
+  member_ids INTEGER[] NOT NULL DEFAULT '{}',
+  old_owner  TEXT NOT NULL DEFAULT '',
+  new_owner  TEXT NOT NULL DEFAULT '',
+  address    TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'new',    -- new | approved | dismissed
+  emailed_at TIMESTAMPTZ,
+  decided_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, key)
+);
 CREATE TABLE IF NOT EXISTS road_shapes (
   road_id    INTEGER PRIMARY KEY REFERENCES roads(id) ON DELETE CASCADE,
   company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

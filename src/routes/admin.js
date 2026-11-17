@@ -372,6 +372,25 @@ r.get('/members.csv', async (req, res) => {
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="members.csv"', 'Cache-Control': 'no-store' }).send('\ufeff' + lines.join('\r\n'));
 });
 
+/* ------------------------- property changes (WLAF transfers) ------------------------- */
+const TR = require('../transfers');
+r.get('/transfers', async (req, res) => res.json(await TR.list(req.company.id, { status: req.query.status })));
+r.put('/transfers/settings', async (req, res) => res.json(await TR.saveSettings(req.company.id, req.body || {})));
+r.post('/transfers/check', async (req, res) => {
+  if (A.limited('transfers:' + req.company.id, 12, 60 * 60e3)) return res.status(429).json({ error: 'That was checked a lot this hour. Try again later.' });
+  A.fail('transfers:' + req.company.id, 60 * 60e3);
+  // reading scans takes a while: start it and let the page ask how it's going
+  TR.check(req.company.id).catch(e => console.error(`[transfers] company ${req.company.id}:`, e.message));
+  res.json({ started: true });
+});
+r.post('/transfers/:id/approve', async (req, res) => res.json(await TR.approve(req.company.id, req.params.id, req.body || {})));
+r.post('/transfers/:id/dismiss', async (req, res) => res.json(await TR.dismiss(req.company.id, req.params.id)));
+r.post('/transfers/:id/reopen', async (req, res) => res.json(await TR.reopen(req.company.id, req.params.id)));
+r.get('/transfers.xlsx', async (req, res) => {
+  const f = await TR.xlsx(req.company.id, req.query.status === 'all' ? (await TR.list(req.company.id, { status: 'all' })).changes.map(c => c.id) : null);
+  res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="property-changes.xlsx"', 'Cache-Control': 'no-store' }).send(f.buffer);
+});
+
 /* -------------------------------- readings ---------------------------------- */
 const RG = require('../readings');
 const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, Number(req.query.days) || 60, 1000) });

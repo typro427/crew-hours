@@ -33,6 +33,7 @@
     if (name === 'roads') { loadRoads(); loadDrives(); }
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
+    if (name === 'changes') { pcPolls = 0; loadChanges(); }
     if (name === 'orders') orderPanel.load();
     if (name === 'jobs') loadJobs();
     if (name === 'portal') loadPortal();
@@ -755,6 +756,7 @@
     else if (h === '#roads') showTab('roads');
     else if (h === '#water') showTab('water');
     else if (h === '#members') showTab('members');
+    else if (h === '#changes') showTab('changes');
     else if (h === '#orders') showTab('orders');
     else if (/^#gdrive/.test(h)) {
       showTab('settings'); var gm = /^#gdrive-error=(.*)$/.exec(h);
@@ -773,6 +775,120 @@
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
+
+  /* --------------------------- property changes --------------------------- */
+  var pcState = 'new', pcPoll = null, pcPolls = 0;
+  function usDay(d) { if (!d) return 'No date'; var s = String(d).slice(0, 10); return MON[+s.slice(5, 7) - 1] + ' ' + (+s.slice(8)) + ', ' + s.slice(0, 4); }
+  function pcBadge(n) { var b = $('pc-badge'); if (!b) return; b.hidden = !n; b.textContent = n || ''; }
+  /** "Brown Ann" (county lists put the last name first) -> { first, last }; an LLC or trust stays whole. */
+  function splitOwner(s) {
+    s = String(s || '').trim();
+    if (!s) return { first: '', last: '', trust: '' };
+    if (/\b(llc|inc|trust|trustees?|ltd|lp|company|co|corp|properties|holdings|bank|church)\b/i.test(s)) return { first: '', last: '', trust: s };
+    var w = s.replace(/,/g, ' ').split(/\s+/);
+    return { first: w.slice(1).join(' '), last: w[0], trust: '' };
+  }
+  function pcField(label, value) { var d = el('div'); d.appendChild(el('div', 'k', label)); d.appendChild(el('div', null, value || '—')); return d; }
+  function pcRow(c) {
+    var row = el('div', 'pc-row');
+    var head = el('div', 'pc-head');
+    head.appendChild(el('span', 'pa', c.address || (c.members[0] && c.members[0].address) || 'Property not named'));
+    head.appendChild(el('span', 'pd', usDay(c.day)));
+    if (c.status !== 'new') head.appendChild(el('span', 'pill off', c.status === 'approved' ? 'Approved' : 'Dismissed'));
+    row.appendChild(head);
+    var who = el('div', 'pc-who');
+    who.appendChild(pcField('Old owner (from the list)', c.old_owner));
+    who.appendChild(pcField('New owner (from the list)', c.new_owner));
+    who.appendChild(pcField('On the Members list as', c.members.map(function (m) { return [m.name || m.trust, m.address].filter(Boolean).join(', '); }).join('; ') || 'Not on the list'));
+    row.appendChild(who);
+    var why = el('div', 'pc-why'); c.reasons.forEach(function (r) { why.appendChild(el('span', null, r)); }); row.appendChild(why);
+    row.appendChild(el('pre', 'pc-ex', c.excerpt));
+    var acts = el('div', 'pc-acts');
+    var src = el('a', 'btn ghost small', 'Open the transfer list'); src.href = c.url; src.target = '_blank'; src.rel = 'noopener'; acts.appendChild(src);
+    var st = el('span', 'status'); st.setAttribute('role', 'status');
+    if (c.status === 'new') {
+      var ap = el('button', 'btn small', c.members.length ? 'Approve…' : 'Mark reviewed'); ap.type = 'button';
+      var dis = el('button', 'btn ghost small', 'Dismiss'); dis.type = 'button';
+      acts.appendChild(ap); acts.appendChild(dis);
+      dis.onclick = function () { api('POST', '/api/admin/transfers/' + c.id + '/dismiss').then(function () { loadChanges(); }).catch(function (e) { st.textContent = e.message; st.className = 'status err'; }); };
+      ap.onclick = function () {
+        if (!c.members.length) return api('POST', '/api/admin/transfers/' + c.id + '/approve', {}).then(function () { loadChanges(); }).catch(function (e) { st.textContent = e.message; st.className = 'status err'; });
+        if (row.querySelector('.pc-form')) return;
+        var f = el('div', 'pc-form'), guess = splitOwner(c.new_owner);
+        var pick = el('select'); c.members.forEach(function (m) { var o = el('option', null, (m.name || m.trust) + (m.address ? ' — ' + m.address : '')); o.value = m.id; pick.appendChild(o); });
+        var lab = function (t, input, cls) { var l = el('label', cls || null, t); l.appendChild(input); return l; };
+        var inp = function (v) { var i = el('input'); i.type = 'text'; i.value = v || ''; i.maxLength = 200; i.autocomplete = 'off'; return i; };
+        var fi = inp(guess.first), la = inp(guess.last), tr = inp(guess.trust);
+        if (c.members.length > 1) f.appendChild(lab('Member to update', pick, 'full'));
+        f.appendChild(lab('New first name(s)', fi)); f.appendChild(lab('New last name', la)); f.appendChild(lab('New trust or LLC', tr));
+        var keep = el('label', 'check full'), kb = el('input'); kb.type = 'checkbox'; kb.checked = true;
+        keep.appendChild(kb); keep.appendChild(document.createTextNode(' Move the old owner’s phones and emails to “Previous owner”'));
+        f.appendChild(keep);
+        var go = el('button', 'btn small', 'Approve and update the member'); go.type = 'button';
+        var no = el('button', 'btn ghost small', 'Cancel'); no.type = 'button';
+        var b = el('div', 'pc-acts full'); b.appendChild(go); b.appendChild(no); f.appendChild(b);
+        f.appendChild(el('p', 'hint full', 'Check the new name against the transfer list first. The list usually puts the last name first.'));
+        no.onclick = function () { f.remove(); };
+        go.onclick = function () {
+          go.disabled = true;
+          api('POST', '/api/admin/transfers/' + c.id + '/approve', { member_id: Number(pick.value), first: fi.value, last: la.value, trust: tr.value, keep_contact: !kb.checked })
+            .then(function () { loadChanges(); }).catch(function (e) { go.disabled = false; st.textContent = e.message; st.className = 'status err'; });
+        };
+        row.insertBefore(f, acts);
+        fi.focus();
+      };
+    } else if (c.status === 'dismissed') {
+      var back = el('button', 'btn ghost small', 'Bring back'); back.type = 'button'; acts.appendChild(back);
+      back.onclick = function () { api('POST', '/api/admin/transfers/' + c.id + '/reopen').then(function () { loadChanges(); }).catch(function (e) { st.textContent = e.message; st.className = 'status err'; }); };
+    }
+    acts.appendChild(st);
+    row.appendChild(acts);
+    return row;
+  }
+  function loadChanges() {
+    return api('GET', '/api/admin/transfers?status=' + pcState).then(function (d) {
+      var s = d.settings;
+      pcBadge(d.counts.new || 0);
+      $('pc-on').checked = s.on; $('pc-emails').value = s.emails || '';
+      var last = s.lastRun ? 'Last checked ' + new Date(s.lastRun).toLocaleString() + ': read ' + s.lastFiles + ' new list' + (s.lastFiles === 1 ? '' : 's') + ', found ' + s.lastFound + ' possible change' + (s.lastFound === 1 ? '' : 's') + '.' : 'Not checked yet. Tap Check now (the first check looks back 60 days).';
+      $('pc-last').textContent = (d.running ? 'Checking now… reading scanned lists can take a few minutes. ' : '') + last + (s.lastError ? ' ' + s.lastError : '');
+      $('pc-last').className = 'hint' + (s.lastError ? ' err' : '');
+      $('pc-check').disabled = d.running;
+      $('pc-xlsx').href = '/api/admin/transfers.xlsx' + (pcState === 'new' ? '' : '?status=all');
+      document.querySelectorAll('#pc-filter button').forEach(function (b) {
+        var k = b.getAttribute('data-st'); b.setAttribute('aria-selected', k === pcState);
+        b.textContent = ({ new: 'To review', approved: 'Approved', dismissed: 'Dismissed' })[k] + (d.counts[k] ? ' (' + d.counts[k] + ')' : '');
+      });
+      var box = $('pc-list'); box.innerHTML = '';
+      if (!d.changes.length) box.appendChild(el('p', 'hint', pcState === 'new' ? 'Nothing to review. New transfers that touch Deerfield will show up here.' : 'None yet.'));
+      d.changes.forEach(function (c) { box.appendChild(pcRow(c)); });
+      var tb = $('pc-src'); tb.innerHTML = '';
+      $('pc-src-count').textContent = d.sources.length ? '(' + d.sources.length + ')' : '';
+      d.sources.forEach(function (x) {
+        var tr = el('tr');
+        tr.appendChild(el('td', null, usDay(x.day)));
+        var td = el('td'), a = el('a', null, decodeURIComponent(x.url.split('/').pop().split('?')[0]).slice(0, 60) || 'file'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; td.appendChild(a); tr.appendChild(td);
+        tr.appendChild(el('td', x.status === 'ok' ? null : 'late', x.status === 'ok' ? (x.ocr ? 'Scanned, read with OCR' : 'Read') : 'Couldn’t read: ' + x.error));
+        [0, 1, 2].forEach(function (i) { tr.children[i].style.textAlign = 'left'; tr.children[i].style.whiteSpace = 'normal'; });
+        tb.appendChild(tr);
+      });
+      clearTimeout(pcPoll);
+      if (d.running && pcPolls++ < 90) pcPoll = setTimeout(loadChanges, 4000);
+    }).catch(function (e) { $('pc-last').textContent = e.message; });
+  }
+  if ($('pc-check')) {
+    $('pc-check').onclick = function () {
+      $('pc-check').disabled = true;
+      api('POST', '/api/admin/transfers/check').then(function () { pcPolls = 0; setTimeout(loadChanges, 600); })
+        .catch(function (e) { $('pc-check').disabled = false; $('pc-last').textContent = e.message; });
+    };
+    $('pc-save').onclick = function () {
+      api('PUT', '/api/admin/transfers/settings', { on: $('pc-on').checked, emails: $('pc-emails').value })
+        .then(function () { $('pc-last').textContent = 'Saved.'; setTimeout(loadChanges, 900); }).catch(function (e) { $('pc-last').textContent = e.message; });
+    };
+    document.querySelectorAll('#pc-filter button').forEach(function (b) { b.onclick = function () { pcState = b.getAttribute('data-st'); loadChanges(); }; });
+    api('GET', '/api/admin/transfers').then(function (d) { pcBadge(d.counts.new || 0); }).catch(function () {});
+  }
 
   /* ------------------------------ import ------------------------------ */
   if ($('imp-go')) $('imp-go').onclick = function () {

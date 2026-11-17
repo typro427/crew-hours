@@ -22,12 +22,12 @@ function invoiceMailbox() {
 }
 
 /** Sends an email, or prints it to the log when no SMTP_URL is set (development). */
-async function send({ to, subject, html, text, fromName, replyTo, fromAddress }) {
+async function send({ to, subject, html, text, fromName, replyTo, fromAddress, attachments }) {
   const list = (Array.isArray(to) ? to : String(to || '').split(/[,;\s]+/)).map(s => s.trim()).filter(Boolean);
   if (!list.length) return { skipped: true };
   if (config.mail.logOnly) {
     console.log(`[email] to=${list.join(',')} subject=${subject}`);
-    send.outbox.push({ to: list, subject, html, text, fromName, replyTo, fromAddress });
+    send.outbox.push({ to: list, subject, html, text, fromName, replyTo, fromAddress, attachments });
     return { logged: true };
   }
   try {
@@ -37,7 +37,7 @@ async function send({ to, subject, html, text, fromName, replyTo, fromAddress })
     const addr = own ? fromAddress : (/<([^>]+)>/.exec(config.mail.from) || [null, config.mail.from])[1];
     const from = fromName ? `"${String(fromName).replace(/["\r\n]/g, '')}" <${addr}>` : config.mail.from;
     const reply = replyTo || (fromAddress && !own ? fromAddress : undefined);
-    const info = await getTransport(own ? config.mail.invoiceSmtpUrl : undefined).sendMail({ from, to: list.join(','), subject, html, text, ...(reply ? { replyTo: reply } : {}) });
+    const info = await getTransport(own ? config.mail.invoiceSmtpUrl : undefined).sendMail({ from, to: list.join(','), subject, html, text, ...(reply ? { replyTo: reply } : {}), ...(attachments ? { attachments } : {}) });
     console.log(`[email] sent "${subject}" to ${list.length} recipient(s)`);
     return info;
   } catch (e) {

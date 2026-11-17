@@ -37,6 +37,13 @@ async function tick(now = new Date()) {
           if (await claim(c.id, kind, last)) await sendOrRelease(c.id, kind, last, () => R.sendPersonal(c, p, last)).catch(e => console.error(`[scheduler] crew ${p.id}:`, e.message));
         }
       }
+      // Weekly property-transfer check (WLAF's Campbell County lists), the same morning as the weekly summary.
+      if (!paused && date === ws && hour >= c.summary_hour) {
+        const TR = require('./transfers');
+        if ((await TR.settings(c.id)).on && await claim(c.id, 'transfers', ws)) {
+          TR.weekly(c).catch(e => console.error(`[transfers] company ${c.id}:`, e.message));   // a failure is in the email and on the dashboard
+        }
+      }
       if (!paused && date === T.shift(ws, 6) && hour >= c.missing_hour) {
         if (await claim(c.id, 'missing', ws)) await sendOrRelease(c.id, 'missing', ws, () => R.sendMissing(c));
       }

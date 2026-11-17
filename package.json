@@ -13,13 +13,17 @@
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "0.1.65",
+    "@tesseract.js-data/eng": "1.0.0",
     "bcryptjs": "2.4.3",
     "exceljs": "4.4.0",
     "express": "4.21.2",
     "leaflet": "1.9.4",
     "nodemailer": "6.9.16",
+    "pdfjs-dist": "4.10.38",
     "pg": "8.13.1",
     "stripe": "17.4.0",
+    "tesseract.js": "5.1.1",
     "web-push": "^3.6.7"
   }
 }
