@@ -300,3 +300,6 @@ tfoot td{font-weight:700;border-bottom:0}
 .dmap{height:340px;border-radius:12px;border:1px solid var(--line);overflow:hidden;z-index:1}
 .dgrow .dsave{background:var(--ok);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
 .linkish{background:none;border:0;padding:6px;color:var(--muted);font:inherit;font-size:14px;text-decoration:underline;cursor:pointer}
+
+/* Bill's Billables app: only the address jobs screen */
+body.only-jobs #tabs{display:none!important}

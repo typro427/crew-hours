@@ -272,6 +272,7 @@
   window.addEventListener("hashchange", function(){ if(token && /^#(tasks|water|orders|jobs|roads)$/.test(location.hash)) showScreen(homeScreen()); });
   $("push-on").onclick=pushOn;
   if(NATIVE){ $("native-change").hidden=false; $("native-change-btn").onclick=function(){ NATIVE.post({ type:"setup" }); }; }   // the iPhone app: back to its crew link screen
+  if(window.CrewHoursAndroid){ $("native-change").hidden=false; $("native-change-btn").onclick=function(){ window.CrewHoursAndroid.setup(); }; }   // the Android app: the same
   $("push-later").onclick=function(){ try{ localStorage.setItem("pushLater:"+SLUG, String(Date.now()+14*864e5)); }catch(e){} $("pushask").hidden=true; };
   $("bell").onclick=function(){
     if($("bell").dataset.on){ pushForget(); setBell(false); say($("outbox-st"),"Notifications are off on this phone.","ok"); }
@@ -318,7 +319,12 @@
   }
 
   // Where to land: the boss sees the crew week; someone without a time sheet lands on their first tab.
+  // Billables-only (Bill's Android app opens ?only=jobs): just the address jobs screen, no other tabs
+  var ONLY=null;
+  try{ if(/[?&]only=jobs\b/.test(location.search)) localStorage.setItem("only:"+SLUG,"jobs"); else if(/[?&]only=all\b/.test(location.search)) localStorage.removeItem("only:"+SLUG); ONLY=localStorage.getItem("only:"+SLUG); }catch(e){ ONLY=/[?&]only=jobs\b/.test(location.search) ? "jobs" : null; }
+  if(ONLY){ document.body.classList.add("only-jobs"); document.title="Bill\u2019s Billables"; }
   function homeScreen(){
+    if(ONLY) return "jobs";
     // opened from a phone notification: go to that tab if they can use it
     var h=(location.hash||"").slice(1), TABS={ tasks:"tab-tasks", water:"tab-water", orders:"tab-orders", jobs:"tab-jobs", roads:"tab-roads", drives:"tab-drives" };
     if(TABS[h] && !$(TABS[h]).hidden){ try{ history.replaceState(null,"",location.pathname); }catch(e){} return h; }
@@ -1697,6 +1703,7 @@
     $("tab-orders").hidden=!features.orders;
     $("tab-jobs").hidden=!(features.jobs || isBoss);   // managers can look at anyone's address jobs
     $("tab-mine").hidden=features.hours===false;
+    if(ONLY && !(features.jobs || isBoss)) setStatus("pin-status","Bill\u2019s Billables isn\u2019t switched on for you. Ask the boss to turn it on in Crew & PINs.","err");
     if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);
     accessLoaded=true;
