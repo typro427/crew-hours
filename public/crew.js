@@ -30,9 +30,10 @@
   function clock(t){ if(!t) return ""; var p=t.split(":").map(Number); return ((p[0]%12)||12)+":"+pad2(p[1])+(p[0]>=12?" PM":" AM"); }
 
   var SLUG = document.body.getAttribute("data-slug"), API = "/api/c/" + SLUG;
+  var IN_APP = !!(window.CrewHoursAndroid || window.CrewHoursNative);   // inside the iPhone or Android app
   // Each old Apps Script call maps onto the company's REST API.
   var ROUTES = {
-    login:           function(a){ return ["POST", "/login", { pin: a[0] }]; },
+    login:           function(a){ return ["POST", "/login", { pin: a[0], app: !!(window.CrewHoursAndroid || window.CrewHoursNative) }]; },
     getMyWeek:       function(a){ return ["GET", "/week?start=" + encodeURIComponent(a[1]||"")]; },
     saveDay:         function(a){ return ["POST", "/day", { date:a[1],
                        work:  { start:a[2], end:a[3], summary:a[4], out:a[8], back:a[9] },
@@ -312,7 +313,7 @@
     busy = true; setStatus("pin-status","Checking…");
     call("login",[pin], function(res){
       busy=false; token=res.token; today=res.today; isBoss=!!res.manager; if(res.features) features=res.features;
-      try{ sessionStorage.setItem("crewToken:"+SLUG, token); }catch(e){}
+      try{ sessionStorage.setItem("crewToken:"+SLUG, token); if(IN_APP) localStorage.setItem("crewToken:"+SLUG, token); }catch(e){}
       pin=""; drawDots();
       enterLog(res.name);
     }, function(msg){ busy=false; pin=""; drawDots(); setStatus("pin-status",msg,"err"); });
@@ -334,7 +335,7 @@
   }
   function signOut(msg){
     IDB.clearCache(); outboxFailed=[]; $("bell").hidden=true; $("pushask").hidden=true;
-    token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); }catch(e){}
+    token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); localStorage.removeItem("crewToken:"+SLUG); }catch(e){}
     $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("drive-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
@@ -1711,7 +1712,8 @@
   }
   var accessLoaded=false;
   // resume a session from this tab if there is one
-  try { token = sessionStorage.getItem("crewToken:"+SLUG); } catch(e){}
+  // the phone apps remember the sign-in on the phone, so it opens with no signal even after the phone closed the app
+  try { token = sessionStorage.getItem("crewToken:"+SLUG) || (IN_APP ? localStorage.getItem("crewToken:"+SLUG) : null); } catch(e){}
   fetch(API + "/info").then(function(r){ return r.json(); }).then(function(r){
     if(r.settings) applySettings(r.settings); else if(r.error) setStatus("pin-status", r.error, "err");
   }).catch(function(){});

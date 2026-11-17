@@ -32,7 +32,7 @@ r.post('/:slug/login', async (req, res) => {
     return res.status(400).json({ error: "That PIN doesn't match anyone on the crew list." });
   }
   A.clearFails(ipKey);
-  const token = await A.startCrewSession(person.id);
+  const token = await A.startCrewSession(person.id, (req.body || {}).app === true ? 24 * 30 : undefined);   // the phone apps stay signed in
   res.json({ token, name: person.name, manager: person.is_manager, features: require('../features').forCrew(person), today: H.today(c), settings: H.publicSettings(c) });
 });
 

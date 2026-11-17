@@ -64,10 +64,12 @@ async function requireOwner(req, res, next) {
 /* ----------------------------------- crew ----------------------------------- */
 const CREW_HOURS = 12;
 
-async function startCrewSession(crewId) {
+/** hours: 12 for a shared or borrowed phone; the iPhone / Android apps (a crew member's own phone) stay signed in 30 days,
+ * so a job can be saved with no signal even after the phone closed the app overnight. */
+async function startCrewSession(crewId, hours = CREW_HOURS) {
   const token = newToken();
   await db.q('INSERT INTO crew_sessions (token_hash, crew_id, expires_at) VALUES ($1,$2, now() + $3::interval)',
-    [sha(token), crewId, CREW_HOURS + ' hours']);
+    [sha(token), crewId, hours + ' hours']);
   return token;
 }
 

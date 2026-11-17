@@ -1,5 +1,5 @@
 // Keeps the crew app's screens on the phone so it opens instantly, and with no signal. Saves made offline wait in the app's outbox.
-const CACHE = 'crew-hours-v7';
+const CACHE = 'crew-hours-v8';
 const SHELL = ['./', '/crew.css', '/crew.js', '/icon-192.png', '/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', e => {
@@ -11,7 +11,10 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith(fetch(e.request).then(r => {
     const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r;
-  }).catch(() => caches.match(e.request)));
+  }).catch(() => caches.match(e.request).then(hit => hit ||
+    // opening the app with no signal: the saved page works whatever is after the ? (Bill's app opens ?only=jobs)
+    (e.request.mode === 'navigate' ? caches.match(e.request, { ignoreSearch: true }).then(h => h || caches.match('./')) : caches.match(e.request, { ignoreSearch: true }))
+  )));
 });
 
 // Phone notifications: show them, and open the app on the right tab when tapped.

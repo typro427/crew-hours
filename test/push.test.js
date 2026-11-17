@@ -125,3 +125,12 @@ test('the iPhone app: an Apple push token is saved and gets notifications; a rem
   assert.strictEqual((await jake('GET', '/push')).body.phones, 0, 'removed app forgotten');
   A.send.sender = null;
 });
+
+test('signing in from the phone apps lasts 30 days; from a browser, 12 hours', async () => {
+  const login = async app => (await fetch(`${base}/api/c/${slug}/login`, { method: 'POST', headers: { 'x-ch': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: '2222', app }) })).json();
+  await login(true); const a = await db.one('SELECT expires_at FROM crew_sessions ORDER BY expires_at DESC LIMIT 1');
+  assert.ok(new Date(a.expires_at) - Date.now() > 29 * 864e5);
+  await db.q('DELETE FROM crew_sessions');
+  await login(false); const b = await db.one('SELECT expires_at FROM crew_sessions LIMIT 1');
+  assert.ok(new Date(b.expires_at) - Date.now() < 13 * 3600e3);
+});
