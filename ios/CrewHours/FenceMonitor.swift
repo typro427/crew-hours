@@ -94,15 +94,30 @@ final class FenceMonitor: NSObject, CLLocationManagerDelegate {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let iso = ISO8601DateFormatter().string(from: at)
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["event": event, "at": iso])
-        var task: UIBackgroundTaskIdentifier = .invalid
-        task = UIApplication.shared.beginBackgroundTask { UIApplication.shared.endBackgroundTask(task) }
-        URLSession.shared.dataTask(with: req) { _, resp, err in
+        // a little time to finish sending if iPhone woke the app in the background just for this
+        let bg = BackgroundTask()
+        bg.id = UIApplication.shared.beginBackgroundTask { bg.end() }
+        URLSession.shared.dataTask(with: req) { _, resp, _ in
             let ok = (resp as? HTTPURLResponse).map { $0.statusCode < 500 } ?? false
-            if !ok && attempt < 5 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(30 * (attempt + 1))) { self.report(event, at: at, attempt: attempt + 1) }
+            DispatchQueue.main.async {
+                if !ok && attempt < 5 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(30 * (attempt + 1))) { self.report(event, at: at, attempt: attempt + 1) }
+                }
+                bg.end()
             }
-            UIApplication.shared.endBackgroundTask(task)
         }.resume()
+    }
+}
+
+/// iPhone's "let me finish this in the background" ticket, ended once.
+final class BackgroundTask: @unchecked Sendable {
+    var id: UIBackgroundTaskIdentifier = .invalid
+    func end() {
+        DispatchQueue.main.async {
+            guard self.id != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(self.id)
+            self.id = .invalid
+        }
     }
 }
 
