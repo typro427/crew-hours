@@ -13,6 +13,8 @@
 	<array>
 		<string>mycrewhours.com</string>
 	</array>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>For guards: Crew Hours clocks you in when you get to the guard shack and out when you leave, even with the app closed. It only watches for the shack; it does not track where you go.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Crew Hours uses your location only while you record a drive, to tick off the roads you drive and save your route. It keeps recording with the phone locked until you tap Save track.</string>
 	<key>NSCameraUsageDescription</key>

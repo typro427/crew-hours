@@ -60,7 +60,8 @@ async function notify(company, who, payload) {
     let ids = Array.isArray(who) ? who.filter(Boolean) : null;
     const crew = await db.q('SELECT id, features FROM crew WHERE company_id=$1 AND active', [company.id]);
     const feature = payload.feature === undefined ? 'tasks' : payload.feature;   // null = anyone
-    ids = (ids && ids.length ? crew.filter(c => ids.includes(c.id)) : crew).filter(c => (!feature || F.can(c, feature)) && c.id !== payload.except).map(c => c.id);
+    ids = (ids && ids.length ? crew.filter(c => ids.includes(c.id)) : crew).filter(c => (!feature || F.can(c, feature)) && c.id !== payload.except)
+      .filter(c => !(payload.notGuards && F.can(c, 'gate'))).map(c => c.id);   // guards: no weather or water alerts
     if (!ids.length) return 0;
     const subs = await db.q('SELECT id, endpoint, p256dh, auth, kind, sandbox FROM push_subs WHERE company_id=$1 AND crew_id = ANY($2::int[])', [company.id, ids]);
     if (!subs.length) return 0;

@@ -94,3 +94,69 @@ test('the boss sees, filters, downloads and deletes the gate log', async () => {
   L = (await O('GET', '/api/admin/gate')).body;
   assert.equal(L.entries.length, 1);
 });
+
+test('guards fix a check-in and add a vehicle photo; older ones are the boss\'s to change', async () => {
+  const g = (await guard('GET', '/gate')).body;
+  const e = g.entries[0];
+  let r = await guard('PUT', '/gate/' + e.id, { address: '470 Deerfield Landing', member_id: g.addresses.find(a => a.address === '470 Deerfield Landing').id, kinds: ['contractor'], description: 'White van, ABC Plumbing', photo2: PNG });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const x = r.body.entries.find(y => y.id === e.id);
+  assert.equal(x.address, '470 Deerfield Landing'); assert.equal(x.owner, 'Pat Example'); assert.deepEqual(x.kinds, ['contractor']);
+  assert.equal(x.photo2, true); assert.equal(x.editedBy, 'Gary Guard');
+  assert.equal((await guard('GET', '/gate/photo/' + e.id + '?n=2')).status, 200);
+  r = await guard('PUT', '/gate/' + e.id, { ...x, photo2: '' });                // take the vehicle photo off
+  assert.equal(r.body.entries.find(y => y.id === e.id).photo2, false);
+  assert.equal((await guard('PUT', '/gate/' + e.id, { ...x, kinds: [] })).status, 400);
+  await db.q("UPDATE gate_entries SET at = now() - interval '3 days' WHERE id=$1", [e.id]);
+  assert.equal((await guard('PUT', '/gate/' + e.id, x)).status, 400, 'too old for the guard');
+  assert.equal((await worker('PUT', '/gate/' + e.id, x)).status, 403);
+  const n = await guard('POST', '/gate', { address: '141 Deer Run Pt', kinds: ['visitor'], photo: PNG, photo2: PNG, clientRef: 'g9' });
+  assert.ok(n.body.entries.some(y => y.photo && y.photo2));
+});
+
+test('guard shack: arriving clocks in, leaving clocks out, coming back is a break; guards get no weather or water alerts', async () => {
+  const FN = require('../src/fence');
+  const c = await db.one('SELECT * FROM companies');
+  assert.equal((await O('PUT', '/api/admin/gate/shack', { lat: 0, lon: 0 })).status, 400);
+  const s = await O('PUT', '/api/admin/gate/shack', { lat: 36.41, lon: -84.05, radius: 120 });
+  assert.deepEqual(s.body.shack, { lat: 36.41, lon: -84.05, radius: 120 });
+  assert.equal((await guard('GET', '/fence')).body.on, false, 'not switched on for this guard yet');
+  assert.equal((await guard('POST', '/fence', { event: 'enter' })).status, 400);
+  await O('PUT', '/api/admin/crew/' + guardId, { features: { hours: true, members: true, gate: true, autoclock: true, tasks: false, roads: false, w_sites: false, w_repairs: false, w_meters: false } });
+  const f = (await guard('GET', '/fence')).body;
+  assert.equal(f.on, true); assert.equal(f.shack.radius, 120);
+
+  // times in the company's time zone, today
+  const tz = c.timezone, today = require('../src/time').localNow(tz).date;
+  const at = hm => { // the moment it's hm o'clock today, company time
+    const guess = new Date(`${today}T${hm}:00Z`);
+    const off = new Date(guess.toLocaleString('en-US', { timeZone: 'UTC' })) - new Date(guess.toLocaleString('en-US', { timeZone: tz }));
+    return new Date(guess.getTime() + off).toISOString();
+  };
+  const ev = async (event, hm) => (await guard('POST', '/fence', { event, at: at(hm) })).body;
+  const day = async () => (await db.one('SELECT start_t, end_t, out_t, back_t, hours::float FROM entries WHERE crew_id=$1 AND day=$2', [guardId, today]));
+  const nowHM = require('../src/time').localNow(tz);
+  if (nowHM.hour < 9) return;   // the test needs today's 06:00–09:00 to be in the past
+  assert.equal((await ev('exit', '05:00')).did, 'none', 'not clocked in yet');
+  assert.equal((await ev('enter', '06:00')).did, 'in');
+  assert.equal((await ev('enter', '06:03')).did, 'none', 'the same thing twice counts once');
+  assert.equal((await ev('exit', '07:00')).did, 'out');
+  let d = await day(); assert.deepEqual([d.start_t, d.end_t, d.hours], ['06:00', '07:00', 1]);
+  assert.equal((await ev('enter', '07:30')).did, 'back');
+  d = await day(); assert.deepEqual([d.start_t, d.end_t, d.out_t, d.back_t], ['06:00', '', '07:00', '07:30']);
+  assert.equal((await ev('exit', '09:00')).did, 'out');
+  d = await day(); assert.deepEqual([d.end_t, d.hours], ['09:00', 2.5]);
+  const sh = (await O('GET', '/api/admin/gate/shack')).body;
+  assert.ok(sh.events.some(e => e.name === 'Gary Guard' && e.kind === 'enter'));
+  assert.ok(FN);
+
+  // weather reminders and water alerts skip guards
+  const P = require('../src/push');
+  await db.q("INSERT INTO push_subs (company_id, crew_id, endpoint, p256dh, auth, kind) VALUES ($1,$2,'apns:guardphone','','','apns')", [c.id, guardId]).catch(() => {});
+  const APNS = require('../src/apns'); const sent = [];
+  APNS.send.sender = async (tok) => { sent.push(tok); return { ok: true }; };
+  await P.notify(c, null, { feature: null, notGuards: true, title: 'cold' });
+  assert.equal(sent.length, 0, 'guard skipped');
+  await P.notify(c, null, { feature: null, title: 'anything else' });
+  delete APNS.send.sender;
+});

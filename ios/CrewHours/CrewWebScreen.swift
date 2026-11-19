@@ -100,6 +100,8 @@ struct CrewWebView: UIViewRepresentable {
             case "push.status": AppDelegate.pushStatus()
             case "push.enable": AppDelegate.pushEnable()
             case "setup": DispatchQueue.main.async { self.parent.onSetup() }
+            case "fence.set": FenceMonitor.shared.set(msg)
+            case "fence.clear": FenceMonitor.shared.clear()
             default: if type.hasPrefix("geo.") { location.handle(msg) }
             }
         }

@@ -175,7 +175,7 @@ r.post('/tasks', async (req, res) => {
   // phones: a task from the boss (to that person, or everyone), or an urgent / high leak (the water crew)
   const P = require('../push'), title = String(b.title || '').trim().slice(0, 100);
   if (kind === 'task') P.notify(req.company, b.assignedTo ? [Number(b.assignedTo)] : null, { title: `New task: ${title}`, body: String(b.details || '').trim().slice(0, 200) || 'Open the app to see it.', tab: 'tasks' });
-  if (kind === 'repair' && ['urgent', 'high'].includes(b.priority)) P.notify(req.company, null, { feature: 'w_repairs', title: `${b.priority === 'urgent' ? '🚨 Urgent' : '⚠ High'}: ${title}`, body: b.address ? String(b.address) : 'Open Leaks & repairs to see it.', tab: 'water' });
+  if (kind === 'repair' && ['urgent', 'high'].includes(b.priority)) P.notify(req.company, null, { feature: 'w_repairs', notGuards: true, title: `${b.priority === 'urgent' ? '🚨 Urgent' : '⚠ High'}: ${title}`, body: b.address ? String(b.address) : 'Open Leaks & repairs to see it.', tab: 'water' });
   res.json(await tasksOut(req, kind));
 });
 r.put('/tasks/:id', async (req, res) => { const k = await K.kindOfTask(req.company.id, Number(req.params.id)); await K.update(req.company.id, Number(req.params.id), req.body || {}); res.json(await tasksOut(req, k)); });
@@ -381,10 +381,13 @@ r.get('/gate.csv', async (req, res) => {
     .send(await GT.csv(req.company, gateFilters(req.query)));
 });
 r.get('/gate/photo/:id', async (req, res) => {
-  const p = await GT.photo(req.company.id, Number(req.params.id));
+  const p = await GT.photo(req.company.id, Number(req.params.id), Number(req.query.n) === 2 ? 2 : 1);
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
 });
+const FN = require('../fence');
+r.get('/gate/shack', async (req, res) => res.json({ shack: await FN.shack(req.company.id), events: await FN.recent(req.company.id), radius: FN.DEFAULT_RADIUS }));
+r.put('/gate/shack', async (req, res) => res.json({ shack: await FN.setShack(req.company.id, req.body || {}), events: await FN.recent(req.company.id), radius: FN.DEFAULT_RADIUS }));
 r.delete('/gate/:id', async (req, res) => { await GT.remove(req.company.id, Number(req.params.id)); res.json({ ok: true }); });
 
 /* ------------------------- property changes (WLAF transfers) ------------------------- */

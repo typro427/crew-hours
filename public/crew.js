@@ -71,10 +71,13 @@
     drivePoints:     function(a){ return ["POST", "/drives/trip", a[1]]; },
     getDriveMap:     function(a){ return ["GET", "/drives/map?day=" + encodeURIComponent(a[1]||"")]; },
     getGate:         function(){ return ["GET", "/gate"]; },
-    newGate:         function(a){ return ["POST", "/gate", a[1]]; }
+    newGate:         function(a){ return ["POST", "/gate", a[1]]; },
+    saveGate:        function(a){ return ["PUT", "/gate/" + a[1], a[2]]; },
+    getFence:        function(){ return ["GET", "/fence"]; },
+    fenceEvent:      function(a){ return ["POST", "/fence", a[1]]; }
   };
   // ---- Offline: saves wait in an outbox on the phone; the last lists loaded are kept so screens open with no signal. ----
-  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked", drivePoints:"Drive route", newGate:"Car checked in" };
+  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked", drivePoints:"Drive route", newGate:"Car checked in", saveGate:"Check-in fixed", fenceEvent:"Guard shack arrival/leaving" };
   var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1, getDrives:1, getGate:1 };
   var memBox=[], memCache={}, memId=1;
   var IDB=(function(){
@@ -343,7 +346,7 @@
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
-  $("logout").onclick = function(){ pushForget(); signOut(""); };   // someone else will use this phone: stop this person's notifications here
+  $("logout").onclick = function(){ pushForget(); fence.signOut(); signOut(""); };   // someone else will use this phone: stop this person's notifications here
 
   // ---- log screen ----
   function enterLog(name){
@@ -1654,9 +1657,82 @@
   $("wt-sites").onclick=function(){ showWater("sites"); };
   $("wt-repairs").onclick=function(){ showWater("repairs"); };
 
+  // ---- guard shack: clock in and out by location ----
+  // In the iPhone app the phone watches the shack itself (even with the app closed). In a browser it can only
+  // watch while the app is open on the screen.
+  var fence=(function(){
+    var me={ cfg:null, watch:null, state:null };
+    function key(){ return "fence:"+SLUG+":"+String(token||"").slice(-8); }
+    function line(msg){ var n=$("g-fence"); if(!n) return; n.hidden=!msg; n.textContent=msg||""; }
+    function lastText(l){
+      if(!l) return "";
+      var d=new Date(l.at), t=((d.getHours()%12)||12)+":"+String(d.getMinutes()).padStart(2,"0")+(d.getHours()>=12?" PM":" AM");
+      return " Last: "+(l.kind==="enter"?"arrived ":"left ")+t+(l.did==="none" ? "" : " · "+l.note);
+    }
+    function send(kind){
+      try{ sessionStorage.setItem(key(), kind); }catch(e){}
+      call("fenceEvent",[token, { event:kind, at:new Date().toISOString() }], function(res){
+        if(res.queued) line("📍 "+(kind==="enter"?"Arrived at":"Left")+" the guard shack. Saved on this phone; it clocks you "+(kind==="enter"?"in":"out")+" when there's signal.");
+        else { me.cfg.last={ kind:kind, at:res.at, did:res.did, note:res.note }; describe(); if(res.did!=="none") refreshHours(); }
+      }, function(){});
+    }
+    function refreshHours(){ if(week && !$("log-screen").hidden) loadWeek(week, sel); }
+    function describe(){
+      if(!me.cfg || !me.cfg.on){ line(""); return; }
+      line(NATIVE ? "📍 Auto clock in/out at the guard shack is on. Your phone does it, even with the app closed."+lastText(me.cfg.last)
+        : "📍 Auto clock in/out at the guard shack is on while this app is open on your screen."+lastText(me.cfg.last));
+    }
+    function onPos(p){
+      var c=me.cfg; if(!c || !c.on) return;
+      var acc=p.coords.accuracy||999; if(acc>150) return;   // too rough to tell
+      var r=Math.PI/180, a=[c.shack.lat,c.shack.lon], b=[p.coords.latitude,p.coords.longitude];
+      var h=Math.pow(Math.sin((b[0]-a[0])*r/2),2)+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.pow(Math.sin((b[1]-a[1])*r/2),2), d=2*6371000*Math.asin(Math.sqrt(h));
+      var was=me.state; try{ was=was||sessionStorage.getItem(key()); }catch(e){}
+      if(d<=c.shack.radius && was!=="enter"){ me.state="enter"; send("enter"); }
+      else if(d>c.shack.radius+Math.max(30,acc) && was==="enter"){ me.state="exit"; send("exit"); }
+      else if(!me.state) me.state = d<=c.shack.radius ? "enter" : (was||null);
+    }
+    me.start=function(){
+      if(!token || !features.autoclock) return me.stop();
+      call("getFence",[token], function(c){
+        me.cfg=c; describe();
+        if(!c.on) return me.stop();
+        if(NATIVE){ NATIVE.post({ type:"fence.set", lat:c.shack.lat, lon:c.shack.lon, radius:c.shack.radius, url:location.origin+API+"/fence", token:token }); return; }
+        if(me.watch==null && navigator.geolocation) me.watch=navigator.geolocation.watchPosition(onPos, function(e){ if(e && e.code===1) line("📍 Auto clock in/out needs your location. Allow location for this site in your phone's settings."); }, { enableHighAccuracy:true, maximumAge:30000, timeout:60000 });
+      }, function(){});
+    };
+    me.stop=function(){
+      if(me.watch!=null && navigator.geolocation) navigator.geolocation.clearWatch(me.watch);
+      me.watch=null; me.state=null; line("");
+    };
+    me.signOut=function(){ me.stop(); me.cfg=null; if(NATIVE) NATIVE.post({ type:"fence.clear" }); };
+    return me;
+  })();
+
   // ---- gate log (guards) ----
   var gateBoard=(function(){
-    var me={ data:null, picked:null, photo:null, hi:-1, shown:[] };
+    var me={ data:null, picked:null, hi:-1, shown:[], editing:null };
+    // a photo spot: take a picture, retake it, or take it off. When fixing a check-in it starts with the saved one.
+    function Slot(root, label, alt){
+      var s={ src:null, had:false, removed:false };
+      var cam=el("label","photo-btn",label), inp=el("input"); inp.type="file"; inp.accept="image/*"; inp.setAttribute("capture","environment"); cam.appendChild(inp);
+      var prev=el("div","gprev"), img=el("img"); img.alt=alt; prev.hidden=true;
+      var re=el("button","ghost","Retake"); re.type="button"; var rm=el("button","ghost","Remove"); rm.type="button";
+      prev.appendChild(img); prev.appendChild(re); prev.appendChild(rm); root.appendChild(cam); root.appendChild(prev);
+      function show(on){ prev.hidden=!on; cam.hidden=on; }
+      inp.onchange=function(){
+        var f=inp.files && inp.files[0]; inp.value=""; if(!f) return;
+        say($("g-status"),"Adding the photo…");
+        shrink(f).then(function(src){ s.src=src; s.removed=false; img.src=src; show(true); say($("g-status"),""); }).catch(function(e){ say($("g-status"),e.message,"err"); });
+      };
+      re.onclick=function(){ inp.click(); };
+      rm.onclick=function(){ s.src=null; if(s.had) s.removed=true; img.removeAttribute("src"); show(false); };
+      s.reset=function(){ s.src=null; s.had=false; s.removed=false; img.removeAttribute("src"); show(false); };
+      s.load=function(id, n){ s.reset(); s.had=true; photoInto(img, id+(n===2?"?n=2":""), "gate"); show(true); };
+      s.value=function(){ return s.src ? s.src : (s.removed ? "" : undefined); };   // new picture / take it off / keep
+      return s;
+    }
+    var slot1=Slot($("g-slot1"),"📷 Take a picture of the tag","Tag photo"), slot2=Slot($("g-slot2"),"🚗 Add a picture of the vehicle","Vehicle photo");
     var KL={ renter:"Renter", visitor:"Visitor", contractor:"Contractor", marina:"Marina / Tiki" };
     function norm(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim(); }
     function clock12(d){ var h=d.getHours(), m=d.getMinutes(); return ((h%12)||12)+":"+(m<10?"0":"")+m+(h>=12?" PM":" AM"); }
@@ -1703,16 +1779,22 @@
       else if(e.key==="Enter" && me.shown.length){ e.preventDefault(); pick(me.shown[Math.max(0,me.hi)]); }
       else if(e.key==="Escape"){ $("g-sugg").hidden=true; }
     };
-    $("g-file").onchange=function(){
-      var f=$("g-file").files && $("g-file").files[0]; $("g-file").value=""; if(!f) return;
-      say($("g-status"),"Adding the photo…");
-      shrink(f).then(function(src){ me.photo=src; $("g-img").src=src; $("g-prev").hidden=false; $("g-cam").hidden=true; say($("g-status"),""); })
-        .catch(function(e){ say($("g-status"),e.message,"err"); });
-    };
-    $("g-retake").onclick=function(){ $("g-file").click(); };
     function kinds(){ return Array.prototype.slice.call(document.querySelectorAll(".gkinds input:checked")).map(function(x){ return x.value; }); }
     function reset(){
-      $("g-form").reset(); me.picked=null; me.photo=null; $("g-prev").hidden=true; $("g-cam").hidden=false; $("g-img").removeAttribute("src"); $("g-owner").hidden=true; $("g-sugg").hidden=true;
+      $("g-form").reset(); me.picked=null; me.editing=null; slot1.reset(); slot2.reset(); $("g-owner").hidden=true; $("g-sugg").hidden=true;
+      $("g-title").textContent="Check a car in"; $("g-save").textContent="Check in"; $("g-cancel").hidden=true;
+    }
+    $("g-cancel").onclick=function(){ reset(); say($("g-status"),""); draw(); };
+    function startEdit(x){
+      reset(); me.editing=x.id;
+      $("g-title").textContent="Fix this check-in"; $("g-save").textContent="Save changes"; $("g-cancel").hidden=false;
+      $("g-addr").value=x.address;
+      me.picked=null; (me.data.addresses||[]).forEach(function(a){ if(a.id===x.member_id) me.picked=a; });
+      showOwner();
+      Array.prototype.forEach.call(document.querySelectorAll(".gkinds input"), function(c){ c.checked=(x.kinds||[]).indexOf(c.value)>=0; });
+      $("g-desc").value=x.description||"";
+      if(x.photo) slot1.load(x.id,1); if(x.photo2) slot2.load(x.id,2);
+      say($("g-status"),""); window.scrollTo(0,0);
     }
     $("g-form").onsubmit=function(e){
       e.preventDefault();
@@ -1720,13 +1802,15 @@
       if(!addr){ say($("g-status"),"Type the address they're going to.","err"); $("g-addr").focus(); return; }
       if(!k.length){ say($("g-status"),"Tick renter, visitor, contractor or marina/tiki.","err"); return; }
       var body={ address:addr, member_id: me.picked && norm(me.picked.address)===norm(addr) ? me.picked.id : null, owner: me.picked ? me.picked.owner : "", kinds:k,
-        description:$("g-desc").value.trim(), photo:me.photo, clientRef:"g"+Date.now().toString(36)+Math.random().toString(36).slice(2,8), at:new Date().toISOString() };
+        description:$("g-desc").value.trim(), photo:slot1.value(), photo2:slot2.value() };
+      var editing=me.editing;
+      if(!editing){ body.clientRef="g"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); body.at=new Date().toISOString(); body.photo=body.photo||null; body.photo2=body.photo2||null; }
       $("g-save").disabled=true; say($("g-status"),"Saving…");
-      call("newGate",[token, body], function(res){
+      call(editing ? "saveGate" : "newGate", editing ? [token, editing, body] : [token, body], function(res){
         $("g-save").disabled=false; reset();
-        say($("g-status"), res.queued ? "Saved on this phone. It sends when there's signal." : "Checked in.", "ok");
-        setTimeout(function(){ if(/Checked in|Saved on/.test($("g-status").textContent)) say($("g-status"),""); }, 4000);
-        if(res.queued) draw(); else { me.data=res; draw(); }
+        say($("g-status"), res.queued ? "Saved on this phone. It sends when there's signal." : editing ? "Changes saved." : "Checked in.", "ok");
+        setTimeout(function(){ if(/Checked in|Saved on|Changes saved/.test($("g-status").textContent)) say($("g-status"),""); }, 4000);
+        if(res.queued) draw(); else { Object.keys(photoUrls).forEach(function(k){ if(k.indexOf("gate")===0) delete photoUrls[k]; }); me.data=res; draw(); }
         window.scrollTo(0,0);
       }, function(msg){ $("g-save").disabled=false; say($("g-status"),msg,"err"); });
     };
@@ -1740,8 +1824,14 @@
       b.appendChild(el("div","gm",line));
       if(x.description) b.appendChild(el("div","gd",x.description));
       if(x.guard && !queued) b.appendChild(el("div","gm","Checked in by "+x.guard));
-      if(x.photo===true){ var im=el("img"); im.alt="Tag photo"; photoInto(im,x.id,"gate"); im.onclick=function(){ if(im.src) viewer(im.src); }; b.appendChild(im); }
-      else if(queued && x.photo){ var qi=el("img"); qi.alt="Tag photo"; qi.src=x.photo; b.appendChild(qi); }
+      var pics=el("div","gpics");
+      [[x.photo,1,"Tag photo"],[x.photo2,2,"Vehicle photo"]].forEach(function(p){
+        if(p[0]===true){ var im=el("img"); im.alt=p[2]; photoInto(im, x.id+(p[1]===2?"?n=2":""), "gate"); im.onclick=function(){ if(im.src) viewer(im.src); }; pics.appendChild(im); }
+        else if(queued && p[0]){ var qi=el("img"); qi.alt=p[2]; qi.src=p[0]; pics.appendChild(qi); }
+      });
+      if(pics.children.length) b.appendChild(pics);
+      if(x.editedBy && !queued) b.appendChild(el("div","gm","Changed by "+x.editedBy));
+      if(!queued){ var ed=el("button","ghost gedit","Edit"); ed.type="button"; ed.onclick=function(){ startEdit(x); }; b.appendChild(ed); }
       r.appendChild(b);
       return r;
     }
@@ -1761,7 +1851,7 @@
     }
     me.load=function(){
       if(!token) return;
-      call("getGate",[token], function(res){ me.data=res; draw(); if(res.offline) say($("g-status"),"No signal: showing the list from the last time it loaded."); }, function(msg){ say($("g-status"),msg,"err"); draw(); });
+      call("getGate",[token], function(res){ Object.keys(photoUrls).forEach(function(k){ if(k.indexOf("gate")===0) delete photoUrls[k]; }); me.data=res; draw(); if(res.offline) say($("g-status"),"No signal: showing the list from the last time it loaded."); }, function(msg){ say($("g-status"),msg,"err"); draw(); });
     };
     me.reset=reset; me.draw=draw;
     return me;
@@ -1829,6 +1919,7 @@
     if(ONLY && !(features.jobs || isBoss)) setStatus("pin-status","Bill\u2019s Billables isn\u2019t switched on for you. Ask the boss to turn it on in Crew & PINs.","err");
     if(features.orders && !accessLoaded) orderBoard.load(true);
     if(features.tasks && !accessLoaded) taskBoard.load(true);
+    if(!accessLoaded) fence.start();
     accessLoaded=true;
   }
   var accessLoaded=false;

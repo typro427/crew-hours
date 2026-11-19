@@ -7,7 +7,9 @@ const config = require('./config');
 
 const API = () => config.weather.api;
 const UA = () => `${config.productName} (${config.appUrl})`;   // the Weather Service asks every app to say who it is
-const CHECK_HOURS = [6, 15];                                    // 6 AM and 3 PM in the company's time zone
+// 9:30 AM and 3 PM in the company's time zone (key: the name of each check in the send log)
+const CHECK_TIMES = [{ h: 9, m: 30, key: '930', label: '9:30 AM' }, { h: 15, m: 0, key: '15', label: '3 PM' }];
+const MAX_DAYS_IN_A_ROW = 2;   // a cold (or wet) spell: remind on the first two days, then stay quiet until it breaks
 const METRICS = {
   low_below:  { label: 'Low temperature below', unit: '°F', field: 'minTemperature', how: 'min', below: true },
   high_above: { label: 'High temperature above', unit: '°F', field: 'maxTemperature', how: 'max' },
@@ -101,7 +103,7 @@ function describe(key, o, tz) {
 const crossed = (rule, o) => o && o.value != null && (METRICS[rule.metric].below ? o.value < Number(rule.threshold) : o.value > Number(rule.threshold));
 
 /* ------------------------------ rules ------------------------------ */
-const COLS = `id, metric, threshold::float AS threshold, hours, title, details, assigned_to AS "assignedTo", priority, email_crew AS "emailCrew", active, last_fired_at AS "lastFiredAt", last_note AS "lastNote"`;
+const COLS = `id, metric, threshold::float AS threshold, hours, title, details, assigned_to AS "assignedTo", priority, email_crew AS "emailCrew", active, last_fired_at AS "lastFiredAt", last_note AS "lastNote", to_char(last_fire_day, 'YYYY-MM-DD') AS "lastFireDay", fire_streak AS "fireStreak"`;
 async function rules(companyId) {
   const c = await db.one('SELECT weather_seeded FROM companies WHERE id=$1', [companyId]);
   if (c && !c.weather_seeded) {   // start with the two everyone asks for
@@ -159,7 +161,8 @@ async function preview(company) {
 
 /**
  * Check now and act: each active reminder that's crossed puts a task on the Tasks tab (due today) and emails the boss
- * (and crew with an email, if ticked). A reminder goes off at most once in 20 hours.
+ * (and crew with an email, if ticked). A reminder goes off at most once a day, and only on the first two days in a row:
+ * if it's crossed again on the third day of a stretch, it stays quiet until a day goes by without it.
  */
 async function run(company) {
   const props = await forecast(company), now = Date.now(), fired = [];
@@ -169,14 +172,16 @@ async function run(company) {
     if (!r.active) continue;
     const o = outlook(props, now, r.hours)[r.metric];
     if (!crossed(r, o)) continue;
-    const claim = await db.q("UPDATE weather_rules SET last_fired_at=now(), last_note=$1 WHERE id=$2 AND (last_fired_at IS NULL OR last_fired_at < now() - interval '20 hours') RETURNING id",
-      [describe(r.metric, o, company.timezone), r.id]);
-    if (!claim.length) continue;
+    // once a day; count the days in a row it's been crossed (yesterday too = the stretch goes on)
+    const claim = await db.q(`UPDATE weather_rules SET fire_streak = CASE WHEN last_fire_day = $2::date - 1 THEN fire_streak + 1 ELSE 1 END, last_fire_day = $2::date
+      WHERE id=$1 AND (last_fire_day IS NULL OR last_fire_day < $2::date) RETURNING fire_streak`, [r.id, today]);
+    if (!claim.length || claim[0].fire_streak > MAX_DAYS_IN_A_ROW) continue;
+    await db.q('UPDATE weather_rules SET last_fired_at=now(), last_note=$1 WHERE id=$2', [describe(r.metric, o, company.timezone), r.id]);
     const note = describe(r.metric, o, company.timezone) + ` in the next ${r.hours} hours (Weather Service forecast).`;
     await K.create(company.id, { kind: 'task', title: r.title, details: [note, r.details].filter(Boolean).join('\n'), due: today, assignedTo: r.assignedTo, priority: r.priority });
-    require('./push').notify(company, r.assignedTo ? [r.assignedTo] : null, { title: `🌡 ${r.title}`, body: note, tab: 'tasks', tag: 'weather-' + r.id });
+    require('./push').notify(company, r.assignedTo ? [r.assignedTo] : null, { title: `🌡 ${r.title}`, body: note, tab: 'tasks', tag: 'weather-' + r.id, notGuards: true });
     const to = [].concat(await R.recipients(company));
-    if (r.emailCrew) (await db.q("SELECT email FROM crew WHERE company_id=$1 AND active AND email<>''", [company.id])).forEach(c => to.push(c.email));
+    if (r.emailCrew) (await db.q("SELECT email, features FROM crew WHERE company_id=$1 AND active AND email<>''", [company.id])).filter(c => !require('./features').can(c, 'gate')).forEach(c => to.push(c.email));
     send({ to: [...new Set(to)], subject: `Weather: ${r.title} (${describe(r.metric, o, company.timezone)})`,
       html: layout('Weather reminder', `<p style="font-size:17px"><b>${esc(r.title)}</b></p><p>${esc(note)}</p>${r.details ? `<p style="white-space:pre-wrap">${esc(r.details)}</p>` : ''}
         <p>It's on the crew's <b>Tasks</b> tab, due today.</p>`) }).catch(e => console.error('[weather] email', e.message));
@@ -188,7 +193,7 @@ async function run(company) {
 async function status(company) {
   const c = await db.one('SELECT weather_lat AS lat, weather_lon AS lon, weather_label AS label FROM companies WHERE id=$1', [company.id]);
   return { location: c && c.lat != null ? { lat: Number(c.lat), lon: Number(c.lon), label: c.label } : null, rules: await rules(company.id),
-    metrics: Object.fromEntries(Object.entries(METRICS).map(([k, m]) => [k, { label: m.label, unit: m.unit }])), checkHours: CHECK_HOURS };
+    metrics: Object.fromEntries(Object.entries(METRICS).map(([k, m]) => [k, { label: m.label, unit: m.unit }])), checkTimes: CHECK_TIMES.map(t => t.label), maxDaysInARow: MAX_DAYS_IN_A_ROW };
 }
 
-module.exports = { status, rules, saveRule, removeRule, setLocation, preview, run, outlook, duration, convert, CHECK_HOURS, METRICS };
+module.exports = { status, rules, saveRule, removeRule, setLocation, preview, run, outlook, duration, convert, CHECK_TIMES, MAX_DAYS_IN_A_ROW, METRICS };

@@ -33,7 +33,7 @@
     if (name === 'roads') { loadRoads(); loadDrives(); }
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
-    if (name === 'gate') loadGate();
+    if (name === 'gate') { loadGate(); loadShack(); }
     if (name === 'changes') { pcPolls = 0; loadChanges(); }
     if (name === 'orders') orderPanel.load();
     if (name === 'jobs') loadJobs();
@@ -681,8 +681,8 @@
           boxes[k] = cb; l.appendChild(cb); l.appendChild(document.createTextNode(' ' + featLabels[k])); fs.appendChild(l);
         });
         // one tap: just what a gate guard needs
-        var guard = el('button', 'btn ghost small', 'Guard: hours, members list and gate only'); guard.type = 'button';
-        guard.onclick = function () { Object.keys(boxes).forEach(function (k) { boxes[k].checked = k === 'hours' || k === 'members' || k === 'gate'; }); mi.checked = false; };
+        var guard = el('button', 'btn ghost small', 'Guard: hours, members list, gate and auto clock-in only'); guard.type = 'button';
+        guard.onclick = function () { Object.keys(boxes).forEach(function (k) { boxes[k].checked = k === 'hours' || k === 'members' || k === 'gate' || k === 'autoclock'; }); mi.checked = false; };
         fs.appendChild(guard);
         f.appendChild(n); f.appendChild(p); f.appendChild(em); f.appendChild(m); f.appendChild(fs); f.appendChild(sv);
         f.onsubmit = function (e) {
@@ -811,20 +811,63 @@
         var a = el('td'); a.appendChild(el('b', null, x.address)); if (x.owner) a.appendChild(el('span', 'own', x.owner)); tr.appendChild(a);
         tr.appendChild(el('td', null, x.kindLabels.join(', ')));
         tr.appendChild(el('td', null, x.description || ''));
-        var ph = el('td');
-        if (x.photo) {
-          var im = el('img'); im.alt = 'Tag photo'; im.loading = 'lazy'; im.src = '/api/admin/gate/photo/' + x.id;
-          im.onclick = function () { var v = el('div', 'gt-view'), big = el('img'); big.src = im.src; big.alt = 'Tag photo'; v.appendChild(big); v.onclick = function () { v.remove(); }; document.body.appendChild(v); };
+        var ph = el('td', 'gt-pics');
+        [[x.photo, '', 'Tag photo'], [x.photo2, '?n=2', 'Vehicle photo']].forEach(function (p) {
+          if (!p[0]) return;
+          var im = el('img'); im.alt = p[2]; im.title = p[2]; im.loading = 'lazy'; im.src = '/api/admin/gate/photo/' + x.id + p[1];
+          im.onclick = function () { var v = el('div', 'gt-view'), big = el('img'); big.src = im.src; big.alt = p[2]; v.appendChild(big); v.onclick = function () { v.remove(); }; document.body.appendChild(v); };
           ph.appendChild(im);
-        }
+        });
         tr.appendChild(ph);
-        tr.appendChild(el('td', null, x.guard || ''));
+        var gd = el('td', null, x.guard || ''); if (x.editedBy) gd.appendChild(el('span', 'own', 'changed by ' + x.editedBy)); tr.appendChild(gd);
         var dt = el('td'), del = el('button', 'linkish', 'Delete'); del.type = 'button';
         del.onclick = function () { if (!confirm('Delete this gate entry for ' + x.address + '?')) return; api('DELETE', '/api/admin/gate/' + x.id).then(loadGate).catch(function (e) { status('gt-status', e.message, 'err'); }); };
         dt.appendChild(del); tr.appendChild(dt);
         tb.appendChild(tr);
       });
     }).catch(function (e) { status('gt-status', e.message, 'err'); });
+  }
+  /* the guard shack: guards' phones clock them in when they get there and out when they leave */
+  var shM = null, shCircle = null, shPin = null, shState = null;
+  function shackDraw() {
+    var s = shState;
+    $('sh-radius').value = s && s.radius ? s.radius : 100;
+    $('sh-where').textContent = s ? 'Set: ' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + ', ' + s.radius + ' m (about ' + Math.round(s.radius * 3.28) + ' ft) around it.' : 'Not set yet. Tap the map where the guard shack is, or stand at the shack and tap "Use my location".';
+    if (typeof L === 'undefined') return;
+    if (!shM) { shM = L.map('sh-map'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(shM); shM.setView([36.4, -84.1], 13);
+      shM.on('click', function (e) { shackPut(e.latlng.lat, e.latlng.lng); }); }
+    if (shCircle) { shCircle.remove(); shPin.remove(); shCircle = shPin = null; }
+    if (s) { shCircle = L.circle([s.lat, s.lon], { radius: s.radius, color: '#e3a008', weight: 2, fillOpacity: 0.15 }).addTo(shM); shPin = L.marker([s.lat, s.lon]).addTo(shM); shM.fitBounds(shCircle.getBounds(), { maxZoom: 18 }); }
+    setTimeout(function () { shM.invalidateSize(); }, 50);
+  }
+  function shackEvents(list) {
+    var box = $('sh-events'); box.innerHTML = '';
+    if (!list.length) { box.appendChild(el('p', 'hint', 'No arrivals or departures yet.')); return; }
+    list.forEach(function (e) {
+      var d = new Date(e.at), row = el('div', 'sh-ev');
+      row.appendChild(el('span', 'when', MON[d.getMonth()] + ' ' + d.getDate() + ', ' + ((d.getHours() % 12) || 12) + ':' + pad2(d.getMinutes()) + (d.getHours() >= 12 ? ' PM' : ' AM')));
+      row.appendChild(el('b', null, e.name + (e.kind === 'enter' ? ' arrived' : ' left')));
+      row.appendChild(el('span', 'hint', e.note));
+      box.appendChild(row);
+    });
+  }
+  function shackPut(lat, lon) {
+    status('sh-status', 'Saving…');
+    api('PUT', '/api/admin/gate/shack', { lat: lat, lon: lon, radius: Number($('sh-radius').value) || 100 })
+      .then(function (r) { shState = r.shack; shackDraw(); shackEvents(r.events); status('sh-status', 'Saved.', 'ok'); }).catch(function (e) { status('sh-status', e.message, 'err'); });
+  }
+  function loadShack() {
+    api('GET', '/api/admin/gate/shack').then(function (r) { shState = r.shack; shackDraw(); shackEvents(r.events); }).catch(function (e) { status('sh-status', e.message, 'err'); });
+  }
+  if ($('sh-map')) {
+    $('sh-here').onclick = function () {
+      if (!navigator.geolocation) return status('sh-status', 'This device can\u2019t share its location.', 'err');
+      status('sh-status', 'Finding you…');
+      navigator.geolocation.getCurrentPosition(function (p) { shackPut(p.coords.latitude, p.coords.longitude); },
+        function () { status('sh-status', 'Couldn\u2019t get your location. Allow location for this site, or tap the map.', 'err'); }, { enableHighAccuracy: true, timeout: 20000 });
+    };
+    $('sh-radius').onchange = function () { if (shState) shackPut(shState.lat, shState.lon); };
+    $('sh-clear').onclick = function () { if (!confirm('Turn off clocking in and out at the guard shack?')) return; api('PUT', '/api/admin/gate/shack', { clear: true }).then(function (r) { shState = null; shackDraw(); shackEvents(r.events); status('sh-status', 'Turned off.', 'ok'); }); };
   }
   if ($('gt-from')) {
     ['gt-from', 'gt-to', 'gt-kind'].forEach(function (id) { $(id).onchange = loadGate; });

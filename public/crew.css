@@ -344,3 +344,7 @@ body.only-jobs #tabs{display:none!important}
 .gitem .gm{font-size:13px;color:var(--muted)}
 .gitem img{width:96px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line);margin-top:6px;cursor:pointer}
 .gitem.queued .gt::after{content:" · saved on phone";font-weight:400}
+.gfence{font-size:14px;padding:10px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+.gpics{display:flex;gap:8px;flex-wrap:wrap}
+.gedit{margin-top:8px;padding:6px 14px;font-size:14px}
+#g-cancel{min-height:48px}

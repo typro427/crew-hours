@@ -101,6 +101,23 @@ test('a cold night and a lot of rain: tasks on the Tasks tab, due today, and an 
   assert.strictEqual((await O('GET', '/api/admin/tasks')).body.tasks.filter(t => /heaters/.test(t.title)).length, 1);
 });
 
+test('a cold stretch: reminds on the first two days in a row, then quiet until a day without it', async () => {
+  setForecast({ lowC: 2, rainMm: 0 });   // cold, dry
+  const c = await db.one('SELECT * FROM companies');
+  const today = require('../src/time').localNow(c.timezone).date, day = n => require('../src/time').shift(today, n);
+  const heat = async () => (await O('POST', '/api/admin/weather/run')).body.fired.map(f => f.title).filter(t => /heaters/.test(t));
+  const set = (d, n) => db.q("UPDATE weather_rules SET last_fire_day=$1, fire_streak=$2 WHERE title LIKE 'Check the heaters%'", [d, n]);
+  await set(day(-1), 1);                       // it went off yesterday: today is day 2 of the stretch
+  assert.strictEqual((await heat()).length, 1, 'day 2: reminded');
+  await set(day(-1), 2);                       // ...and the day before: today is day 3
+  assert.strictEqual((await heat()).length, 0, 'day 3 in a row: quiet');
+  assert.strictEqual((await heat()).length, 0);
+  await set(day(-1), 3);                       // still cold on day 4: still quiet
+  assert.strictEqual((await heat()).length, 0, 'day 4: quiet');
+  await set(day(-2), 4);                       // a warm day in between: the stretch broke
+  assert.strictEqual((await heat()).length, 1, 'a new cold stretch: reminded again');
+});
+
 test('a mild dry day: nothing goes off; your own reminders and switching one off', async () => {
   setForecast({ lowC: 12, rainMm: 2, gustKmh: 80 });   // gusts ~50 mph
   await db.q('UPDATE weather_rules SET last_fired_at=NULL');

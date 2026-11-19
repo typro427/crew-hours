@@ -266,3 +266,11 @@ details.bulk textarea{width:100%;margin:10px 0}
 .gt-view{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:50;cursor:zoom-out;padding:16px}
 .gt-view img{max-width:100%;max-height:100%;border-radius:8px}
 .gt-bar select{width:auto}
+.gt-pics{display:flex;gap:6px;flex-wrap:wrap}
+.sh-bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.sh-bar label{display:flex;align-items:center;gap:6px;margin:0}
+.sh-bar select{width:auto}
+.sh-map{height:320px;border-radius:12px;border:1px solid var(--line);margin-top:8px}
+.sh-events{display:flex;flex-direction:column}
+.sh-ev{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 0;border-top:1px solid var(--line);font-size:.92rem}
+.sh-ev .when{font:500 .88rem var(--f-num);color:var(--muted);min-width:120px}

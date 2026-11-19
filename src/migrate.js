@@ -639,6 +639,8 @@ CREATE TABLE IF NOT EXISTS drive_points (
   acc     REAL,
   PRIMARY KEY (trip_id, t)
 );
+ALTER TABLE weather_rules ADD COLUMN IF NOT EXISTS last_fire_day DATE;
+ALTER TABLE weather_rules ADD COLUMN IF NOT EXISTS fire_streak INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS gate_entries (
   id          SERIAL PRIMARY KEY,
   company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -657,6 +659,22 @@ CREATE TABLE IF NOT EXISTS gate_entries (
   UNIQUE (company_id, client_ref)
 );
 CREATE INDEX IF NOT EXISTS gate_entries_at ON gate_entries (company_id, at DESC);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS gate_fence JSONB;
+ALTER TABLE gate_entries ADD COLUMN IF NOT EXISTS photo2 BYTEA;
+ALTER TABLE gate_entries ADD COLUMN IF NOT EXISTS photo2_mime TEXT;
+ALTER TABLE gate_entries ADD COLUMN IF NOT EXISTS edited_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE gate_entries ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS fence_events (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id    INTEGER NOT NULL REFERENCES crew(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  at         TIMESTAMPTZ NOT NULL,
+  did        TEXT NOT NULL DEFAULT 'none',
+  note       TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS fence_events_crew ON fence_events (crew_id, at DESC);
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

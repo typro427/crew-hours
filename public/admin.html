@@ -101,7 +101,7 @@
   <section data-panel="tasks" class="panel" hidden>
     <div class="card" id="wx-card">
       <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div><h3>Weather reminders</h3><p class="hint" style="margin:0">At 6 AM and 3 PM the app checks the National Weather Service forecast. When a reminder below is crossed, it puts a task on the crew's Tasks tab (due today) and emails you.</p></div>
+        <div><h3>Weather reminders</h3><p class="hint" style="margin:0">At 9:30 AM and 3 PM the app checks the National Weather Service forecast. When a reminder below is crossed, it puts a task on the crew's Tasks tab (due today) and emails you, once a day. During a stretch of cold or wet days it reminds you only on the first two days in a row, then stays quiet until the stretch breaks.</p></div>
         <button class="btn small" type="button" id="wx-run">Check the forecast now</button>
       </div>
       <form class="row" id="wx-loc" novalidate style="gap:8px;flex-wrap:wrap;align-items:flex-end">
@@ -473,6 +473,20 @@
       <div class="gt-tiles" id="gt-tiles"></div>
       <div class="tablebox"><table class="roads gt-table"><thead><tr><th>When</th><th>Address</th><th>Type</th><th>Vehicle</th><th>Tag</th><th>Guard</th><th></th></tr></thead><tbody id="gt-body"></tbody></table></div>
       <span class="status" id="gt-status" role="status"></span>
+    </div>
+    <div class="card">
+      <h3>Guard shack: clock in and out automatically</h3>
+      <p class="hint" style="margin:0 0 10px">When a guard gets to the shack their time sheet clocks them in, and when they leave it clocks them out. Leaving and coming back the same day counts as a break. Turn it on for each guard under Crew &amp; PINs › Edit (the <b>Guard</b> button does it). On iPhone with the Crew Hours app it works even with the app closed; in a phone's web browser it only works while the app is open on the screen.</p>
+      <div class="sh-bar">
+        <button class="btn small" type="button" id="sh-here">Use my location</button>
+        <label>Circle size <select id="sh-radius"><option value="50">50 m (165 ft)</option><option value="75">75 m (250 ft)</option><option value="100">100 m (330 ft)</option><option value="150">150 m (500 ft)</option><option value="200">200 m (650 ft)</option><option value="300">300 m (1,000 ft)</option></select></label>
+        <button class="btn ghost small" type="button" id="sh-clear">Turn off</button>
+      </div>
+      <p class="hint" id="sh-where"></p>
+      <div id="sh-map" class="sh-map"></div>
+      <span class="status" id="sh-status" role="status"></span>
+      <h4 style="margin:14px 0 6px">Recent arrivals and departures</h4>
+      <div id="sh-events" class="sh-events"></div>
     </div>
   </section>
 

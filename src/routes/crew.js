@@ -216,11 +216,17 @@ r.get('/:slug/members', A.requireCrew, F.need('members'), async (req, res) => {
 const GT = require('../gate');
 r.get('/:slug/gate', A.requireCrew, F.need('gate'), async (req, res) => { res.set('Cache-Control', 'no-store'); res.json(await GT.today(req.company)); });
 r.post('/:slug/gate', A.requireCrew, F.need('gate'), async (req, res) => { await GT.create(req.company, req.crew, req.body || {}, K.photoBytes); res.json(await GT.today(req.company)); });
+r.put('/:slug/gate/:id', A.requireCrew, F.need('gate'), async (req, res) => { await GT.update(req.company, req.crew, req.params.id, req.body || {}, K.photoBytes); res.json(await GT.today(req.company)); });
 r.get('/:slug/gate/photo/:id', A.requireCrew, F.need('gate'), async (req, res) => {
-  const p = await GT.photo(req.company.id, Number(req.params.id));
+  const p = await GT.photo(req.company.id, Number(req.params.id), Number(req.query.n) === 2 ? 2 : 1);
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
 });
+
+// Guard shack geofence: the phone says when they arrive or leave; their time sheet clocks them in or out.
+const FN = require('../fence');
+r.get('/:slug/fence', A.requireCrew, async (req, res) => { res.set('Cache-Control', 'no-store'); res.json(await FN.forCrew(req.company, req.crew)); });
+r.post('/:slug/fence', A.requireCrew, async (req, res) => res.json(await FN.event(req.company, req.crew, req.body || {})));
 
 // Water system readings.
 const readingsOut = async req => ({ types: await RG.types(req.company.id), readings: await RG.recent(req.company.id, 14, 30) });
