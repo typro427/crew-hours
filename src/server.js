@@ -39,7 +39,7 @@ app.use('/api/admin/meters/import', express.json({ limit: '5mb' }));
 app.use('/api/admin/meters/import-xlsx', express.raw({ type: () => true, limit: '15mb' }));
 app.use('/api/admin/portal/docs', express.raw({ type: () => true, limit: '13mb' }));
 app.use(/^\/api\/p\/[^/]+\/report$/, express.json({ limit: '25mb' }));   // photos
-app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows)$/, express.json({ limit: '25mb' }));
+app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows|gate)$/, express.json({ limit: '25mb' }));
 app.use(/^\/api\/admin\/(tasks|jobs)(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
 app.use(/^\/api\/c\/[^/]+\/drives\/trip$/, express.json({ limit: '2mb' }));   // GPS points from a drive
 app.use(/^\/api\/admin\/contract\/(pricing|payroll)$/, express.raw({ type: () => true, limit: '25mb' }));   // contract workbooks

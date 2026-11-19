@@ -33,6 +33,7 @@
     if (name === 'roads') { loadRoads(); loadDrives(); }
     if (name === 'water') showWater(wTab);
     if (name === 'members') loadMembers();
+    if (name === 'gate') loadGate();
     if (name === 'changes') { pcPolls = 0; loadChanges(); }
     if (name === 'orders') orderPanel.load();
     if (name === 'jobs') loadJobs();
@@ -645,6 +646,7 @@
       var row = el('div', 'crow' + (c.active ? '' : ' inactive'));
       var left = el('div'); left.appendChild(el('span', 'nm', c.name));
       if (c.is_manager) left.appendChild(el('span', 'pill mgr', 'Manager'));
+      if (c.features && c.features.gate) left.appendChild(el('span', 'pill', 'Guard'));
       if (c.email) left.appendChild(el('span', 'pill', '✉ weekly email'));
       if (!c.active) left.appendChild(el('span', 'pill off', 'Can’t log in'));
       var offs = c.features ? Object.keys(featLabels).filter(function (k) { return c.features[k] === false; }) : [];
@@ -678,6 +680,10 @@
           var l = el('label', 'check'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !c.features || c.features[k] !== false;
           boxes[k] = cb; l.appendChild(cb); l.appendChild(document.createTextNode(' ' + featLabels[k])); fs.appendChild(l);
         });
+        // one tap: just what a gate guard needs
+        var guard = el('button', 'btn ghost small', 'Guard: hours, members list and gate only'); guard.type = 'button';
+        guard.onclick = function () { Object.keys(boxes).forEach(function (k) { boxes[k].checked = k === 'hours' || k === 'members' || k === 'gate'; }); mi.checked = false; };
+        fs.appendChild(guard);
         f.appendChild(n); f.appendChild(p); f.appendChild(em); f.appendChild(m); f.appendChild(fs); f.appendChild(sv);
         f.onsubmit = function (e) {
           e.preventDefault();
@@ -757,6 +763,7 @@
     else if (h === '#water') showTab('water');
     else if (h === '#members') showTab('members');
     else if (h === '#changes') showTab('changes');
+    else if (h === '#gate') showTab('gate');
     else if (h === '#orders') showTab('orders');
     else if (/^#gdrive/.test(h)) {
       showTab('settings'); var gm = /^#gdrive-error=(.*)$/.exec(h);
@@ -775,6 +782,54 @@
     else if (h === '#welcome') { showTab('crew'); loadWeek(weekStart); }
     else showTab('week');
   }).catch(function () {});
+
+  /* ------------------------------- gate log ------------------------------- */
+  var gtTimer = null, gtSeq = 0;
+  function isoLocal(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function gtQuery() {
+    return 'from=' + encodeURIComponent($('gt-from').value) + '&to=' + encodeURIComponent($('gt-to').value) + '&kind=' + encodeURIComponent($('gt-kind').value) + '&q=' + encodeURIComponent($('gt-q').value.trim());
+  }
+  function loadGate() {
+    if (!$('gt-from').value) { var t = new Date(); $('gt-to').value = isoLocal(t); t.setDate(t.getDate() - 6); $('gt-from').value = isoLocal(t); }
+    var seq = ++gtSeq;
+    $('gt-csv').href = '/api/admin/gate.csv?' + gtQuery();
+    status('gt-status', 'Loading…');
+    api('GET', '/api/admin/gate?' + gtQuery()).then(function (r) {
+      if (seq !== gtSeq) return;
+      status('gt-status', r.entries.length >= 500 ? 'Showing the newest 500. Narrow the dates to see the rest, or download the CSV.' : '');
+      var counts = { renter: 0, visitor: 0, contractor: 0, marina: 0 };
+      r.entries.forEach(function (x) { x.kinds.forEach(function (k) { counts[k] = (counts[k] || 0) + 1; }); });
+      var tiles = $('gt-tiles'); tiles.innerHTML = '';
+      [['Cars', r.entries.length]].concat(Object.keys(r.kinds).map(function (k) { return [r.kinds[k], counts[k] || 0]; })).forEach(function (t) {
+        var d = el('div', 'tile'); d.appendChild(el('div', 'k', t[0])); d.appendChild(el('div', 'v', String(t[1]))); tiles.appendChild(d);
+      });
+      var tb = $('gt-body'); tb.innerHTML = '';
+      if (!r.entries.length) { var tr0 = el('tr'), td0 = el('td', 'muted', 'No cars checked in for these dates.'); td0.colSpan = 7; tr0.appendChild(td0); tb.appendChild(tr0); }
+      r.entries.forEach(function (x) {
+        var tr = el('tr'), d = new Date(x.at);
+        tr.appendChild(el('td', 'when', MON[d.getMonth()] + ' ' + d.getDate() + ', ' + ((d.getHours() % 12) || 12) + ':' + pad2(d.getMinutes()) + (d.getHours() >= 12 ? ' PM' : ' AM')));
+        var a = el('td'); a.appendChild(el('b', null, x.address)); if (x.owner) a.appendChild(el('span', 'own', x.owner)); tr.appendChild(a);
+        tr.appendChild(el('td', null, x.kindLabels.join(', ')));
+        tr.appendChild(el('td', null, x.description || ''));
+        var ph = el('td');
+        if (x.photo) {
+          var im = el('img'); im.alt = 'Tag photo'; im.loading = 'lazy'; im.src = '/api/admin/gate/photo/' + x.id;
+          im.onclick = function () { var v = el('div', 'gt-view'), big = el('img'); big.src = im.src; big.alt = 'Tag photo'; v.appendChild(big); v.onclick = function () { v.remove(); }; document.body.appendChild(v); };
+          ph.appendChild(im);
+        }
+        tr.appendChild(ph);
+        tr.appendChild(el('td', null, x.guard || ''));
+        var dt = el('td'), del = el('button', 'linkish', 'Delete'); del.type = 'button';
+        del.onclick = function () { if (!confirm('Delete this gate entry for ' + x.address + '?')) return; api('DELETE', '/api/admin/gate/' + x.id).then(loadGate).catch(function (e) { status('gt-status', e.message, 'err'); }); };
+        dt.appendChild(del); tr.appendChild(dt);
+        tb.appendChild(tr);
+      });
+    }).catch(function (e) { status('gt-status', e.message, 'err'); });
+  }
+  if ($('gt-from')) {
+    ['gt-from', 'gt-to', 'gt-kind'].forEach(function (id) { $(id).onchange = loadGate; });
+    $('gt-q').oninput = function () { clearTimeout(gtTimer); gtTimer = setTimeout(loadGate, 250); };
+  }
 
   /* --------------------------- property changes --------------------------- */
   var pcState = 'new', pcPoll = null, pcPolls = 0;

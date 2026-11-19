@@ -372,6 +372,21 @@ r.get('/members.csv', async (req, res) => {
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="members.csv"', 'Cache-Control': 'no-store' }).send('\ufeff' + lines.join('\r\n'));
 });
 
+/* -------------------------------- gate log -------------------------------- */
+const GT = require('../gate');
+const gateFilters = q => ({ from: q.from, to: q.to, q: q.q, kind: q.kind });
+r.get('/gate', async (req, res) => res.json({ entries: await GT.list(req.company, gateFilters(req.query)), kinds: GT.KINDS }));
+r.get('/gate.csv', async (req, res) => {
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="gate-log${req.query.from ? '-' + String(req.query.from).replace(/[^\d-]/g, '') : ''}.csv"`, 'Cache-Control': 'no-store' })
+    .send(await GT.csv(req.company, gateFilters(req.query)));
+});
+r.get('/gate/photo/:id', async (req, res) => {
+  const p = await GT.photo(req.company.id, Number(req.params.id));
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(p.data);
+});
+r.delete('/gate/:id', async (req, res) => { await GT.remove(req.company.id, Number(req.params.id)); res.json({ ok: true }); });
+
 /* ------------------------- property changes (WLAF transfers) ------------------------- */
 const TR = require('../transfers');
 r.get('/transfers', async (req, res) => res.json(await TR.list(req.company.id, { status: req.query.status })));

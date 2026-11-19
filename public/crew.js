@@ -69,11 +69,13 @@
     getDrives:       function(a){ return ["GET", "/drives?day=" + encodeURIComponent(a[1]||"")]; },
     checkRoad:       function(a){ return ["POST", "/drives/" + a[1], a[2]]; },
     drivePoints:     function(a){ return ["POST", "/drives/trip", a[1]]; },
-    getDriveMap:     function(a){ return ["GET", "/drives/map?day=" + encodeURIComponent(a[1]||"")]; }
+    getDriveMap:     function(a){ return ["GET", "/drives/map?day=" + encodeURIComponent(a[1]||"")]; },
+    getGate:         function(){ return ["GET", "/gate"]; },
+    newGate:         function(a){ return ["POST", "/gate", a[1]]; }
   };
   // ---- Offline: saves wait in an outbox on the phone; the last lists loaded are kept so screens open with no signal. ----
-  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked", drivePoints:"Drive route" };
-  var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1, getDrives:1 };
+  var QUEUE = { readMeter:"Meter reading", newTask:"Report", progressTask:"Progress photos", doneTask:"Marked done", newJob:"Address job", saveJob:"Address job", checkRoad:"Road checked", drivePoints:"Drive route", newGate:"Car checked in" };
+  var KEEP = { getMyWeek:1, getMeters:1, getJobs:1, jobAddresses:1, getTasks:1, getDrives:1, getGate:1 };
   var memBox=[], memCache={}, memId=1;
   var IDB=(function(){
     var dbp=null;
@@ -327,16 +329,17 @@
   function homeScreen(){
     if(ONLY) return "jobs";
     // opened from a phone notification: go to that tab if they can use it
-    var h=(location.hash||"").slice(1), TABS={ tasks:"tab-tasks", water:"tab-water", orders:"tab-orders", jobs:"tab-jobs", roads:"tab-roads", drives:"tab-drives" };
+    var h=(location.hash||"").slice(1), TABS={ tasks:"tab-tasks", water:"tab-water", orders:"tab-orders", jobs:"tab-jobs", roads:"tab-roads", drives:"tab-drives", gate:"tab-gate" };
     if(TABS[h] && !$(TABS[h]).hidden){ try{ history.replaceState(null,"",location.pathname); }catch(e){} return h; }
     if(isBoss) return "crew";
+    if(features.gate) return "gate";   // guards start at the gate
     if(features.hours!==false) return "mine";
     return features.jobs ? "jobs" : features.tasks ? "tasks" : features.orders ? "orders" : "water";
   }
   function signOut(msg){
     IDB.clearCache(); outboxFailed=[]; $("bell").hidden=true; $("pushask").hidden=true;
     token=null; accessLoaded=false; try{ sessionStorage.removeItem("crewToken:"+SLUG); localStorage.removeItem("crewToken:"+SLUG); }catch(e){}
-    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("drive-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
+    $("log-screen").hidden=true; $("crew-screen").hidden=true; $("task-screen").hidden=true; $("road-screen").hidden=true; $("drive-screen").hidden=true; $("water-screen").hidden=true; $("member-screen").hidden=true; $("gate-screen").hidden=true; gateBoard.reset(); gateBoard.data=null; $("g-list").innerHTML=""; $("order-screen").hidden=true; $("job-screen").hidden=true; jobBoard.jobs=[]; jobBoard.addrs=null; $("m-list").innerHTML=""; $("m-q").value=""; $("tabs").hidden=true; $("who").hidden=true; $("pin-screen").hidden=false;
     isBoss=false; crewData=null;
     setStatus("pin-status", msg||"");
   }
@@ -366,6 +369,9 @@
     if(which==="drives") driveBoard.load();
     $("tab-water").setAttribute("aria-selected", which==="water");
     $("water-screen").hidden = which!=="water";
+    $("tab-gate").setAttribute("aria-selected", which==="gate");
+    $("gate-screen").hidden = which!=="gate";
+    if(which==="gate") gateBoard.load();
     $("tab-members").setAttribute("aria-selected", which==="members");
     $("member-screen").hidden = which!=="members";
     $("tab-jobs").setAttribute("aria-selected", which==="jobs");
@@ -387,6 +393,7 @@
   $("tab-orders").onclick = function(){ showScreen("orders"); };
   $("tab-jobs").onclick = function(){ showScreen("jobs"); };
   $("tab-members").onclick = function(){ showScreen("members"); };
+  $("tab-gate").onclick = function(){ showScreen("gate"); };
   $("tab-roads").onclick = function(){ roadBoard.reset(); showScreen("roads"); };
   $("tab-water").onclick = function(){ showScreen("water"); };
   $("tab-drives").onclick = function(){ showScreen("drives"); };
@@ -688,7 +695,7 @@
   function photoInto(img, id, kind){
     var key=(kind||"task")+id;
     if(photoUrls[key]){ img.src=photoUrls[key]; return; }
-    fetch(API+(kind==="day" ? "/day-photo/" : kind==="road" ? "/road-photo/" : kind==="receipt" ? "/receipts/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
+    fetch(API+(kind==="day" ? "/day-photo/" : kind==="road" ? "/road-photo/" : kind==="receipt" ? "/receipts/" : kind==="gate" ? "/gate/photo/" : "/tasks/photo/")+id, { headers:{ Authorization:"Bearer "+token } })
       .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
       .then(function(b){ photoUrls[key]=URL.createObjectURL(b); img.src=photoUrls[key]; }).catch(function(){});
   }
@@ -1647,6 +1654,119 @@
   $("wt-sites").onclick=function(){ showWater("sites"); };
   $("wt-repairs").onclick=function(){ showWater("repairs"); };
 
+  // ---- gate log (guards) ----
+  var gateBoard=(function(){
+    var me={ data:null, picked:null, photo:null, hi:-1, shown:[] };
+    var KL={ renter:"Renter", visitor:"Visitor", contractor:"Contractor", marina:"Marina / Tiki" };
+    function norm(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim(); }
+    function clock12(d){ var h=d.getHours(), m=d.getMinutes(); return ((h%12)||12)+":"+(m<10?"0":"")+m+(h>=12?" PM":" AM"); }
+    function matches(q){
+      var words=norm(q).split(" ").filter(Boolean); if(!words.length || !me.data) return [];
+      var out=[];
+      me.data.addresses.forEach(function(a){
+        var hay=" "+norm(a.address+" "+a.owner+" "+(a.lot||""))+" ";
+        if(words.every(function(w){ return hay.indexOf(w)>=0; })){
+          var starts = norm(a.address).indexOf(words[0])===0 ? 0 : 1;
+          out.push({ a:a, s:starts });
+        }
+      });
+      out.sort(function(x,y){ return x.s-y.s; });
+      return out.slice(0,8).map(function(x){ return x.a; });
+    }
+    function showOwner(){
+      var o=$("g-owner"), v=$("g-addr").value.trim();
+      if(me.picked){ o.hidden=false; o.className="gowner"; o.textContent="Owner: "+(me.picked.owner||"(no name on the list)"); }
+      else if(v && me.data && !matches(v).length){ o.hidden=false; o.className="gowner none"; o.textContent="Not on the members list. It will be logged as typed."; }
+      else o.hidden=true;
+    }
+    function drawSugg(){
+      var box=$("g-sugg"), v=$("g-addr").value;
+      me.shown = me.picked ? [] : matches(v);
+      box.innerHTML="";
+      box.hidden=!me.shown.length;
+      me.shown.forEach(function(a,i){
+        var b=el("button"); b.type="button"; b.setAttribute("role","option"); b.setAttribute("aria-selected", i===me.hi);
+        b.appendChild(el("span","a",a.address)); if(a.owner) b.appendChild(el("span","o",a.owner));
+        b.onmousedown=function(e){ e.preventDefault(); };
+        b.onclick=function(){ pick(a); };
+        box.appendChild(b);
+      });
+      showOwner();
+    }
+    function pick(a){ me.picked=a; $("g-addr").value=a.address; me.hi=-1; drawSugg(); $("g-addr").blur(); }
+    $("g-addr").oninput=function(){ me.picked=null; me.hi=-1; drawSugg(); };
+    $("g-addr").onfocus=drawSugg;
+    $("g-addr").onblur=function(){ setTimeout(function(){ $("g-sugg").hidden=true; },150);
+      if(!me.picked){ var v=norm($("g-addr").value), m=matches($("g-addr").value); if(m.length===1 && norm(m[0].address)===v){ me.picked=m[0]; } showOwner(); } };
+    $("g-addr").onkeydown=function(e){
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){ if(!me.shown.length) return; e.preventDefault(); me.hi=(me.hi+(e.key==="ArrowDown"?1:-1)+me.shown.length)%me.shown.length; drawSugg(); }
+      else if(e.key==="Enter" && me.shown.length){ e.preventDefault(); pick(me.shown[Math.max(0,me.hi)]); }
+      else if(e.key==="Escape"){ $("g-sugg").hidden=true; }
+    };
+    $("g-file").onchange=function(){
+      var f=$("g-file").files && $("g-file").files[0]; $("g-file").value=""; if(!f) return;
+      say($("g-status"),"Adding the photo…");
+      shrink(f).then(function(src){ me.photo=src; $("g-img").src=src; $("g-prev").hidden=false; $("g-cam").hidden=true; say($("g-status"),""); })
+        .catch(function(e){ say($("g-status"),e.message,"err"); });
+    };
+    $("g-retake").onclick=function(){ $("g-file").click(); };
+    function kinds(){ return Array.prototype.slice.call(document.querySelectorAll(".gkinds input:checked")).map(function(x){ return x.value; }); }
+    function reset(){
+      $("g-form").reset(); me.picked=null; me.photo=null; $("g-prev").hidden=true; $("g-cam").hidden=false; $("g-img").removeAttribute("src"); $("g-owner").hidden=true; $("g-sugg").hidden=true;
+    }
+    $("g-form").onsubmit=function(e){
+      e.preventDefault();
+      var addr=$("g-addr").value.trim(), k=kinds();
+      if(!addr){ say($("g-status"),"Type the address they're going to.","err"); $("g-addr").focus(); return; }
+      if(!k.length){ say($("g-status"),"Tick renter, visitor, contractor or marina/tiki.","err"); return; }
+      var body={ address:addr, member_id: me.picked && norm(me.picked.address)===norm(addr) ? me.picked.id : null, owner: me.picked ? me.picked.owner : "", kinds:k,
+        description:$("g-desc").value.trim(), photo:me.photo, clientRef:"g"+Date.now().toString(36)+Math.random().toString(36).slice(2,8), at:new Date().toISOString() };
+      $("g-save").disabled=true; say($("g-status"),"Saving…");
+      call("newGate",[token, body], function(res){
+        $("g-save").disabled=false; reset();
+        say($("g-status"), res.queued ? "Saved on this phone. It sends when there's signal." : "Checked in.", "ok");
+        setTimeout(function(){ if(/Checked in|Saved on/.test($("g-status").textContent)) say($("g-status"),""); }, 4000);
+        if(res.queued) draw(); else { me.data=res; draw(); }
+        window.scrollTo(0,0);
+      }, function(msg){ $("g-save").disabled=false; say($("g-status"),msg,"err"); });
+    };
+    $("g-find").oninput=function(){ draw(); };
+    function item(x, queued){
+      var r=el("div","gitem"+(queued?" queued":"")), d=new Date(x.at);
+      r.appendChild(el("div","gt",clock12(d)));
+      var b=el("div");
+      b.appendChild(el("div","ga",x.address));
+      var line=(x.kindLabels || (x.kinds||[]).map(function(k){ return KL[k]||k; })).join(", ")+(x.owner ? " · "+x.owner : "");
+      b.appendChild(el("div","gm",line));
+      if(x.description) b.appendChild(el("div","gd",x.description));
+      if(x.guard && !queued) b.appendChild(el("div","gm","Checked in by "+x.guard));
+      if(x.photo===true){ var im=el("img"); im.alt="Tag photo"; photoInto(im,x.id,"gate"); im.onclick=function(){ if(im.src) viewer(im.src); }; b.appendChild(im); }
+      else if(queued && x.photo){ var qi=el("img"); qi.alt="Tag photo"; qi.src=x.photo; b.appendChild(qi); }
+      r.appendChild(b);
+      return r;
+    }
+    function draw(){
+      var list=$("g-list"), q=norm($("g-find").value).split(" ").filter(Boolean);
+      var hit=function(x){ var hay=norm([x.address,x.owner,x.description,x.guard,(x.kinds||[]).join(" ")].join(" ")); return q.every(function(w){ return hay.indexOf(w)>=0; }); };
+      waiting("newGate").then(function(qd){
+        list.innerHTML="";
+        var entries=(me.data && me.data.entries)||[];
+        qd.slice().reverse().forEach(function(w){ var x=w.args[0]; if(hit(x)) list.appendChild(item(x,true)); });
+        var shown=entries.filter(hit);
+        shown.forEach(function(x){ list.appendChild(item(x,false)); });
+        var n=entries.length+qd.length;
+        $("g-count").textContent = n ? n+" car"+(n===1?"":"s") : "";
+        if(!list.children.length) list.appendChild(el("p","hint", q.length ? "No car today matches that." : "No cars checked in yet today."));
+      });
+    }
+    me.load=function(){
+      if(!token) return;
+      call("getGate",[token], function(res){ me.data=res; draw(); if(res.offline) say($("g-status"),"No signal: showing the list from the last time it loaded."); }, function(msg){ say($("g-status"),msg,"err"); draw(); });
+    };
+    me.reset=reset; me.draw=draw;
+    return me;
+  })();
+
   // ---- members list ----
   var mTimer=null, mSeq=0, mOpen=null;
   function pickField(d, names){ for(var i=0;i<names.length;i++){ if(d[names[i]]) return d[names[i]]; } return ""; }
@@ -1702,6 +1822,7 @@
     $("tab-cw").hidden=!(features.compliance || isBoss);
     $("tab-water").hidden=!(p.meters || p.readings || p.sites || p.repairs);
     $("tab-members").hidden=!features.members;
+    $("tab-gate").hidden=!features.gate;
     $("tab-orders").hidden=!features.orders;
     $("tab-jobs").hidden=!(features.jobs || isBoss);   // managers can look at anyone's address jobs
     $("tab-mine").hidden=features.hours===false;

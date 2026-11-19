@@ -252,3 +252,17 @@ details.bulk textarea{width:100%;margin:10px 0}
 .pc-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end;background:var(--bg);border-radius:10px;padding:12px}
 .pc-form .full{grid-column:1/-1}
 .pc-acts{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Gate log */
+.gt-bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end;margin:14px 0}
+.gt-bar label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted);margin:0}
+.gt-bar input[type=search]{flex:1;min-width:220px}
+.gt-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px}
+.gt-table td{text-align:left;white-space:normal;vertical-align:top}
+.gt-table th{text-align:left}
+.gt-table td.when{white-space:nowrap;font:500 .9rem var(--f-num)}
+.gt-table .own{display:block;color:var(--muted);font-size:.85rem}
+.gt-table img{width:84px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer;display:block}
+.gt-view{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:50;cursor:zoom-out;padding:16px}
+.gt-view img{max-width:100%;max-height:100%;border-radius:8px}
+.gt-bar select{width:auto}

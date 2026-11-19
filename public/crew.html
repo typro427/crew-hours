@@ -31,6 +31,7 @@
   <div class="outbox" id="outbox" hidden role="status"></div>
   <div class="status" id="outbox-st" role="status"></div>
   <nav class="tabs" id="tabs" role="tablist" hidden>
+    <button role="tab" id="tab-gate" aria-selected="false" hidden>Gate</button>
     <button role="tab" id="tab-mine" aria-selected="true">My hours</button>
     <button role="tab" id="tab-jobs" aria-selected="false" hidden>Bill’s Billables</button>
     <button role="tab" id="tab-tasks" aria-selected="false" hidden>Tasks <span class="badge" id="task-count" hidden></span></button>
@@ -190,6 +191,43 @@
     <div class="hint" id="m-count"></div>
     <div id="m-list" class="mlist"></div>
     <div class="status" id="m-status-line" role="status"></div>
+  </section>
+
+  <!-- Gate log (guards) -->
+  <section id="gate-screen" hidden style="display:flex;flex-direction:column;gap:14px">
+    <form class="card gform" id="g-form" novalidate autocomplete="off">
+      <h2>Check a car in</h2>
+      <div class="gaddr">
+        <label for="g-addr">Address they're going to</label>
+        <input id="g-addr" type="search" placeholder="Start typing the address or owner…" autocapitalize="off" spellcheck="false" aria-autocomplete="list" aria-controls="g-sugg">
+        <div class="gsugg" id="g-sugg" role="listbox" hidden></div>
+        <div class="gowner" id="g-owner" hidden></div>
+      </div>
+      <fieldset class="gkinds"><legend>Who is it?</legend>
+        <label><input type="checkbox" value="renter"><span>Renter</span></label>
+        <label><input type="checkbox" value="visitor"><span>Visitor</span></label>
+        <label><input type="checkbox" value="contractor"><span>Contractor</span></label>
+        <label><input type="checkbox" value="marina"><span>Marina / Tiki</span></label>
+      </fieldset>
+      <div>
+        <label>Tag photo</label>
+        <div class="gphoto">
+          <label class="photo-btn" id="g-cam">📷 Take a picture of the tag<input type="file" id="g-file" accept="image/*" capture="environment"></label>
+          <div class="gprev" id="g-prev" hidden><img id="g-img" alt="Tag photo"><button type="button" class="ghost" id="g-retake">Retake</button></div>
+        </div>
+      </div>
+      <div>
+        <label for="g-desc">Vehicle</label>
+        <input id="g-desc" maxlength="300" placeholder="e.g. Silver Ford F-150, TN tag ABC 123">
+      </div>
+      <button class="primary gsave" type="submit" id="g-save">Check in</button>
+      <div class="status" id="g-status" role="status"></div>
+    </form>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:baseline"><h2 style="margin:0">Today at the gate</h2><span class="hint" id="g-count"></span></div>
+      <input id="g-find" type="search" placeholder="Find a car today: address, name, vehicle…" aria-label="Find a car checked in today" style="margin-top:10px">
+      <div id="g-list" class="glist"></div>
+    </div>
   </section>
 
   <!-- Boss: crew week -->

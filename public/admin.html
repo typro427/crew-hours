@@ -27,6 +27,7 @@
     <button role="tab" data-tab="board" aria-selected="false">Board report</button>
     <button role="tab" data-tab="contract" aria-selected="false">Contract</button>
     <button role="tab" data-tab="compliance" aria-selected="false">Compliance</button>
+    <button role="tab" data-tab="gate" aria-selected="false">Gate log</button>
     <button role="tab" data-tab="members" aria-selected="false">Members</button>
     <button role="tab" data-tab="changes" aria-selected="false">Property changes<span class="tab-count" id="pc-badge" hidden></span></button>
     <button role="tab" data-tab="portal" aria-selected="false">Owner portal</button>
@@ -452,6 +453,26 @@
       <p class="hint">Upload a Crew Hours members file (.json) or a spreadsheet saved as CSV (first row = column names). This <b>replaces</b> the whole list.</p>
       <div class="row"><input type="file" id="mb-file" accept=".json,.csv,application/json,text/csv"><button class="btn" id="mb-import" type="button">Import</button></div>
       <span class="status" id="mb-status-line" role="status"></span>
+    </div>
+  </section>
+
+  <!-- GATE LOG -->
+  <section data-panel="gate" class="panel" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:flex-start">
+        <div style="flex:1;min-width:260px"><h3>Gate log</h3>
+          <p class="hint" style="margin:0">Cars the guards checked in: the address, who it is, the vehicle and a photo of the tag. Guards use the <b>Gate</b> tab in the crew app. Set someone up as a guard under Crew &amp; PINs › Edit › <b>Guard</b>.</p></div>
+        <a class="btn ghost small" id="gt-csv" href="/api/admin/gate.csv">Download CSV</a>
+      </div>
+      <div class="gt-bar">
+        <label>From <input type="date" id="gt-from"></label>
+        <label>To <input type="date" id="gt-to"></label>
+        <select id="gt-kind" aria-label="Type"><option value="">All types</option><option value="renter">Renter</option><option value="visitor">Visitor</option><option value="contractor">Contractor</option><option value="marina">Marina / Tiki</option></select>
+        <input type="search" id="gt-q" placeholder="Search address, owner, vehicle, guard…" aria-label="Search the gate log" autocomplete="off">
+      </div>
+      <div class="gt-tiles" id="gt-tiles"></div>
+      <div class="tablebox"><table class="roads gt-table"><thead><tr><th>When</th><th>Address</th><th>Type</th><th>Vehicle</th><th>Tag</th><th>Guard</th><th></th></tr></thead><tbody id="gt-body"></tbody></table></div>
+      <span class="status" id="gt-status" role="status"></span>
     </div>
   </section>
 

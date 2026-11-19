@@ -639,6 +639,24 @@ CREATE TABLE IF NOT EXISTS drive_points (
   acc     REAL,
   PRIMARY KEY (trip_id, t)
 );
+CREATE TABLE IF NOT EXISTS gate_entries (
+  id          SERIAL PRIMARY KEY,
+  company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  crew_id     INTEGER REFERENCES crew(id) ON DELETE SET NULL,
+  guard       TEXT NOT NULL DEFAULT '',
+  at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  address     TEXT NOT NULL,
+  member_id   INTEGER REFERENCES members(id) ON DELETE SET NULL,
+  owner       TEXT NOT NULL DEFAULT '',
+  kinds       TEXT[] NOT NULL DEFAULT '{}',
+  description TEXT NOT NULL DEFAULT '',
+  photo       BYTEA,
+  photo_mime  TEXT,
+  client_ref  TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, client_ref)
+);
+CREATE INDEX IF NOT EXISTS gate_entries_at ON gate_entries (company_id, at DESC);
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }
