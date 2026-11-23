@@ -149,14 +149,15 @@ test('lead and copper notices: the template filled in for each home', async () =
   await O('PUT', '/api/admin/cw/system', { name: 'Water Co', pwsid: 'TN0000912', operator: 'Pat Operator', phone: '(423) 555-0100', email: 'water@example.com' });
   const rows = [['141 Deer Run Pt', 'Lead', '0.0042', 'mg/L'], ['141 Deer Run Pt', 'Copper', '310', 'µg/L'], ['22 Whitetail Ct', 'Lead', 'ND', 'mg/L']]
     .map(([point, test, result, units]) => ({ day: '2026-07-08', point, test, result, units }));
+  rows.push({ day: '2026-07-09', point: '9 Elk Ridge', test: 'Lead', result: '<2.0', units: 'µg/L' });
   await O('POST', '/api/admin/cw/results', { rows, source: 'lcr' });
   const rounds = (await O('GET', '/api/admin/cw/results/lcr-rounds')).body.rounds;
-  assert.deepEqual(rounds.find(r => r.day === '2026-07-08'), { day: '2026-07-08', taps: 2 });
+  assert.deepEqual(rounds.find(r => r.from <= '2026-07-08' && r.to >= '2026-07-08'), { from: '2026-07-08', to: '2026-07-09', taps: 3 }, 'two days in a row are one round');
   const r = await fetch(base + '/api/admin/cw/results/lcr-notices.docx?day=2026-07-08&date=2026-11-23', { headers: { 'x-ch': '1', Cookie: '' } });
   assert.notEqual(r.status, 200, 'needs the login');
   const res = await O('GET', '/api/admin/cw/results/lcr-notices.docx?day=2026-07-08&date=2026-11-23');
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('x-notices'), '2'); assert.equal(res.headers.get('x-missing'), '');
+  assert.equal(res.headers.get('x-notices'), '2', 'only the 8th'); assert.equal(res.headers.get('x-missing'), '');
   const zip = await JSZip.loadAsync(res.body);
   const doc = await zip.file('word/document.xml').async('string');
   const text = doc.replace(/<[^>]+>/g, '');
@@ -166,8 +167,11 @@ test('lead and copper notices: the template filled in for each home', async () =
   assert.match(text, /Pat Operator/); assert.match(text, /\(423\) 555-0100/); assert.match(text, /water@example\.com/);
   assert.match(text, /There is no safe level of lead in drinking water/, 'the template wording stays');
   const h1 = await zip.file('word/headerNotice1.xml').async('string'), h2 = await zip.file('word/headerNotice2.xml').async('string');
-  assert.match(h1.replace(/<[^>]+>/g, ''), /Location: 141 Deer Run Pt.*Date: 11\/23\/2026/);
-  assert.match(h2.replace(/<[^>]+>/g, ''), /22 Whitetail Ct/);
+  const hs = [h1, h2].map(h => h.replace(/<[^>]+>/g, ''));
+  assert.ok(hs.some(h => /Location: 141 Deer Run Pt.*Date: 11\/23\/2026/.test(h)), hs.join(' | '));
+  assert.ok(hs.some(h => /Location: 22 Whitetail Ct/.test(h)));
   assert.match((await zip.file('word/footer1.xml').async('string')).replace(/<[^>]+>/g, ''), /TN0000912/);
   assert.equal((await O('GET', '/api/admin/cw/results/lcr-notices.docx?day=2001-01-01')).status, 400);
+  const both = await O('GET', '/api/admin/cw/results/lcr-notices.docx?day=2026-07-08&to=2026-07-09');
+  assert.equal(both.headers.get('x-notices'), '3', 'the whole round');
 });

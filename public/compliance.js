@@ -279,18 +279,18 @@ async function lcrForm(box){
   try{ rounds = (await api("GET","/results/lcr-rounds")).rounds; }catch(e){ box.innerHTML = `<p class="flag small">${esc(e.message)}</p>`; return; }
   const S = DB.system, miss = [["operator","operator name"],["phone","phone"],["email","email"],["pwsid","PWSID"]].filter(([k])=>!S[k]).map(x=>x[1]);
   box.innerHTML = `<div class="row wrap" style="align-items:flex-end;margin-top:10px">
-      <div class="field" style="margin:0;min-width:200px;flex:1"><label for="lcr-day">Sampling round</label><select id="lcr-day">${rounds.map(r=>`<option value="${r.day}">${nice(r.day)}: ${r.taps} home${r.taps===1?"":"s"}</option>`).join("")}</select></div>
+      <div class="field" style="margin:0;min-width:200px;flex:1"><label for="lcr-day">Sampling round</label><select id="lcr-day">${rounds.map(r=>`<option value="${r.from}|${r.to}">${r.from===r.to?nice(r.from):short(r.from)+"–"+nice(r.to)}: ${r.taps} sample${r.taps===1?"":"s"}</option>`).join("")}</select></div>
       <div class="field" style="margin:0;width:180px"><label for="lcr-date">Date on the notice</label><input type="date" id="lcr-date" value="${TODAY}"></div>
       <button class="btn primary" id="lcr-go" type="button">Download (Word)</button></div>
     ${miss.length ? `<p class="small flag" style="margin:8px 0 0">Add your ${miss.join(", ")} in <a href="#settings">System settings</a> first, or those blanks stay empty.</p>` : ""}
     <p class="tiny muted" style="margin:8px 0 0">Each home's sample point is used as the Location, so name sample points by address when you import. Check each notice, then print and deliver them by TDEC's deadline.</p>
     <span class="small" id="lcr-msg"></span>`;
   document.getElementById("lcr-go").onclick = async () => {
-    const msg = document.getElementById("lcr-msg"), day = document.getElementById("lcr-day").value;
+    const msg = document.getElementById("lcr-msg"), [day, to] = document.getElementById("lcr-day").value.split("|");
     msg.className = "small muted"; msg.textContent = "Making the notices…";
     try{
       const h = { "x-ch":"1" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
-      const r = await fetch(API + `/results/lcr-notices.docx?day=${encodeURIComponent(day)}&date=${encodeURIComponent(document.getElementById("lcr-date").value)}`, { headers:h, credentials:"same-origin" });
+      const r = await fetch(API + `/results/lcr-notices.docx?day=${encodeURIComponent(day)}&to=${encodeURIComponent(to||day)}&date=${encodeURIComponent(document.getElementById("lcr-date").value)}`, { headers:h, credentials:"same-origin" });
       if(!r.ok){ const j = await r.json().catch(()=>({})); throw new Error(j.error || "Couldn't make the notices."); }
       const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = `lead-copper-notices-${day}.docx`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
       msg.className = "small"; msg.textContent = `Downloaded ${r.headers.get("X-Notices")||""} notices ✓`;

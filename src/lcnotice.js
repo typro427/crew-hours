@@ -13,22 +13,32 @@ const TEMPLATE = path.join(__dirname, '..', 'templates', 'lead-copper-notice.doc
 const x = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const usDate = d => { const [y, m, dd] = String(d).split('-'); return `${+m}/${+dd}/${y}`; };
 
-/** The taps in a round: [{ point, lead, copper }] from the results saved for that day. */
-async function round(company, day) {
-  const rows = await db.q(`SELECT point, test, result, units FROM cw_results WHERE company_id=$1 AND day=$2 AND test IN ('Lead','Copper') ORDER BY point, test`, [company.id, day]);
+const GAP_DAYS = 21;   // samples taken within 3 weeks of each other are one round
+
+/** The samples in a round (from..to): [{ point, day, lead, copper }], one per tap sample (a home sampled twice gets two). */
+async function round(company, from, to) {
+  const rows = await db.q(`SELECT point, to_char(day,'YYYY-MM-DD') AS day, test, result, units FROM cw_results
+    WHERE company_id=$1 AND day BETWEEN $2 AND $3 AND test IN ('Lead','Copper') ORDER BY day, point, test`, [company.id, from, to || from]);
   const taps = new Map();
   for (const r of rows) {
-    const k = r.point || '(no sample point)';
-    if (!taps.has(k)) taps.set(k, { point: r.point, lead: null, copper: null });
+    const k = r.day + '|' + (r.point || '');
+    if (!taps.has(k)) taps.set(k, { point: r.point, day: r.day, lead: null, copper: null });
     taps.get(k)[r.test === 'Lead' ? 'lead' : 'copper'] = r;
   }
-  return [...taps.values()];
+  return [...taps.values()].sort((a, b) => a.point.localeCompare(b.point, 'en', { numeric: true }) || a.day.localeCompare(b.day));
 }
 
-/** Lead/copper rounds there are notices for: [{ day, taps }] newest first. */
+/** Lead/copper rounds there are notices for: [{ from, to, taps }] newest first. */
 async function rounds(company) {
-  return db.q(`SELECT to_char(day,'YYYY-MM-DD') AS day, count(DISTINCT point)::int AS taps FROM cw_results
-    WHERE company_id=$1 AND test IN ('Lead','Copper') GROUP BY day ORDER BY day DESC LIMIT 40`, [company.id]);
+  const days = await db.q(`SELECT to_char(day,'YYYY-MM-DD') AS day, count(DISTINCT point)::int AS taps FROM cw_results
+    WHERE company_id=$1 AND test IN ('Lead','Copper') GROUP BY day ORDER BY day`, [company.id]);
+  const out = [];
+  for (const d of days) {
+    const last = out[out.length - 1];
+    if (last && (new Date(d.day) - new Date(last.to)) / 864e5 <= GAP_DAYS) { last.to = d.day; last.taps += d.taps; }
+    else out.push({ from: d.day, to: d.day, taps: d.taps });
+  }
+  return out.reverse().slice(0, 40);
 }
 
 /** A result as it goes in the blank, in mg/L like the template ("0.0042", "<0.0010", "ND"). */
@@ -65,7 +75,7 @@ function fillBody(body, t, sys) {
 
 /** The first-page header for one home: Location and Date filled in. */
 function fillHeader(h, t, noticeDay) {
-  const loc = t.point || '';
+  const loc = (t.point || '') + (t.twice ? ` (sample of ${usDate(t.day)})` : '');
   // the underlined tab right after "Location:" / "Date:" gets the text in front of it
   h = h.replace(/(<w:t>Location:<\/w:t><\/w:r>\s*<w:r\b[^>]*>\s*<w:rPr>[\s\S]*?<\/w:rPr>)(<w:tab\/>)/, (m, a, b) => `${a}<w:t xml:space="preserve"> ${x(loc)}</w:t>${b}`);
   h = h.replace(/(<w:t>Date:<\/w:t><\/w:r>\s*<w:r\b[^>]*>\s*<w:rPr>[\s\S]*?<\/w:rPr>)(<w:tab\/>)/, (m, a, b) => `${a}<w:t xml:space="preserve"> ${x(usDate(noticeDay))}</w:t>${b}`);
@@ -73,13 +83,16 @@ function fillHeader(h, t, noticeDay) {
 }
 
 /** One Word file with a notice per tap. */
-async function build(company, { day, noticeDay, points } = {}) {
+async function build(company, { day, to, noticeDay, points } = {}) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) V.bad('Pick the lead and copper round.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(to || '')) || to < day) to = day;
   const today = H.today(company);
   noticeDay = /^\d{4}-\d{2}-\d{2}$/.test(String(noticeDay || '')) ? noticeDay : today;
-  let taps = await round(company, day);
+  let taps = await round(company, day, to);
   if (Array.isArray(points) && points.length) taps = taps.filter(t => points.includes(t.point));
   if (!taps.length) V.bad('No lead or copper results were found for that day.');
+  const count = {}; taps.forEach(t => { count[t.point] = (count[t.point] || 0) + 1; });
+  taps.forEach(t => { t.twice = count[t.point] > 1; });   // a home sampled twice: say which sample each notice is
   const c = await db.one('SELECT cw_system FROM companies WHERE id=$1', [company.id]);
   const sys = (c && c.cw_system) || {};
 
@@ -123,7 +136,7 @@ function mount(r, prefix, guard) {
   const g = guard ? [].concat(guard) : [];
   r.get(prefix + '/results/lcr-rounds', ...g, async (req, res) => res.json({ rounds: await rounds(req.company) }));
   r.get(prefix + '/results/lcr-notices.docx', ...g, async (req, res) => {
-    const f = await build(req.company, { day: req.query.day, noticeDay: req.query.date, points: req.query.point ? [].concat(req.query.point) : null });
+    const f = await build(req.company, { day: req.query.day, to: req.query.to, noticeDay: req.query.date, points: req.query.point ? [].concat(req.query.point) : null });
     res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': `attachment; filename="lead-copper-notices-${String(req.query.day).replace(/[^\d-]/g, '')}.docx"`,
       'X-Notices': String(f.taps), 'X-Missing': f.missing.join(','), 'Cache-Control': 'no-store' }).send(f.buffer);
