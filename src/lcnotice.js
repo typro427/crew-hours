@@ -52,6 +52,8 @@ function fillBody(body, t, sys) {
     if (i === 2) return `<w:t xml:space="preserve"> ${x(inMgL(t.copper))} </w:t>`;
     return m;
   });
+  // the results line: a fixed gap before "Copper" (the template's tab stop is too close for longer results)
+  body = body.replace('<w:tab/><w:t xml:space="preserve">Copper </w:t>', '<w:t xml:space="preserve">        Copper </w:t>');   // first one only: the results line
   if (sys.operator) body = body.replace('<w:t>Operator Name</w:t>', `<w:t>${x(sys.operator)}</w:t>`);
   if (sys.phone) body = body.replace('<w:t>(         )</w:t>', `<w:t xml:space="preserve">${x(sys.phone)}</w:t>`);
   if (sys.email) {
