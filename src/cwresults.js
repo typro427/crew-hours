@@ -327,6 +327,7 @@ async function save(company, who, b) {
     await db.q('UPDATE cw_items SET last=GREATEST(COALESCE(last, $2::date), $2::date) WHERE id=$1', [it.id, d]);
     marked++;
   }
+  if (b.pending) await db.q("UPDATE cw_pending SET status='saved' WHERE id=$1 AND company_id=$2", [Number(b.pending) || 0, company.id]);
   return { added, skipped, marked, ...(await list(company)) };
 }
 
@@ -345,7 +346,14 @@ async function list(company) {
       : d.kind === 'presence' ? { limit: null, units: 'P/A', kind: 'presence', label: KIND_LABEL.presence }
       : d.limit != null ? { limit: d.limit, units: d.units, kind: d.kind, label: KIND_LABEL[d.kind] } : { limit: null, units: d.units || '', kind: 'none', label: 'No federal limit' };
   }
-  return { results: rows, limits };
+  const pending = await db.q(`SELECT id, doc_id AS "docId", name, sender, received, rows, schedule, how FROM cw_pending
+    WHERE company_id=$1 AND status='ready' ORDER BY received DESC NULLS LAST, id DESC LIMIT 20`, [company.id]);
+  // mark rows already saved, so the check shows them as such
+  if (pending.length) {
+    const have = new Set((await db.q('SELECT key FROM cw_results WHERE company_id=$1', [company.id])).map(r => r.key));
+    pending.forEach(p => p.rows.forEach(r => { r.dup = !!(r.day && have.has(keyOf(r))); }));
+  }
+  return { results: rows, limits, pending };
 }
 
 async function setLimit(company, b) {
@@ -395,6 +403,10 @@ function mount(r, prefix, guard, who) {
   const g = guard ? [].concat(guard) : [];
   require('./lcnotice').mount(r, prefix, guard);   // lead and copper consumer notices
   r.post(prefix + '/results/read', ...g, async (req, res) => res.json(await read(req.company, req.body)));
+  r.post(prefix + '/results/pending/:id/dismiss', ...g, async (req, res) => {
+    await db.q("UPDATE cw_pending SET status='dismissed' WHERE id=$1 AND company_id=$2", [Number(req.params.id) || 0, req.company.id]);
+    res.json(await list(req.company));
+  });
   r.get(prefix + '/results', ...g, async (req, res) => res.json(await list(req.company)));
   r.post(prefix + '/results', ...g, async (req, res) => res.json(await save(req.company, who(req), req.body || {})));
   r.put(prefix + '/results/limit', ...g, async (req, res) => res.json(await setLimit(req.company, req.body || {})));

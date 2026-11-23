@@ -48,6 +48,54 @@ async function tokenCall(params) {
   if (!r.ok) { const e = new Error('Outlook sign-in: ' + String(j.error_description || j.error || r.statusText).split('\n')[0].slice(0, 200)); e.code = j.error; throw e; }
   return j;
 }
+/* ------------------------------ attachments: saved automatically ------------------------------ */
+const DOC_MAX = 15 * 1024 * 1024;               // one file
+const DOCS_TOTAL = 300 * 1024 * 1024;           // all of a company's saved documents
+const docKind = k => ({ 'Lab results': 'Lab report', Lab: 'Lab report', Invoice: 'Invoice', TDEC: 'TDEC letter', 'Customer billing': 'Billing', Operator: 'Operator' })[k] || 'Other';
+
+/**
+ * Save the attachments of water system emails that have them (newest first, a few each check), and read lab
+ * report PDFs into results that wait on the Results tab. Returns the number of lab reports read.
+ */
+async function saveDocs(companyId, acct, token) {
+  const items = await db.q(`SELECT id, msg_id, kind, subject, sender, sender_name, received_at FROM mail_items
+    WHERE account_id=$1 AND has_attach AND NOT docs_done AND status<>'blocked' ORDER BY received_at DESC LIMIT 12`, [acct.id]);
+  let read = 0;
+  for (const it of items) {
+    try {
+      const used = Number((await db.one('SELECT COALESCE(sum(size),0)::bigint AS n FROM mail_docs WHERE company_id=$1', [companyId])).n);
+      const j = await graph(token, `/me/messages/${encodeURIComponent(it.msg_id)}/attachments`);
+      for (const f of j.value || []) {
+        if (!/fileAttachment/.test(f['@odata.type'] || '') || f.isInline || !f.contentBytes) continue;
+        const mime = String(f.contentType || 'application/octet-stream').toLowerCase().slice(0, 100);
+        const size = Number(f.size) || 0;
+        if (size > DOC_MAX || used + size > DOCS_TOTAL) continue;
+        if (/^image\//.test(mime) && size < 60 * 1024) continue;               // logos and signatures
+        const buf = Buffer.from(f.contentBytes, 'base64');
+        const name = String(f.name || 'attachment').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 160);
+        const d = await db.q('INSERT INTO mail_docs (company_id, item_id, name, mime, size, kind, data) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+          [companyId, it.id, name, mime, buf.length, docKind(it.kind), buf]);
+        // a lab report: read it now, so the results wait on the Results tab for one tap
+        const isReport = (it.kind === 'Lab results' || it.kind === 'Lab') && (/pdf/.test(mime) || /\.pdf$/i.test(name) || /^image\//.test(mime));
+        if (isReport && read < 3) {
+          read++;
+          try {
+            const company = await db.one('SELECT * FROM companies WHERE id=$1', [companyId]);
+            const r = await require('./cwresults').read(company, buf);
+            await db.q(`INSERT INTO cw_pending (company_id, doc_id, name, sender, received, rows, schedule, how, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready')
+              ON CONFLICT (doc_id) DO NOTHING`, [companyId, d[0].id, name, it.sender_name || it.sender, it.received_at, JSON.stringify(r.rows), JSON.stringify(r.schedule || []), r.how]);
+          } catch (e) { /* not a results report (or unreadable): it stays saved as a document */ }
+        }
+      }
+      await db.q('UPDATE mail_items SET docs_done=TRUE WHERE id=$1', [it.id]);
+    } catch (e) {
+      if (e.status === 404) await db.q('UPDATE mail_items SET docs_done=TRUE WHERE id=$1', [it.id]);   // the email was deleted
+      else throw e;
+    }
+  }
+  return read;
+}
+
 async function graph(token, path) {
   const r = await fetch(M().graph + path, { headers: { Authorization: 'Bearer ' + token, Accept: 'application/json', Prefer: 'outlook.body-content-type="text"' } });
   const j = await r.json().catch(() => ({}));
@@ -192,6 +240,7 @@ async function sync(companyId, { notify = true, rescan = false } = {}) {
         path = j['@odata.nextLink'] ? j['@odata.nextLink'].replace(M().graph, '') : null;
       }
       await db.q('UPDATE mail_accounts SET synced_at=$1, error=NULL WHERE id=$2', [started, a.id]);
+      await saveDocs(companyId, a, token).catch(e => console.error('[mail] attachments', e.message));
     } catch (e) {
       out.errors.push(`${a.email}: ${e.message}`);
       await db.q('UPDATE mail_accounts SET error=$1 WHERE id=$2', [String(e.message).slice(0, 300), a.id]);
@@ -262,7 +311,9 @@ async function list(companyId) {
     WHERE i.company_id=$1 AND i.status<>'blocked' AND (i.status='new' OR i.received_at > now() - interval '45 days')
     ORDER BY i.urgent DESC, i.received_at DESC LIMIT 300`, [companyId]);
   const accounts = await db.q('SELECT id, email, name, synced_at AS "syncedAt", error FROM mail_accounts WHERE company_id=$1 ORDER BY id', [companyId]);
-  return { enabled: enabled(), accounts, items, rules: await getRules(companyId) };
+  const docs = await db.q(`SELECT d.id, d.item_id AS "itemId", d.name, d.mime, d.size, d.kind, d.created_at AS "savedAt", i.received_at AS received, i.sender_name AS "senderName", i.sender, i.subject
+    FROM mail_docs d JOIN mail_items i ON i.id=d.item_id WHERE d.company_id=$1 AND i.status<>'blocked' ORDER BY i.received_at DESC, d.id LIMIT 500`, [companyId]);
+  return { enabled: enabled(), accounts, items, docs, rules: await getRules(companyId) };
 }
 async function setStatus(companyId, id, done, who) {
   const it = await db.one('SELECT id, attention FROM mail_items WHERE id=$1 AND company_id=$2', [Number(id) || 0, companyId]);
@@ -290,6 +341,13 @@ function mount(r, prefix, guard, who) {
   r.get(prefix + '/mail', ...g, async (req, res) => res.json(await list(req.company.id)));
   r.post(prefix + '/mail/:id/done', ...g, async (req, res) => res.json(await setStatus(req.company.id, req.params.id, true, who(req))));
   r.post(prefix + '/mail/:id/undone', ...g, async (req, res) => res.json(await setStatus(req.company.id, req.params.id, false)));
+  r.get(prefix + '/mail/docs/:id', ...g, async (req, res) => {
+    const d = await db.one('SELECT name, mime, data FROM mail_docs WHERE id=$1 AND company_id=$2', [Number(req.params.id) || 0, req.company.id]);
+    if (!d) return res.status(404).json({ error: 'That document was not found.' });
+    const viewable = /^(application\/pdf|image\/(png|jpe?g|gif|webp))$/.test(d.mime);
+    res.set({ 'Content-Type': viewable ? d.mime : 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=3600',
+      'Content-Disposition': `${viewable ? 'inline' : 'attachment'}; filename="${d.name.replace(/[^\w .()-]+/g, '_')}"`, 'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox" }).send(d.data);
+  });
   r.post(prefix + '/mail/rules', ...g, async (req, res) => res.json(await addRule(req.company.id, req.body || {})));
   r.delete(prefix + '/mail/rules/:id', ...g, async (req, res) => res.json(await removeRule(req.company.id, String(req.params.id))));
   r.post(prefix + '/mail/:id/flag', ...g, async (req, res) => res.json(await flag(req.company.id, req.params.id, (req.body || {}).on !== false)));

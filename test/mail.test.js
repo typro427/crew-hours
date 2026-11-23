@@ -22,7 +22,25 @@ let inbox = [
   { id: 'm7', subject: 'Deerfield water main question', from: { emailAddress: { address: 'owner@example.com', name: 'A Homeowner' } }, receivedDateTime: ago(10), bodyPreview: 'Who do I call about pressure?', webLink: 'w' },
   { id: 'm8', subject: 'Sent by me about the water system', from: { emailAddress: { address: 'op@example.com', name: 'Me' } }, receivedDateTime: ago(10), bodyPreview: 'x', webLink: 'v' }
 ];
-let ms, server, base, O, tokens = 0, pushed = [];
+function makePdf(lines) {   // a one-page text PDF
+  const content = 'BT /F1 10 Tf 36 750 Td 14 TL ' + lines.map(l => '(' + l.replace(/[()\\]/g, '\\$&') + ') Tj T*').join(' ') + ' ET';
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>'];
+  let out = '%PDF-1.4\n'; const offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const x = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+const labPdf = makePdf(['Mineral Labs', 'Sample ID: 2611045-01      Sample Location: Entry Point 001', 'Date Collected: 10/14/2026 09:15',
+  'Analyte              Result      Units    RL       MCL     Method', 'Nitrate as N         0.52        mg/L     0.10     10      EPA 300.0']);
+const fa = (name, contentType, buf, extra) => ({ '@odata.type': '#microsoft.graph.fileAttachment', name, contentType, size: buf.length, contentBytes: buf.toString('base64'), ...extra });
+const files = {
+  m3: [fa('COA 2611045.pdf', 'application/pdf', labPdf), fa('logo.png', 'image/png', Buffer.alloc(2000)), fa('sig.jpg', 'image/jpeg', Buffer.alloc(90000), { isInline: true })],
+  m1: [fa('CN-1595 form.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', Buffer.from('PK fake docx'))]
+};
+let CK, ms, server, base, O, tokens = 0, pushed = [];
 before(async () => {
   await db.q('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await require('../src/migrate').migrate();
@@ -38,6 +56,8 @@ before(async () => {
       }
       if (!/^Bearer at\d+$/.test(req.headers.authorization || '')) { res.statusCode = 401; return res.end('{}'); }
       if (req.url.startsWith('/graph/me?')) return res.end(JSON.stringify({ mail: 'op@example.com', displayName: 'Operator' }));
+      const at = req.url.match(/^\/graph\/me\/messages\/([^/]+)\/attachments/);
+      if (at) return res.end(JSON.stringify({ value: (files[decodeURIComponent(at[1])] || []) }));
       if (req.url.startsWith('/graph/me/messages')) return res.end(JSON.stringify({ value: inbox }));
       res.statusCode = 404; res.end('{}');
     });
@@ -49,6 +69,7 @@ before(async () => {
   await new Promise(ok => { server = app.listen(0, ok); });
   base = 'http://127.0.0.1:' + server.address().port;
   let cookie = '';
+  CK = () => cookie;
   O = async (method, url, body) => {
     const r = await fetch(base + url, { method, redirect: 'manual', headers: { 'x-ch': '1', 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const sc = r.headers.get('set-cookie'); if (sc) cookie = sc.split(';')[0];
@@ -107,6 +128,40 @@ test('connect Outlook, first check (no notification), then new mail notifies', a
   assert.equal(pushed.length, 1, 'each email notifies once');
   L = (await O('GET', '/api/admin/cw/mail')).body;
   assert.equal(L.items[0].subject, 'Notice of Violation', 'urgent first'); assert.ok(L.items[0].urgent);
+});
+
+test('attachments are saved, and a lab report waits on Results', async () => {
+  let L = (await O('GET', '/api/admin/cw/mail')).body;
+  assert.deepEqual(L.docs.map(d => d.name).sort(), ['CN-1595 form.docx', 'COA 2611045.pdf'], 'logos and inline pictures are skipped');
+  const coa = L.docs.find(d => /COA/.test(d.name));
+  assert.equal(coa.kind, 'Lab report'); assert.equal(L.docs.find(d => /CN-1595/.test(d.name)).kind, 'TDEC letter');
+  assert.equal(coa.itemId, L.items.find(i => i.subject === 'Data').id);
+  // download it
+  const r = await fetch(base + '/api/admin/cw/mail/docs/' + coa.id, { headers: { 'x-ch': '1', Cookie: CK() } });
+  assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /pdf/);
+  assert.ok(Buffer.from(await r.arrayBuffer()).equals(labPdf));
+  assert.equal((await O('GET', '/api/admin/cw/mail/docs/99999')).status, 404);
+  // the next check doesn't save them again
+  await O('POST', '/api/admin/mail/sync');
+  assert.equal((await O('GET', '/api/admin/cw/mail')).body.docs.length, 2);
+  // the lab report's results are ready on the Results tab
+  let R = (await O('GET', '/api/admin/cw/results')).body;
+  assert.equal(R.pending.length, 1);
+  const p = R.pending[0];
+  assert.equal(p.name, 'COA 2611045.pdf');
+  const n = p.rows.find(x => /Nitrate/.test(x.test));
+  assert.equal(n.value, 0.52); assert.equal(n.day, '2026-10-14');
+  const s = await O('POST', '/api/admin/cw/results', { rows: p.rows, schedule: p.schedule, source: p.name, pending: p.id });
+  assert.equal(s.status, 200);
+  R = (await O('GET', '/api/admin/cw/results')).body;
+  assert.equal(R.pending.length, 0, 'saved, so it is off the list');
+  assert.ok(R.results.some(x => /Nitrate/.test(x.test) && x.value === 0.52));
+  // dismissing one
+  await db.q(`INSERT INTO cw_pending (company_id, name) SELECT company_id, 'other.pdf' FROM mail_docs LIMIT 1`);
+  R = (await O('GET', '/api/admin/cw/results')).body;
+  assert.equal(R.pending.length, 1);
+  await O('POST', '/api/admin/cw/results/pending/' + R.pending[0].id + '/dismiss');
+  assert.equal((await O('GET', '/api/admin/cw/results')).body.pending.length, 0);
 });
 
 test('done, not done, flag; disconnect', async () => {

@@ -201,6 +201,9 @@ function Results(){
     <div class="row between wrap" style="margin-bottom:10px"><div><h1 style="margin:0">Sample results</h1><p class="muted small" style="margin:2px 0 0">Every lab result in one place, each test against its limit.</p></div>
       <div class="row wrap"><button class="btn primary" id="rs-imp" type="button">Import results</button>${RS.results.length?'<button class="btn small" id="rs-csv" type="button">Download CSV</button>':""}</div></div>
     <div id="rs-slot"></div>
+    ${(RS.pending||[]).length ? `<div class="card pend"><h2 style="margin:0 0 4px">Lab reports ready to import</h2><p class="tiny muted" style="margin:0 0 8px">Read automatically from your email. Check the results, then save.</p>
+      ${RS.pending.map(p=>`<div class="item"><div><div class="t">${esc(p.name)}</div><div class="s">${esc(p.sender)}${p.received?" · "+ago(p.received):""} · ${p.rows.length} result${p.rows.length===1?"":"s"}${p.rows.every(r=>r.dup)?" (all already saved)":""}</div></div>
+        <div class="row" style="gap:6px"><button class="btn small primary" data-pchk="${p.id}" type="button">Check and save</button><button class="btn small" data-pdis="${p.id}" type="button">Dismiss</button></div></div>`).join("")}</div>` : ""}
     ${!RS.results.length ? `<div class="card"><h2>No results yet</h2><p class="small muted">Tap <b>Import results</b> and pick the lab's PDF report (a scan works too), or copy the results table from Drinking Water Watch and paste it in.</p></div>` : `
     ${overNow.length ? `<div class="alert crit"><span class="badge crit">${ICON.crit}Over the limit</span><div class="small"><b>${esc(overNow.join(", "))}</b>The most recent result is over the limit. Check with TDEC about follow-up sampling and public notice.</div></div>` : ""}
     <div class="grid3" style="margin-bottom:14px">
@@ -221,6 +224,14 @@ function Results(){
       ${lastBatch() ? `<div class="row wrap" style="margin-top:10px"><span class="tiny muted">Last import: ${esc(lastBatch().source||"pasted results")}, ${lastBatch().n} result${lastBatch().n===1?"":"s"}.</span><button class="btn small danger" id="rs-undo" type="button">Undo that import</button></div>` : ""}
     </details>`}`;
   document.getElementById("rs-imp").onclick = () => rsImport(document.getElementById("rs-slot"));
+  document.querySelectorAll("[data-pdis]").forEach(b => b.onclick = () => rsApi("POST", "/pending/"+b.dataset.pdis+"/dismiss").then(Results).catch(e=>oops(e.message)));
+  document.querySelectorAll("[data-pchk]").forEach(b => b.onclick = () => {
+    const p = RS.pending.find(x => String(x.id)===b.dataset.pchk), slot = document.getElementById("rs-slot");
+    slot.innerHTML = `<div class="card"><h2>Check: ${esc(p.name)}</h2><div id="ri-out"></div><button class="btn small" id="ri-x" type="button" style="margin-top:8px">Cancel</button></div>`;
+    slot.querySelector("#ri-x").onclick = () => slot.innerHTML = "";
+    rsPreview(slot.querySelector("#ri-out"), { rows: p.rows, how: p.how, today: TODAY, missingDate: p.rows.some(r=>!r.day), schedule: p.schedule, pending: p.id }, p.name, slot);
+    slot.scrollIntoView({ behavior:"smooth" });
+  });
   const csvb = document.getElementById("rs-csv");
   if(csvb) csvb.onclick = async () => {
     const h = { "x-ch":"1" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
@@ -397,7 +408,7 @@ function rsPreview(out, d, source, slot){
     const sched = [...out.querySelectorAll(".ri-s")].filter(c=>c.checked).map(c=>d.schedule[+c.dataset.i]);
     msg.className = "small muted"; msg.textContent = "Saving…";
     try{
-      const r = await rsApi("POST","",{ rows, schedule: sched, source });
+      const r = await rsApi("POST","",{ rows, schedule: sched, source, pending: d.pending || null });
       if(sched.length) api("GET","").then(x=>{ DB = x; }).catch(()=>{});
       slot.innerHTML = `<div class="alert good"><span class="badge good">${ICON.good}Saved</span><div class="small"><b>${r.added} result${r.added===1?"":"s"} added.</b>${r.skipped?` ${r.skipped} were already saved.`:""}${r.marked?` ${r.marked} sample${r.marked===1?"":"s"} marked collected on the schedule.`:""}</div></div>`;
       SEL = null; Results(); document.getElementById("rs-slot").innerHTML = slot.innerHTML;
@@ -577,10 +588,11 @@ function Email(){
       <button type="button" data-mf="attn" aria-selected="${MLFILTER==="attn"}">Needs attention${attn.length?` (${attn.length})`:""}</button>
       <button type="button" data-mf="fyi" aria-selected="${MLFILTER==="fyi"}">Other water email</button>
       <button type="button" data-mf="done" aria-selected="${MLFILTER==="done"}">Done</button>
+      <button type="button" data-mf="docs" aria-selected="${MLFILTER==="docs"}">Documents${(ML.docs||[]).length?` (${ML.docs.length})`:""}</button>
     </div>
-    <div class="card" style="padding:6px 16px">
+    ${MLFILTER==="docs" ? docsCard() : `<div class="card" style="padding:6px 16px">
       ${show.length ? show.map(mailRow).join("") : `<p class="small muted" style="margin:12px 0">${MLFILTER==="attn" ? "Nothing needs your attention right now. ✓" : MLFILTER==="fyi" ? "No other water system email in the last 45 days." : "Nothing marked done yet."}</p>`}
-    </div>
+    </div>`}
     ${rulesCard()}
     <details class="card"><summary><b>Mailboxes</b> <span class="tiny muted">(${accts.length})</span></summary>
       ${accts.map(a=>`<div class="item"><div><div class="t">${esc(a.email)}</div><div class="s">${a.syncedAt?"Checked "+ago(a.syncedAt):"Not checked yet"}</div></div>${!CREW?`<button class="btn small danger" data-mdel="${a.id}" type="button">Disconnect</button>`:""}</div>`).join("")}
@@ -596,6 +608,8 @@ function Email(){
     if(!r.ok) return oops("Couldn't disconnect it.");
     ML = await r.json(); mailBadge(); Email();
   });
+  document.querySelectorAll("[data-doc]").forEach(a => a.onclick = e => { e.preventDefault(); openDoc(a.dataset.doc, a.dataset.name); });
+  const dq = document.getElementById("doc-q"); if(dq) dq.oninput = () => { const q = dq.value.toLowerCase(); document.querySelectorAll(".doc-row").forEach(r => r.hidden = q && !r.dataset.s.includes(q)); };
   document.querySelectorAll("[data-mstop]").forEach(b => b.onclick = () => stopMenu(ML.items.find(x => String(x.id)===b.dataset.mstop)));
   document.querySelectorAll("[data-ruledel]").forEach(b => b.onclick = () => mlApi("DELETE", "/rules/"+b.dataset.ruledel).then(Email).catch(e=>oops(e.message)));
   document.querySelectorAll("[data-radd]").forEach(f => f.onsubmit = e => {
@@ -616,6 +630,7 @@ function mailRow(i){
     <div class="ml-top"><b class="ml-from">${esc(i.senderName||i.sender)}</b><span class="tiny muted">${ago(i.received)}</span></div>
     <a class="ml-subj" href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.subject)}${i.attach?' <span class="tiny muted">📎</span>':""}</a>
     <div class="small muted ml-prev">${esc(i.preview)}</div>
+    ${docChips((ML.docs||[]).filter(d=>d.itemId===i.id))}
     <div class="ml-tags">${i.urgent?`<span class="badge crit">${ICON.crit}Urgent</span>`:""}${i.due?`<span class="badge ${dueSoon?"warn":"neutral"}">${dueSoon?ICON.warn:""}Due ${nice(i.due)}</span>`:""}<span class="badge neutral">${esc(i.kind)}</span>${reasons.map(r=>`<span class="tiny muted">${esc(r)}</span>`).join(" · ")}</div>
     <div class="row wrap ml-acts"><a class="btn small" href="${esc(i.link)}" target="_blank" rel="noopener">Open in Outlook</a>
       ${i.status==="new" ? `<button class="btn small primary" data-mdone="${i.id}" type="button">Done</button><button class="btn small" data-mflag="${i.id}" data-on="0" type="button">Not important</button>`
@@ -639,6 +654,34 @@ function stopMenu(i){
     ${opts.map((o,n)=>`<button class="btn small" data-so="${n}" type="button">${o[2]}</button>`).join("")}</div>`;
   box.querySelectorAll("[data-so]").forEach(b => b.onclick = () => { const o = opts[+b.dataset.so]; b.disabled = true; b.textContent = "Stopping…";
     mlApi("POST", "/rules", { list:"block", type:o[0], value:o[1] }).then(Email).catch(e=>oops(e.message)); });
+}
+const kb = n => n > 1048576 ? (n/1048576).toFixed(1)+" MB" : Math.max(1,Math.round(n/1024))+" KB";
+function docChips(ds){
+  if(!ds.length) return "";
+  return `<div class="doc-chips">${ds.map(d=>`<a href="#" class="doc-chip" data-doc="${d.id}" data-name="${esc(d.name)}">📄 ${esc(d.name)} <span class="tiny muted">${kb(d.size)}</span></a>`).join("")}</div>`;
+}
+/** Every saved attachment, newest first, by type. */
+function docsCard(){
+  const ds = ML.docs || [];
+  if(!ds.length) return `<div class="card"><p class="small muted" style="margin:0">No documents yet. Attachments on water system email (lab reports, TDEC letters, invoices) are saved here automatically at the next check.</p></div>`;
+  const kinds = [...new Set(ds.map(d=>d.kind))].sort();
+  return `<div class="card"><input id="doc-q" type="search" placeholder="Find a document: name, sender, subject…" aria-label="Find a document" style="margin-bottom:6px">
+    ${kinds.map(k=>`<h3 style="margin:14px 0 4px">${esc(k)}s</h3>${ds.filter(d=>d.kind===k).map(d=>`<div class="doc-row" data-s="${esc((d.name+" "+(d.senderName||"")+" "+d.sender+" "+d.subject).toLowerCase())}">
+      <a href="#" data-doc="${d.id}" data-name="${esc(d.name)}"><b>${esc(d.name)}</b></a>
+      <div class="tiny muted">${esc(d.senderName||d.sender)} · ${ago(d.received)} · ${kb(d.size)} · “${esc(d.subject)}”</div></div>`).join("")}`).join("")}
+    <p class="tiny muted" style="margin-top:12px">Saved automatically from water system email. Stopped emails' attachments aren't kept.</p></div>`;
+}
+/** Open a saved document (with the crew sign-in when in the crew app). */
+async function openDoc(id, name){
+  const w = /pdf|png|jpe?g|gif|webp$/i.test(name||"") ? window.open("", "_blank") : null;
+  try{
+    const h = { "x-ch":"1" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
+    const r = await fetch(API + "/mail/docs/" + id, { headers:h, credentials:"same-origin" });
+    if(!r.ok) throw new Error("Couldn't open it.");
+    const url = URL.createObjectURL(await r.blob());
+    if(w) w.location = url; else { const a = document.createElement("a"); a.href = url; a.download = name || "document"; a.click(); }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(e){ if(w) w.close(); oops(e.message); }
 }
 function rulesCard(){
   const R = ML.rules || { block:[], allow:[] };
