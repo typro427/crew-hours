@@ -468,4 +468,4 @@ async function weekly(company) {
   return emailNew(company);
 }
 
-module.exports = { dayOf, links, listFiles, extract, pageLines, parties, findChanges, index, check, list, approve, dismiss, reopen, xlsx, emailNew, weekly, settings, saveSettings, running };
+module.exports = { ocrSession, dayOf, links, listFiles, extract, pageLines, parties, findChanges, index, check, list, approve, dismiss, reopen, xlsx, emailNew, weekly, settings, saveSettings, running };

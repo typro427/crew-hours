@@ -74,9 +74,10 @@ const TABS = [
   ["log","Daily log",'<path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><path d="M8 6H6a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-2"/><path d="M9 12h6M9 16h4"/>'],
   ["samples","Samples",'<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/><path d="M7.5 15h9"/>'],
   ["testing","Testing",'<path d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/>'],
+  ["results","Results",'<path d="M4 20V4M4 20h16"/><circle cx="8" cy="14" r="1.6"/><circle cx="12" cy="10" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="19" cy="7" r="1.6"/><path d="M4 8h16" stroke-dasharray="2 2.5"/>'],
   ["report","Report",'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'],
 ];
-function route(){ const h = location.hash.slice(1); return ["home","log","samples","testing","report","settings"].includes(h) ? h : "home"; }
+function route(){ const h = location.hash.slice(1); return ["home","log","samples","testing","results","report","settings"].includes(h) ? h : "home"; }
 function go(r){ if(location.hash.slice(1)===r) render(); else location.hash = r; }
 window.addEventListener("hashchange", render);
 document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if(g){ e.preventDefault(); go(g.dataset.go); } });
@@ -87,7 +88,7 @@ function render(){
   document.getElementById("sysname").textContent = DB.system.name;
   document.getElementById("tabs").innerHTML = TABS.map(([id,label,path]) =>
     `<a href="#${id}" class="${r===id?"on":""}" aria-current="${r===id?"page":"false"}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${path}</svg>${label}</a>`).join("");
-  ({home:Home, log:Log, samples:Samples, testing:Testing, report:Report, settings:Settings})[r]();
+  ({home:Home, log:Log, samples:Samples, testing:Testing, results:Results, report:Report, settings:Settings})[r]();
   window.scrollTo(0,0);
 }
 
@@ -167,6 +168,347 @@ function drawChart(el, data){
   const hit = el.querySelector("#hit");
   hit.addEventListener("pointermove", show); hit.addEventListener("pointerdown", show); hit.addEventListener("pointerleave", hide);
 }
+
+/* ================= SAMPLE RESULTS ================= */
+// Import lab reports (PDF, scanned too) or tables copied from Drinking Water Watch; then each test over time against its limit.
+let RS = null, SEL = null;
+const KINDNOTE = { al:"Lead and copper: the action level applies to the 90th percentile of a sampling round, not to one tap.", smcl:"Secondary limits are for taste, color and odor. They aren't enforceable.", presence:"Any positive (Present) needs follow-up right away." };
+function rsApi(method, path, body){ return api(method, "/results" + path, body).then(d => { RS = d; return d; }); }
+function conv(v, from, to){ if(v==null || !from || !to || from===to) return v; const f={"mg/L":1,"µg/L":1e-3,"ng/L":1e-6}; return f[from]&&f[to] ? v*f[from]/f[to] : null; }
+function isOver(r, l){
+  if(!l) return null;
+  if(l.kind==="presence") return r.qual==="present";
+  if(l.limit==null) return null;
+  if(r.value==null || r.qual==="lt") return false;
+  const v = conv(r.value, r.units, l.units); return v==null ? null : v > l.limit;
+}
+const limText = l => !l ? "" : l.kind==="presence" ? "Must be absent" : l.limit==null ? "No limit set" : `${l.limit} ${l.units}`;
+function Results(){
+  if(!RS){ $view.innerHTML = '<p class="muted">Loading results…</p>'; rsApi("GET","").then(Results).catch(e=>oops(e.message)); return; }
+  const tests = {};
+  RS.results.forEach(r => (tests[r.test] = tests[r.test] || []).push(r));
+  const names = Object.keys(tests).sort((a,b) => {
+    const oa = tests[a].some(r=>isOver(r,RS.limits[a])), ob = tests[b].some(r=>isOver(r,RS.limits[b]));
+    return (ob-oa) || a.localeCompare(b);
+  });
+  if(SEL && !tests[SEL]) SEL = null;
+  const overNow = names.filter(n => latest(n, tests[n]).over);
+  $view.innerHTML = `
+    <div class="row between wrap" style="margin-bottom:10px"><div><h1 style="margin:0">Sample results</h1><p class="muted small" style="margin:2px 0 0">Every lab result in one place, each test against its limit.</p></div>
+      <div class="row wrap"><button class="btn primary" id="rs-imp" type="button">Import results</button>${RS.results.length?'<button class="btn small" id="rs-csv" type="button">Download CSV</button>':""}</div></div>
+    <div id="rs-slot"></div>
+    ${!RS.results.length ? `<div class="card"><h2>No results yet</h2><p class="small muted">Tap <b>Import results</b> and pick the lab's PDF report (a scan works too), or copy the results table from Drinking Water Watch and paste it in.</p></div>` : `
+    ${overNow.length ? `<div class="alert crit"><span class="badge crit">${ICON.crit}Over the limit</span><div class="small"><b>${esc(overNow.join(", "))}</b>The most recent result is over the limit. Check with TDEC about follow-up sampling and public notice.</div></div>` : ""}
+    <div class="grid3" style="margin-bottom:14px">
+      <div class="tile"><div class="big num">${names.length}</div><div class="lbl">Tests</div></div>
+      <div class="tile"><div class="big num">${RS.results.length}</div><div class="lbl">Results</div></div>
+      <div class="tile"><div class="big num" style="color:${overNow.length?"var(--crit-text)":"inherit"}">${overNow.length}</div><div class="lbl">Over limit now</div></div>
+    </div>
+    <div class="card"><h2>Tests</h2><p class="tiny muted" style="margin:-4px 0 4px">Tap one to see it over time.</p>
+      ${names.map(n => { const rs = tests[n], L = latest(n, rs), last = L.worst, l = RS.limits[n], o = L.over, anyO = rs.some(r=>isOver(r,l));
+        const st = o ? `<span class="badge crit">${ICON.crit}Over limit</span>` : l && (l.limit!=null || l.kind==="presence") ? `<span class="badge good">${ICON.good}${anyO?"Now within":"Within limit"}</span>` : `<span class="badge neutral">No limit</span>`;
+        return `<button class="item rs-test ${SEL===n?"on":""}" data-test="${esc(n)}" type="button"><div style="text-align:left"><div class="t">${esc(n)}</div><div class="s">${L.round.length>1?`Latest round, highest of ${L.round.length}:`:"Latest"} <b class="${last.value==null?"":"num"}">${esc(last.result)}</b> ${esc(last.units)} · ${nice(last.day)} · ${rs.length} result${rs.length===1?"":"s"}</div></div>${st}</button>`; }).join("")}
+    </div>
+    <div id="rs-detail"></div>
+    <details class="card"><summary><b>All results</b> <span class="tiny muted">(${RS.results.length})</span></summary>
+      <div style="overflow-x:auto;margin-top:8px"><table><thead><tr><th>Date</th><th>Test</th><th>Sample point</th><th class="r">Result</th><th>Units</th></tr></thead><tbody>
+      ${RS.results.slice().reverse().map(r=>`<tr><td>${short(r.day)} ${r.day.slice(0,4)}</td><td>${esc(r.test)}</td><td>${esc(r.point)}</td><td class="r num ${isOver(r,RS.limits[r.test])?"flag":""}">${esc(r.result)}</td><td>${esc(r.units)}</td></tr>`).join("")}
+      </tbody></table></div>
+      ${lastBatch() ? `<div class="row wrap" style="margin-top:10px"><span class="tiny muted">Last import: ${esc(lastBatch().source||"pasted results")}, ${lastBatch().n} result${lastBatch().n===1?"":"s"}.</span><button class="btn small danger" id="rs-undo" type="button">Undo that import</button></div>` : ""}
+    </details>`}`;
+  document.getElementById("rs-imp").onclick = () => rsImport(document.getElementById("rs-slot"));
+  const csvb = document.getElementById("rs-csv");
+  if(csvb) csvb.onclick = async () => {
+    const h = { "x-ch":"1" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
+    const r = await fetch(API + "/results.csv", { headers:h, credentials:"same-origin" });
+    if(!r.ok) return oops("Couldn't download the results.");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = "sample-results.csv"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  };
+  const undo = document.getElementById("rs-undo");
+  if(undo) undo.onclick = () => { const b = lastBatch(); if(!confirm(`Remove the ${b.n} result${b.n===1?"":"s"} from the last import?`)) return; rsApi("DELETE","/batch/"+encodeURIComponent(b.batch)).then(Results).catch(e=>oops(e.message)); };
+  document.querySelectorAll(".rs-test").forEach(b => b.onclick = () => { SEL = SEL===b.dataset.test ? null : b.dataset.test; Results(); if(SEL) document.getElementById("rs-detail").scrollIntoView({behavior:"smooth", block:"start"}); });
+  if(!SEL && names.length) SEL = overNow[0] || null;
+  if(SEL) detail(SEL, tests[SEL]);
+}
+/** The most recent sampling day for a test, and its worst result (a lead round has many taps on one day). */
+function latest(name, rs){
+  const l = RS.limits[name], day = rs[rs.length-1].day, round = rs.filter(r=>r.day===day);
+  const size = r => r.qual==="present" ? 1e9 : r.value==null ? -1 : (conv(r.value, r.units, (l&&l.units)||r.units) ?? r.value) - (r.qual==="lt" ? 1e-9 : 0);
+  const worst = round.reduce((a,b)=> size(b)>size(a) ? b : a, round[0]);
+  return { round, worst, over: round.some(r=>isOver(r,l)) };
+}
+function lastBatch(){
+  if(!RS || !RS.results.length) return null;
+  const byB = {}; RS.results.forEach(r => { if(!r.batch) return; (byB[r.batch] = byB[r.batch] || {batch:r.batch, source:r.source, n:0, max:0}).n++; byB[r.batch].max = Math.max(byB[r.batch].max, r.id); });
+  return Object.values(byB).sort((a,b)=>b.max-a.max)[0] || null;
+}
+function detail(name, rs){
+  const l = RS.limits[name] || {}, box = document.getElementById("rs-detail");
+  const unit = l.limit!=null && l.units ? l.units : (rs.find(r=>r.units)||{}).units || "";
+  const pts = [...new Set(rs.map(r=>r.point||"—"))];
+  box.innerHTML = `<div class="card">
+    <div class="row between wrap" style="align-items:flex-start"><div><h2 style="margin:0">${esc(name)}</h2>
+      <div class="tiny muted">${esc(l.label||"")}: <b>${esc(limText(l))}</b> <button class="linkbtn" id="rs-lim" type="button">Change</button></div></div>
+      ${pts.length>1?`<span class="tiny muted">${pts.length} sample points</span>`:""}</div>
+    ${KINDNOTE[l.kind] ? `<p class="tiny muted" style="margin:6px 0 0">${KINDNOTE[l.kind]}</p>` : ""}
+    <div id="rs-limform"></div>
+    ${l.kind==="presence" ? presenceStrip(rs) : `<div class="chartwrap" id="rs-chart" style="margin-top:8px"></div>`}
+    <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>Date</th><th>Sample point</th><th class="r">Result</th><th>Units</th><th></th></tr></thead><tbody>
+    ${rs.slice().reverse().map(r=>`<tr><td>${nice(r.day)}</td><td>${esc(r.point)}</td><td class="r num ${isOver(r,l)?"flag":""}">${esc(r.result)}${isOver(r,l)?" ⚠":""}</td><td>${esc(r.units)}</td><td class="r"><button class="btn small danger" data-rdel="${r.id}" type="button" aria-label="Delete this result">Delete</button></td></tr>`).join("")}
+    </tbody></table></div></div>`;
+  if(l.kind!=="presence") resultChart(document.getElementById("rs-chart"), rs, l, unit);
+  box.querySelectorAll("[data-rdel]").forEach(b => b.onclick = () => { if(confirm("Delete this result?")) rsApi("DELETE","/"+b.dataset.rdel).then(Results).catch(e=>oops(e.message)); });
+  document.getElementById("rs-lim").onclick = () => {
+    const f = document.getElementById("rs-limform");
+    if(f.innerHTML){ f.innerHTML=""; return; }
+    f.innerHTML = `<div class="row wrap" style="margin-top:10px;align-items:flex-end">
+      <div class="field" style="margin:0;flex:1;min-width:120px"><label for="lim-v">Limit</label><input id="lim-v" inputmode="decimal" value="${l.limit??""}" placeholder="Blank = no limit"></div>
+      <div class="field" style="margin:0;width:120px"><label for="lim-u">Units</label><select id="lim-u">${["mg/L","µg/L","ng/L","pCi/L","NTU","pH",""].map(u=>`<option ${u===(l.units||unit)?"selected":""} value="${u}">${u||"none"}</option>`).join("")}</select></div>
+      <button class="btn primary small" id="lim-s" type="button">Save</button>${l.own?'<button class="btn small" id="lim-r" type="button">Back to EPA limit</button>':""}</div>`;
+    document.getElementById("lim-s").onclick = () => rsApi("PUT","/limit",{ test:name, limit:document.getElementById("lim-v").value.trim(), units:document.getElementById("lim-u").value }).then(Results).catch(e=>oops(e.message));
+    const rr = document.getElementById("lim-r"); if(rr) rr.onclick = () => rsApi("PUT","/limit",{ test:name, reset:true }).then(Results).catch(e=>oops(e.message));
+  };
+}
+function presenceStrip(rs){
+  const pos = rs.filter(r=>r.qual==="present");
+  return `<div class="alert ${pos.length?"crit":"good"}" style="margin-top:10px"><span class="badge ${pos.length?"crit":"good"}">${pos.length?ICON.crit:ICON.good}${pos.length?pos.length+" present":"All absent"}</span>
+    <div class="small">${pos.length ? "Present on " + pos.map(r=>nice(r.day)+(r.point?" ("+esc(r.point)+")":"")).join(", ") + "." : `Absent in all ${rs.length} sample${rs.length===1?"":"s"} since ${nice(rs[0].day)}.`}</div></div>`;
+}
+/** One test over time: a dot per result (hollow = not detected, plotted at its reporting limit or zero), the limit dashed. */
+function resultChart(el, rs, l, unit){
+  const data = rs.map(r => { let v = r.value==null ? 0 : conv(r.value, r.units, unit); if(v==null) v = r.value; return { r, v, nd: r.value==null || r.qual==="lt", over: isOver(r,l) }; }).filter(d=>d.v!=null);
+  if(!data.length){ el.innerHTML = '<p class="muted small">No numbers to chart for this test.</p>'; return; }
+  const W = Math.max(300, el.clientWidth || 640), H = 230, m = {t:16,r:14,b:28,l:50};
+  const lim = l.limit!=null && unit===l.units ? l.limit : null;
+  const maxV = Math.max(lim||0, ...data.map(d=>d.v)) * 1.15 || 1;
+  const t = s => parse(s).getTime();
+  let t0 = t(data[0].r.day), t1 = t(data[data.length-1].r.day); if(t1===t0){ t0 -= 30*864e5; t1 += 30*864e5; }
+  const x = d => m.l + (t(d.r.day)-t0)/(t1-t0)*(W-m.l-m.r);
+  const y = v => m.t + (1 - v/maxV)*(H-m.t-m.b);
+  const step = niceStep(maxV/4), ticks = []; for(let v=0; v<=maxV+1e-12; v+=step) ticks.push(+v.toPrecision(6));
+  const single = new Set(data.map(d=>d.r.point)).size===1;
+  const line = single && data.length>1 ? data.map((d,i)=>`${i?"L":"M"}${x(d).toFixed(1)},${y(d.v).toFixed(1)}`).join("") : "";
+  const y0 = new Date(t0).getFullYear(), y1 = new Date(t1).getFullYear();
+  const xt = y1-y0 >= 2 ? Array.from({length:y1-y0+1},(_,i)=>y0+i).filter(yr => { const tt = new Date(yr,0,1).getTime(); return tt>=t0 && tt<=t1; }).map(yr=>({tt:new Date(yr,0,1).getTime(), label:String(yr)}))
+    : [{tt:t0,label:new Date(t0).toLocaleDateString("en-US",{month:"short",year:"numeric"})},{tt:t1,label:new Date(t1).toLocaleDateString("en-US",{month:"short",year:"numeric"})}];
+  const xx = tt => m.l + (tt-t0)/(t1-t0)*(W-m.l-m.r);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(rs[0].test)} results over time${lim!=null?`, with the ${lim} ${esc(unit)} limit marked`:""}">
+    ${ticks.map(v=>`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${m.l-6}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)" class="num">${v}</text>`).join("")}
+    <text x="${m.l-6}" y="${m.t-5}" text-anchor="end" font-size="11" fill="var(--muted)">${esc(unit)}</text>
+    <line x1="${m.l}" x2="${W-m.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--axis)" stroke-width="1"/>
+    ${lim!=null?`<line x1="${m.l}" x2="${W-m.r}" y1="${y(lim)}" y2="${y(lim)}" stroke="var(--crit)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${W-m.r}" y="${y(lim)-6}" text-anchor="end" font-size="11.5" font-weight="600" fill="var(--crit-text)">${l.kind==="al"?"Action level":"Limit"} ${lim} ${esc(unit)}</text>`:""}
+    ${xt.map(d=>`<text x="${xx(d.tt)}" y="${H-8}" text-anchor="${d.tt===t0?"start":d.tt===t1?"end":"middle"}" font-size="11" fill="var(--muted)">${d.label}</text>`).join("")}
+    ${line?`<path d="${line}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round"/>`:""}
+    ${data.map((d,i)=>`<circle data-i="${i}" cx="${x(d).toFixed(1)}" cy="${y(d.v).toFixed(1)}" r="5" fill="${d.nd?"var(--surface)":d.over?"var(--crit)":"var(--series)"}" stroke="${d.over?"var(--crit)":"var(--series)"}" stroke-width="2"/>`).join("")}
+  </svg><div class="tip" id="rs-tip"></div>
+  <p class="tiny muted" style="margin:4px 0 0">● detected · ○ not detected (shown at the reporting limit)${single?"":" · dots are separate sample points"}. Hover or tap a dot for details.</p>`;
+  const svg = el.querySelector("svg"), tip = el.querySelector("#rs-tip");
+  const show = ev => {
+    const b = svg.getBoundingClientRect(), px = (ev.clientX-b.left)*(W/b.width), py = (ev.clientY-b.top)*(W/b.width);
+    let best = null, bd = 1e9; data.forEach(d => { const dd = Math.hypot(x(d)-px, (y(d.v)-py)*0.5); if(dd<bd){ bd=dd; best=d; } });
+    if(!best || bd > 60){ tip.style.opacity = 0; return; }
+    tip.style.left = (x(best)*b.width/W)+"px"; tip.style.top = (y(best.v)*b.width/W)+"px"; tip.style.opacity = 1;
+    tip.innerHTML = `<b>${nice(best.r.day)}</b> · <span class="num">${esc(best.r.result)}</span> ${esc(best.r.units)}${best.r.point?" · "+esc(best.r.point):""}${best.over?' <span class="flag">over</span>':""}`;
+  };
+  svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show); svg.addEventListener("pointerleave", () => tip.style.opacity = 0);
+}
+function niceStep(raw){ const p = Math.pow(10, Math.floor(Math.log10(raw||1))), n = raw/p; return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p; }
+
+/* ---- import ---- */
+function rsImport(slot){
+  if(slot.innerHTML){ slot.innerHTML = ""; return; }
+  slot.innerHTML = `<div class="card"><h2>Import results</h2>
+    <div class="field"><label for="ri-file">Lab report (PDF, a scan or photo works too), Excel or CSV</label><input type="file" id="ri-file" accept=".pdf,.xlsx,.csv,.txt,.html,.htm,image/*,application/pdf"></div>
+    <div class="field"><label for="ri-text">Or paste results</label><textarea id="ri-text" rows="5" placeholder="On Drinking Water Watch, open the sample results, select the whole table including its heading row, copy it, and paste it here."></textarea></div>
+    <div class="row wrap"><button class="btn primary small" id="ri-read" type="button">Read it</button><button class="btn small" id="ri-x" type="button">Cancel</button></div>
+    <div id="ri-out"></div></div>`;
+  slot.querySelector("#ri-x").onclick = () => slot.innerHTML = "";
+  const out = slot.querySelector("#ri-out");
+  slot.querySelector("#ri-read").onclick = async () => {
+    const f = slot.querySelector("#ri-file").files[0], t = slot.querySelector("#ri-text").value;
+    if(!f && !t.trim()){ out.innerHTML = '<p class="flag small" style="margin-top:10px">Pick a file or paste the results first.</p>'; return; }
+    out.innerHTML = `<p class="small muted" style="margin-top:10px">Reading${f && /pdf|image/.test(f.type) ? " the report… a scanned report takes up to a minute" : "…"}</p>`;
+    try{
+      const h = { "x-ch":"1", "Content-Type":"application/octet-stream" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
+      const r = await fetch(API + "/results/read", { method:"POST", headers:h, body: f ? await f.arrayBuffer() : new Blob([t]), credentials:"same-origin" });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error || "That couldn't be read.");
+      rsPreview(out, j, f ? f.name : "Pasted results", slot);
+    }catch(e){ out.innerHTML = `<p class="flag small" style="margin-top:10px">${esc(e.message)}</p>`; }
+  };
+}
+function rsPreview(out, d, source, slot){
+  const how = {scan:"a scanned report (read with text recognition, so check every number)", pdf:"the PDF", table:"the table", text:"the text"}[d.how] || "the file";
+  out.innerHTML = `<h3 style="margin:14px 0 4px">Found ${d.rows.length} result${d.rows.length===1?"":"s"} in ${how}</h3>
+    <p class="small muted">Check them against the report. Fix anything that's wrong and untick anything that isn't a result. Nothing is saved until you tap Save.</p>
+    ${d.missingDate ? `<div class="field"><label for="ri-day">Sample date for rows without one</label><input type="date" id="ri-day" max="${d.today}"></div>` : ""}
+    <div class="ri-list">
+    ${d.rows.map((r,i)=>`<div class="ri-row" data-i="${i}">
+      <div class="ri-top"><input type="checkbox" class="ri-on" ${r.dup?"":"checked"} aria-label="Save ${esc(r.test)}"><input class="ri-t" value="${esc(r.test)}" aria-label="Test" title="As written: ${esc(r.raw||"")}">${r.dup?'<span class="badge neutral">Already saved</span>':""}</div>
+      <div class="ri-grid">
+        <div><label>Result</label><input class="ri-r num" value="${esc(r.result)}"></div>
+        <div><label>Units</label><input class="ri-u" value="${esc(r.units)}"></div>
+        <div><label>Sample date</label><input type="date" class="ri-d" value="${r.day||""}" max="${d.today}" style="${r.day?"":"border-color:var(--crit)"}"></div>
+        <div><label>Sample point</label><input class="ri-p" value="${esc(r.point)}"></div>
+      </div></div>`).join("")}
+    </div>
+    ${d.schedule.length ? `<div class="field" style="margin-top:12px"><label>Also mark these samples as collected on the schedule</label>${d.schedule.map((s,i)=>`<label class="row small" style="font-weight:400;margin:4px 0"><input type="checkbox" class="ri-s" data-i="${i}" checked style="width:auto;min-height:0"> ${esc(s.name)}: collected ${nice(s.day)}</label>`).join("")}</div>` : ""}
+    <div class="row wrap" style="margin-top:12px"><button class="btn primary" id="ri-save" type="button">Save results</button><span class="small" id="ri-msg"></span></div>`;
+  const msg = out.querySelector("#ri-msg");
+  out.querySelector("#ri-save").onclick = async () => {
+    const fill = (out.querySelector("#ri-day")||{}).value || "";
+    const rows = [...out.querySelectorAll(".ri-row")].filter(tr => tr.querySelector(".ri-on").checked).map(tr => {
+      const r = d.rows[+tr.dataset.i];
+      return { day: tr.querySelector(".ri-d").value || fill, test: tr.querySelector(".ri-t").value.trim(), result: tr.querySelector(".ri-r").value.trim(), units: tr.querySelector(".ri-u").value.trim(), point: tr.querySelector(".ri-p").value.trim(), raw: r.raw, lab: r.lab };
+    });
+    if(!rows.length){ msg.className = "small flag"; msg.textContent = "Tick at least one result."; return; }
+    const sched = [...out.querySelectorAll(".ri-s")].filter(c=>c.checked).map(c=>d.schedule[+c.dataset.i]);
+    msg.className = "small muted"; msg.textContent = "Saving…";
+    try{
+      const r = await rsApi("POST","",{ rows, schedule: sched, source });
+      if(sched.length) api("GET","").then(x=>{ DB = x; }).catch(()=>{});
+      slot.innerHTML = `<div class="alert good"><span class="badge good">${ICON.good}Saved</span><div class="small"><b>${r.added} result${r.added===1?"":"s"} added.</b>${r.skipped?` ${r.skipped} were already saved.`:""}${r.marked?` ${r.marked} sample${r.marked===1?"":"s"} marked collected on the schedule.`:""}</div></div>`;
+      SEL = null; Results(); document.getElementById("rs-slot").innerHTML = slot.innerHTML;
+    }catch(e){ msg.className = "small flag"; msg.textContent = e.message; }
+  };
+}
+
+/* ================= ANNUAL WATER QUALITY (CCR) ================= */
+// The detected-contaminants table for the Consumer Confidence Report, from the imported sample results
+// (and the daily log for chlorine). Most recent data within 5 years for tests not sampled that year.
+let REPMODE = "mor";
+const CCRINFO = {
+  "Nitrate":{mclg:10, src:"Runoff from fertilizer use; leaching from septic tanks, sewage; erosion of natural deposits"},
+  "Nitrite":{mclg:1, src:"Runoff from fertilizer use; leaching from septic tanks, sewage; erosion of natural deposits"},
+  "Nitrate + nitrite":{mclg:10, src:"Runoff from fertilizer use; leaching from septic tanks, sewage; erosion of natural deposits"},
+  "Arsenic":{mclg:0, src:"Erosion of natural deposits; runoff from orchards; runoff from glass and electronics production wastes"},
+  "Barium":{mclg:2, src:"Discharge of drilling wastes; discharge from metal refineries; erosion of natural deposits"},
+  "Fluoride":{mclg:4, src:"Erosion of natural deposits; water additive which promotes strong teeth; discharge from fertilizer and aluminum factories"},
+  "Lead":{mclg:0, src:"Corrosion of household plumbing systems; erosion of natural deposits"},
+  "Copper":{mclg:1.3, src:"Corrosion of household plumbing systems; erosion of natural deposits; leaching from wood preservatives"},
+  "TTHM":{mclg:null, src:"By-product of drinking water chlorination"},
+  "HAA5":{mclg:null, src:"By-product of drinking water disinfection"},
+  "Chlorine":{mclg:4, src:"Water additive used to control microbes"},
+  "Gross alpha":{mclg:0, src:"Erosion of natural deposits"},
+  "Combined radium":{mclg:0, src:"Erosion of natural deposits"},
+  "Uranium":{mclg:0, src:"Erosion of natural deposits"},
+  "Cadmium":{mclg:0.005, src:"Corrosion of galvanized pipes; erosion of natural deposits"},
+  "Chromium":{mclg:0.1, src:"Discharge from steel and pulp mills; erosion of natural deposits"},
+  "Selenium":{mclg:0.05, src:"Discharge from petroleum and metal refineries; erosion of natural deposits"},
+  "Sodium":{mclg:null, src:"Erosion of natural deposits; road salt"},
+  "Total coliform":{mclg:0, src:"Naturally present in the environment"},
+  "E. coli":{mclg:0, src:"Human and animal fecal waste"}
+};
+const SKIPCCR = new Set(["pH","Temperature","Turbidity","Alkalinity","Hardness"]);
+/** 90th percentile of a lead/copper round: the sample at rank 0.9 × n (interpolated); fewer than 5 = average of the top two. */
+function p90(vals){
+  const v = vals.slice().sort((a,b)=>a-b), n = v.length;
+  if(!n) return null; if(n===1) return v[0];
+  if(n<5) return (v[n-1]+v[n-2])/2;
+  const k = 0.9*n, lo = Math.floor(k), hi = Math.ceil(k);
+  return lo===hi ? v[k-1] : v[lo-1] + (v[hi-1]-v[lo-1])*(k-lo);
+}
+const ccrUnit = u => u==="mg/L" ? "ppm" : u==="µg/L" ? "ppb" : u==="ng/L" ? "ppt" : u;
+const r3 = v => v==null ? "—" : (+v.toPrecision(3)).toString();
+function ccrRows(Y){
+  const out = [], notDet = [];
+  const by = {}; RS.results.forEach(r => (by[r.test] = by[r.test] || []).push(r));
+  for(const [test, rs] of Object.entries(by)){
+    if(SKIPCCR.has(test)) continue;
+    const l = RS.limits[test] || {};
+    // this year's results, or the most recent year within the last 5 that has some
+    const yrs = [...new Set(rs.map(r=>+r.day.slice(0,4)))].filter(y=>y<=Y && y>Y-5).sort((a,b)=>b-a);
+    if(!yrs.length) continue;
+    const yr = yrs[0], set = rs.filter(r=>+r.day.slice(0,4)===yr);
+    const unit = l.units && l.units!=="P/A" ? l.units : (set.find(r=>r.units)||{}).units || "";
+    const info = CCRINFO[test] || {src:""};
+    if(l.kind==="presence"){
+      const pos = set.filter(r=>r.qual==="present");
+      if(!pos.length){ notDet.push(test); continue; }
+      const months = {}; pos.forEach(r=>{ const m=r.day.slice(0,7); months[m]=(months[m]||0)+1; });
+      out.push({ test, unit:"positive samples", mcl: test==="E. coli" ? "Routine and repeat samples total coliform-positive and either is E. coli-positive" : "TT (assessment)", mclg:0,
+        level: Math.max(...Object.values(months)) + " in one month", range: `${pos.length} of ${set.length} samples`, year: yr, viol: test==="E. coli" ? "Yes" : "No (assessment required)", src: info.src });
+      continue;
+    }
+    const det = set.filter(r=>r.value!=null && r.qual!=="lt");
+    const vals = det.map(r=>conv(r.value, r.units, unit)).filter(v=>v!=null);
+    if(!vals.length){ notDet.push(test); continue; }
+    const lim = l.limit!=null && l.units===unit ? l.limit : null;
+    if(l.kind==="al"){
+      const all = set.map(r => r.value==null||r.qual==="lt" ? 0 : conv(r.value, r.units, unit)).filter(v=>v!=null);
+      const p = p90(all), overN = set.filter(r=>isOver(r,l)).length;
+      out.push({ test, unit: ccrUnit(unit), mcl: lim!=null ? `AL = ${r3(lim)}` : "", mclg: info.mclg, level: `${r3(p)} (90th percentile)`, range: `${r3(Math.min(...all))}–${r3(Math.max(...all))}; ${overN} of ${set.length} sites over the AL`, year: yr,
+        viol: lim!=null && p>lim ? "Exceeded AL" : "No", src: info.src });
+      continue;
+    }
+    const hi = Math.max(...vals), lo = Math.min(...vals);
+    out.push({ test, unit: ccrUnit(unit), mcl: l.kind==="smcl" ? `SMCL ${r3(lim)}` : lim!=null ? r3(lim) : "None", mclg: info.mclg, level: r3(hi), range: vals.length>1 || set.length>det.length ? `${set.length>det.length?"ND":r3(lo)}–${r3(hi)}` : "—", year: yr,
+      viol: l.kind==="smcl" || lim==null ? "N/A" : hi>lim ? "Check*" : "No", src: info.src || (l.kind==="none" ? "Unregulated" : "") });
+  }
+  // chlorine from the daily log: highest running annual average of monthly averages, and the range
+  const logs = sortedLogs().filter(x=>x.dist!=null && x.date<=`${Y}-12-31` && x.date>=`${Y-1}-01-01`);
+  const yl = logs.filter(x=>x.date.startsWith(String(Y)));
+  if(yl.length){
+    const mAvg = {}; logs.forEach(x=>{ const m=x.date.slice(0,7); (mAvg[m]=mAvg[m]||[]).push(x.dist); });
+    const ms = Object.keys(mAvg).sort(), avg = a => a.reduce((s,v)=>s+v,0)/a.length;
+    let raa = 0; ms.filter(m=>m.startsWith(String(Y))).forEach(m => { const w = ms.filter(k=>k<=m).slice(-12).map(k=>avg(mAvg[k])); raa = Math.max(raa, avg(w)); });
+    const v = yl.map(x=>x.dist);
+    out.push({ test:"Chlorine (distribution)", unit:"ppm", mcl:"MRDL = 4", mclg:"MRDLG = 4", level:`${raa.toFixed(2)} (highest running annual average)`, range:`${Math.min(...v).toFixed(2)}–${Math.max(...v).toFixed(2)}`, year:Y, viol: raa>4 ? "Yes" : "No", src: CCRINFO.Chlorine.src });
+  }
+  out.sort((a,b)=>a.test.localeCompare(b.test));
+  return { rows: out, notDet: notDet.sort() };
+}
+function CCR(year){
+  if(!RS){ $view.innerHTML = '<p class="muted">Loading results…</p>'; rsApi("GET","").then(()=>CCR(year)).catch(e=>oops(e.message)); return; }
+  const thisY = +TODAY.slice(0,4), Y = year || (thisY - 1);
+  const { rows, notDet } = ccrRows(Y), S = DB.system;
+  const years = []; for(let y=thisY; y>=thisY-6; y--) years.push(y);
+  const head = ["Contaminant","Units","MCL / AL","MCLG","Level found","Range","Year sampled","Violation","Likely source"];
+  const cells = r => [r.test, r.unit, r.mcl, r.mclg==null?"N/A":r.mclg, r.level, r.range, r.year, r.viol, r.src];
+  const text = `WATER QUALITY DATA: ${Y} CONSUMER CONFIDENCE REPORT
+System: ${S.name}   PWSID: ${S.pwsid}
+
+DETECTED CONTAMINANTS
+${rows.map(r=>`${r.test}: ${r.level} ${r.unit} (range ${r.range}; MCL ${r.mcl}; MCLG ${r.mclg==null?"N/A":r.mclg}; sampled ${r.year}; violation: ${r.viol})\n  Likely source: ${r.src}`).join("\n")||"None"}
+
+Tested and not detected: ${notDet.join(", ")||"—"}
+`;
+  $view.innerHTML = `${repSwitch()}
+    <h1>Annual water quality report</h1><p class="muted small">The detected-contaminants table for your Consumer Confidence Report (CCR), from your sample results and daily log. The CCR is due to customers by July 1, with the certification to TDEC.</p>
+    <div class="card">
+      <div class="row wrap no-print" style="align-items:flex-end;margin-bottom:12px">
+        <div class="field" style="margin:0;width:180px"><label for="ccr-y">Report for year</label><select id="ccr-y">${years.map(y=>`<option ${y===Y?"selected":""}>${y}</option>`).join("")}</select></div>
+        <button class="btn primary" id="ccr-print" type="button">Print or save PDF</button><button class="btn" id="ccr-csv" type="button">Download CSV</button><button class="btn" id="ccr-copy" type="button">Copy text</button><span class="small muted" id="ccr-msg"></span>
+      </div>
+      <div class="print-only"><h2 style="margin:0">${esc(S.name)}: ${Y} water quality data</h2><p class="small">PWSID ${esc(S.pwsid||"")}</p></div>
+      ${!RS.results.length ? '<p class="small muted">No sample results yet. Import your lab reports on the Results tab first.</p>' : `
+      <div style="overflow-x:auto"><table class="ccr"><thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>
+      ${rows.map(r=>`<tr class="${/^(Yes|Exceeded|Check)/.test(r.viol)?"bad":""}">${cells(r).map((c,i)=>`<td class="${i===8?"src":""}">${esc(c)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="9" class="muted">Nothing detected in ${Y} or the 4 years before.</td></tr>`}
+      </tbody></table></div>
+      <p class="small" style="margin-top:10px"><b>Tested and not detected:</b> ${esc(notDet.join(", ")||"none")}</p>
+      ${rows.some(r=>r.viol==="Check*")?'<p class="small flag">* A single result is over the MCL. For some contaminants (nitrate, TTHM, HAA5, radionuclides) compliance is based on averages or confirmation samples. Confirm with TDEC whether it was a violation before you publish.</p>':""}
+      <h3 style="margin:16px 0 6px">Definitions for the report</h3>
+      <ul class="small" style="margin:0;padding-left:18px">
+        <li><b>MCL</b> (Maximum Contaminant Level): the highest level of a contaminant allowed in drinking water.</li>
+        <li><b>MCLG</b> (Maximum Contaminant Level Goal): the level below which there is no known or expected risk to health.</li>
+        <li><b>AL</b> (Action Level): the concentration which, if exceeded, triggers treatment or other requirements.</li>
+        <li><b>MRDL / MRDLG</b>: the highest level of a disinfectant allowed, and the goal below which there is no known risk.</li>
+        <li><b>ND</b>: not detected. <b>ppm</b>: parts per million (mg/L). <b>ppb</b>: parts per billion (µg/L). <b>pCi/L</b>: picocuries per liter.</li>
+      </ul>`}
+      <p class="hint" style="margin-top:12px">Check every number against your lab reports and TDEC's records before you publish. The CCR also needs the required lead statement, health-effects language for any violation, and your contact information; TDEC's CCR guidance has the exact wording. Lead and copper 90th percentiles are calculated from the results you imported for the most recent round.</p>
+    </div>`;
+  wireSwitch();
+  document.getElementById("ccr-y").onchange = e => CCR(+e.target.value);
+  document.getElementById("ccr-print").onclick = () => window.print();
+  document.getElementById("ccr-copy").onclick = async () => { try{ await navigator.clipboard.writeText(text); document.getElementById("ccr-msg").textContent = "Copied ✓"; }catch(e){ document.getElementById("ccr-msg").textContent = "Couldn't copy here."; } };
+  document.getElementById("ccr-csv").onclick = () => {
+    const q = v => '"' + String(v==null?"":v).replace(/"/g,'""') + '"';
+    const csv = "﻿" + [head, ...rows.map(cells)].map(r=>r.map(q).join(",")).join("\r\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download = `water-quality-${Y}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  };
+}
+function repSwitch(){ return `<div class="seg no-print" role="tablist"><button type="button" data-rep="mor" aria-selected="${REPMODE==="mor"}">Monthly (MOR)</button><button type="button" data-rep="ccr" aria-selected="${REPMODE==="ccr"}">Annual water quality (CCR)</button></div>`; }
+function wireSwitch(){ document.querySelectorAll("[data-rep]").forEach(b => b.onclick = () => { REPMODE = b.dataset.rep; REPMODE==="ccr" ? CCR() : Report(); }); }
 
 /* ================= DAILY LOG ================= */
 function Log(editDate){
@@ -337,6 +679,8 @@ function production(from, to){
   return {total, days, avg: total/days, peak: Math.max(...inR.map((l,i)=>{ const p = i ? inR[i-1] : before; return p ? (l.meter-p.meter)/Math.max(1,daysBetween(p.date,l.date)) : 0; }))};
 }
 function Report(month){
+  if(REPMODE==="ccr") return CCR();
+  if(!RS){ rsApi("GET","").then(()=>{ if(route()==="report") Report(month); }).catch(()=>{}); }
   const now = parse(TODAY);
   const def = iso(new Date(now.getFullYear(), now.getMonth()-1, 1)).slice(0,7);
   const ym = month || def; const [Y,M] = ym.split("-").map(Number);
@@ -352,6 +696,7 @@ function Report(month){
   const coll = [...DB.samples.map(s=>({...s,grp:"Sample"})), ...DB.assets.map(a=>({...a,grp:a.kind}))]
     .flatMap(x => (x.history||[]).filter(h=>h.date>=from && h.date<=to).map(h=>({...h, name:x.name, grp:x.grp})));
   // include assets marked done via last date without history entry
+  const labs = (RS ? RS.results : []).filter(r => r.day>=from && r.day<=to);
   const months = []; for(let i=0;i<12;i++){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); months.push(iso(d).slice(0,7)); }
   const S = DB.system;
   const text =
@@ -375,10 +720,14 @@ DAYS LOGGED: ${logs.length} of ${expected}${missing.length ? "\n  Missing: "+mis
 SAMPLES & TESTS THIS MONTH
 ${coll.length ? coll.map(c=>`  ${short(c.date).padEnd(7)} ${c.name}: ${c.result}${c.lab?" ("+c.lab+")":""}`).join("\n") : "  None recorded"}
 
+LAB RESULTS THIS MONTH
+${labs.length ? labs.map(r=>`  ${short(r.day).padEnd(7)} ${r.test}: ${r.result} ${r.units}${r.point?" at "+r.point:""}${isOver(r,RS.limits[r.test])?"  ** OVER LIMIT **":""}`).join("\n") : "  None imported"}
+
 NOTES
 ${logs.filter(l=>l.notes).map(l=>`  ${short(l.date).padEnd(7)} ${l.notes}`).join("\n") || "  None"}
 `;
   $view.innerHTML = `
+    ${repSwitch()}
     <h1>Monthly report</h1><p class="muted small">Your month's numbers, ready to copy onto your monthly operating report (MOR) for TDEC.</p>
     <div class="card">
       <div class="field"><label for="mon">Month</label><select id="mon">${months.map(mm=>`<option value="${mm}" ${mm===ym?"selected":""}>${parse(mm+"-01").toLocaleDateString("en-US",{month:"long",year:"numeric"})}${mm===TODAY.slice(0,7)?" (so far)":""}</option>`).join("")}</select></div>
@@ -403,12 +752,15 @@ ${logs.filter(l=>l.notes).map(l=>`  ${short(l.date).padEnd(7)} ${l.notes}`).join
       ${missing.length?`<p class="small muted" style="margin-top:6px">Missing days: ${missing.map(short).join(", ")}</p>`:""}
       <h3 style="margin:16px 0 6px">Samples &amp; tests this month</h3>
       ${coll.length?`<table><tbody>${coll.map(c=>`<tr><td style="white-space:nowrap">${short(c.date)}</td><td>${esc(c.name)}<div class="tiny muted">${esc(c.result)}${c.lab?" · "+esc(c.lab):""}</div></td></tr>`).join("")}</tbody></table>`:'<p class="small muted">None recorded.</p>'}
+      <h3 style="margin:16px 0 6px">Lab results this month</h3>
+      ${labs.length?`<table><thead><tr><th>Date</th><th>Test</th><th>Sample point</th><th class="r">Result</th></tr></thead><tbody>${labs.map(r=>`<tr><td style="white-space:nowrap">${short(r.day)}</td><td>${esc(r.test)}</td><td>${esc(r.point)}</td><td class="r num ${isOver(r,RS.limits[r.test])?"flag":""}">${esc(r.result)} ${esc(r.units)}</td></tr>`).join("")}</tbody></table>`:'<p class="small muted">None imported for this month. Add them on the Results tab.</p>'}
       <h3 style="margin:16px 0 6px">Notes</h3>
       ${logs.filter(l=>l.notes).length?`<table><tbody>${logs.filter(l=>l.notes).map(l=>`<tr><td style="white-space:nowrap;vertical-align:top">${short(l.date)}</td><td>${esc(l.notes)}</td></tr>`).join("")}</tbody></table>`:'<p class="small muted">None.</p>'}
       <details style="margin-top:14px"><summary class="small" style="cursor:pointer;color:var(--brand);font-weight:600">Plain-text version</summary><div class="report" id="rep" style="margin-top:8px;white-space:pre;font-size:12px">${esc(text)}</div></details>
       <div class="row wrap" style="margin-top:12px"><button class="btn primary" id="copy">Copy report</button><span class="small muted" id="copied"></span></div>
       <p class="hint" style="margin-top:10px">This is a summary to help you fill out the official form. It doesn't replace TDEC's required MOR format.</p>
     </div>`;
+  wireSwitch();
   document.getElementById("mon").onchange = e => Report(e.target.value);
   document.getElementById("copy").onclick = async () => {
     const out = document.getElementById("copied");

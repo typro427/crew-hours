@@ -675,6 +675,27 @@ CREATE TABLE IF NOT EXISTS fence_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS fence_events_crew ON fence_events (crew_id, at DESC);
+CREATE TABLE IF NOT EXISTS cw_results (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  key        TEXT NOT NULL,
+  day        DATE NOT NULL,
+  point      TEXT NOT NULL DEFAULT '',
+  test       TEXT NOT NULL,
+  raw_name   TEXT NOT NULL DEFAULT '',
+  result     TEXT NOT NULL,
+  value      NUMERIC,
+  qual       TEXT NOT NULL DEFAULT '',
+  units      TEXT NOT NULL DEFAULT '',
+  lab        TEXT NOT NULL DEFAULT '',
+  source     TEXT NOT NULL DEFAULT '',
+  batch      TEXT NOT NULL DEFAULT '',
+  by_name    TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, key)
+);
+CREATE INDEX IF NOT EXISTS cw_results_test ON cw_results (company_id, test, day);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS cw_limits JSONB;
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }
