@@ -42,6 +42,12 @@ const config = {
   // Road shapes for the roads driven checklist (OpenStreetMap), and how far around the company to look.
   transfers: { url: env.TRANSFERS_URL || 'https://1450wlaf.com/property-transfers/' },
   geo: { overpass: env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter', radius: Number(env.ROAD_SEARCH_METERS) || 6000 },
+  // Outlook (Microsoft 365) for the Compliance › Email tab: an app registration at portal.azure.com (Mail.Read).
+  outlook: {
+    clientId: clean(env.MS_CLIENT_ID), clientSecret: clean(env.MS_CLIENT_SECRET),
+    authority: env.MS_AUTHORITY || 'https://login.microsoftonline.com/common/oauth2/v2.0',
+    graph: env.MS_GRAPH || 'https://graph.microsoft.com/v1.0'
+  },
   // QuickBooks Online (owners see their balance and invoices in the owner portal). Keys from developer.intuit.com.
   // QBO_SANDBOX=1 uses Intuit's test companies.
   qbo: {

@@ -132,6 +132,7 @@ function mount(r, prefix, guard, who) {
   r.post(prefix + '/import', ...g, async (req, res) => res.json(await require('./cwimport').apply(req.company, req.body || {})));
   r.delete(prefix + '/history/:id', ...g, async (req, res) => res.json(await removeRecord(req.company, Number(req.params.id))));
   require('./cwresults').mount(r, prefix, guard, who);   // sample results: import and viewer
+  require('./mail').mount(r, prefix, guard, who);        // water system email from Outlook
 }
 
 module.exports = { all, saveSystem, saveLog, removeLog, saveItem, removeItem, record, removeRecord, mount, KINDS };

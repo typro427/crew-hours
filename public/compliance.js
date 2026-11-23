@@ -75,9 +75,10 @@ const TABS = [
   ["samples","Samples",'<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/><path d="M7.5 15h9"/>'],
   ["testing","Testing",'<path d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/>'],
   ["results","Results",'<path d="M4 20V4M4 20h16"/><circle cx="8" cy="14" r="1.6"/><circle cx="12" cy="10" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="19" cy="7" r="1.6"/><path d="M4 8h16" stroke-dasharray="2 2.5"/>'],
+  ["email","Email",'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'],
   ["report","Report",'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'],
 ];
-function route(){ const h = location.hash.slice(1); return ["home","log","samples","testing","results","report","settings"].includes(h) ? h : "home"; }
+function route(){ const h = location.hash.slice(1); if(/^email(-|$)/.test(h)) return "email"; return ["home","log","samples","testing","results","report","settings"].includes(h) ? h : "home"; }
 function go(r){ if(location.hash.slice(1)===r) render(); else location.hash = r; }
 window.addEventListener("hashchange", render);
 document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if(g){ e.preventDefault(); go(g.dataset.go); } });
@@ -88,7 +89,8 @@ function render(){
   document.getElementById("sysname").textContent = DB.system.name;
   document.getElementById("tabs").innerHTML = TABS.map(([id,label,path]) =>
     `<a href="#${id}" class="${r===id?"on":""}" aria-current="${r===id?"page":"false"}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${path}</svg>${label}</a>`).join("");
-  ({home:Home, log:Log, samples:Samples, testing:Testing, results:Results, report:Report, settings:Settings})[r]();
+  ({home:Home, log:Log, samples:Samples, testing:Testing, results:Results, email:Email, report:Report, settings:Settings})[r]();
+  if(ML) mailBadge(); else if(r!=="email") mlApi("GET","").then(d => { if(route()==="home" && d.items.some(x=>x.status==="new")) Home(); }).catch(()=>{});
   window.scrollTo(0,0);
 }
 
@@ -100,12 +102,14 @@ function Home(){
   const low = last30.filter(l => l.dist < DB.system.minCl);
   const monthStart = TODAY.slice(0,8)+"01";
   const prod = production(monthStart, TODAY);
+  const mailN = ML ? ML.items.filter(x=>x.status==="new").length : 0, mailU = ML && ML.items.some(x=>x.status==="new" && x.urgent);
   $view.innerHTML = `
     <h1>Good ${new Date().getHours()<12?"morning":new Date().getHours()<17?"afternoon":"evening"}</h1>
     <p class="muted small" style="margin-bottom:14px">${nice(TODAY)}${DB.system.operator ? " · "+esc(DB.system.operator)+(DB.system.cert ? ", "+esc(DB.system.cert)+" operator" : "") : ' · <a href="#settings" style="color:var(--brand);font-weight:600">Add your system details</a>'}</p>
     ${today ? `<div class="alert good"><span class="badge good">${ICON.good}Logged</span><div class="small"><b>Today's readings are in.</b>Distribution free chlorine ${fmt(today.dist)} mg/L.</div></div>`
             : `<div class="alert warn"><span class="badge warn">${ICON.warn}To do</span><div class="small" style="flex:1"><b>Today's readings aren't logged yet.</b><button class="btn primary small" data-go="log" style="margin-top:8px">Log today's readings</button></div></div>`}
     ${over.length ? `<div class="alert crit"><span class="badge crit">${ICON.crit}${over.length} overdue</span><div class="small"><b>${esc(over.map(x=>x.name).join(", "))}</b>Collect or test as soon as possible, and check whether a monitoring violation applies.</div></div>` : ""}
+    ${mailN ? `<a class="alert ${mailU?"crit":"warn"} linkcard" href="#email"><span class="badge ${mailU?"crit":"warn"}">${mailU?ICON.crit:ICON.warn}${mailN} email${mailN>1?"s":""}</span><div class="small"><b>Water system email needs your attention.</b>Tap to see ${mailN>1?"them":"it"}.</div></a>` : ""}
     <div class="grid3" style="margin-bottom:14px">
       <div class="tile"><div class="big num" style="color:${over.length?"var(--crit-text)":"inherit"}">${over.length}</div><div class="lbl">Overdue</div></div>
       <div class="tile"><div class="big num">${soon.length}</div><div class="lbl">Due in 30 days</div></div>
@@ -537,6 +541,80 @@ Tested and not detected: ${notDet.join(", ")||"—"}
 }
 function repSwitch(){ return `<div class="seg no-print" role="tablist"><button type="button" data-rep="mor" aria-selected="${REPMODE==="mor"}">Monthly (MOR)</button><button type="button" data-rep="ccr" aria-selected="${REPMODE==="ccr"}">Annual water quality (CCR)</button></div>`; }
 function wireSwitch(){ document.querySelectorAll("[data-rep]").forEach(b => b.onclick = () => { REPMODE = b.dataset.rep; REPMODE==="ccr" ? CCR() : Report(); }); }
+
+/* ================= EMAIL ================= */
+// Water system email from Outlook: what needs attention first, then everything else. Read-only.
+let ML = null, MLFILTER = "attn";
+function mlApi(method, path, body){ return api(method, "/mail" + path, body).then(d => { ML = d; mailBadge(); return d; }); }
+function mailBadge(){
+  const n = ML ? ML.items.filter(i=>i.status==="new").length : 0;
+  document.querySelectorAll('nav.tabs a[href="#email"]').forEach(a => { let b = a.querySelector(".nb"); if(!b){ b = document.createElement("span"); b.className = "nb"; a.appendChild(b); } b.textContent = n || ""; b.hidden = !n; });
+}
+function ago(iso){
+  const d = new Date(iso), m = (Date.now()-d)/60000;
+  if(m < 60) return Math.max(1,Math.round(m)) + " min ago";
+  if(m < 24*60) return Math.round(m/60) + " h ago";
+  return d.toLocaleDateString("en-US",{month:"short",day:"numeric"}) + (d.getFullYear()!==new Date().getFullYear() ? ", "+d.getFullYear() : "");
+}
+function Email(){
+  const h = location.hash.slice(1), flash = /^email-(ok|error)=/.test(h) ? decodeURIComponent(h.split("=").slice(1).join("=")) : "", bad = h.startsWith("email-error");
+  if(flash) history.replaceState(null, "", "#email");
+  if(!ML){ $view.innerHTML = '<p class="muted">Loading email…</p>'; mlApi("GET","").then(()=>{ if(route()==="email") Email(); }).catch(e=>oops(e.message)); return; }
+  const attn = ML.items.filter(i=>i.status==="new"), done = ML.items.filter(i=>i.status==="done"), fyi = ML.items.filter(i=>i.status==="fyi");
+  const show = MLFILTER==="attn" ? attn : MLFILTER==="fyi" ? fyi : done;
+  const accts = ML.accounts;
+  const last = accts.map(a=>a.syncedAt).filter(Boolean).sort().pop();
+  $view.innerHTML = `
+    <div class="row between wrap" style="margin-bottom:10px"><div><h1 style="margin:0">Email</h1><p class="muted small" style="margin:2px 0 0">Water system email from Outlook${accts.length?`, checked every 15 minutes${last?" (last "+ago(last)+")":""}`:""}. You get a phone notification when something new needs attention.</p></div>
+      ${!CREW && accts.length ? '<button class="btn small" id="ml-sync" type="button">Check now</button>' : ""}</div>
+    ${flash ? `<div class="alert ${bad?"crit":"good"}"><span class="badge ${bad?"crit":"good"}">${bad?ICON.crit:ICON.good}${bad?"Couldn't connect":"Connected"}</span><div class="small">${esc(bad?flash:flash+" is connected. Its water system email from the last 30 days is below.")}</div></div>` : ""}
+    ${accts.some(a=>a.error) ? accts.filter(a=>a.error).map(a=>`<div class="alert warn"><span class="badge warn">${ICON.warn}${esc(a.email)}</span><div class="small">${esc(a.error)}${!CREW?' <a href="/api/admin/mail/connect">Reconnect</a>':""}</div></div>`).join("") : ""}
+    ${!accts.length ? connectCard() : `
+    <div class="seg" role="tablist">
+      <button type="button" data-mf="attn" aria-selected="${MLFILTER==="attn"}">Needs attention${attn.length?` (${attn.length})`:""}</button>
+      <button type="button" data-mf="fyi" aria-selected="${MLFILTER==="fyi"}">Other water email</button>
+      <button type="button" data-mf="done" aria-selected="${MLFILTER==="done"}">Done</button>
+    </div>
+    <div class="card" style="padding:6px 16px">
+      ${show.length ? show.map(mailRow).join("") : `<p class="small muted" style="margin:12px 0">${MLFILTER==="attn" ? "Nothing needs your attention right now. ✓" : MLFILTER==="fyi" ? "No other water system email in the last 45 days." : "Nothing marked done yet."}</p>`}
+    </div>
+    <details class="card"><summary><b>Mailboxes</b> <span class="tiny muted">(${accts.length})</span></summary>
+      ${accts.map(a=>`<div class="item"><div><div class="t">${esc(a.email)}</div><div class="s">${a.syncedAt?"Checked "+ago(a.syncedAt):"Not checked yet"}</div></div>${!CREW?`<button class="btn small danger" data-mdel="${a.id}" type="button">Disconnect</button>`:""}</div>`).join("")}
+      ${!CREW ? `<p class="small" style="margin:10px 0 0"><a class="btn small" href="/api/admin/mail/connect">Connect another mailbox</a></p><p class="tiny muted">To add a second mailbox (like scott@deerfieldwater.com), sign out of Outlook in this browser first, or use a private window, so Microsoft asks which account.</p>` : ""}
+    </details>`}`;
+  document.querySelectorAll("[data-mf]").forEach(b => b.onclick = () => { MLFILTER = b.dataset.mf; Email(); });
+  document.querySelectorAll("[data-mdone]").forEach(b => b.onclick = () => mlApi("POST", `/${b.dataset.mdone}/done`).then(Email).catch(e=>oops(e.message)));
+  document.querySelectorAll("[data-mundo]").forEach(b => b.onclick = () => mlApi("POST", `/${b.dataset.mundo}/undone`).then(Email).catch(e=>oops(e.message)));
+  document.querySelectorAll("[data-mflag]").forEach(b => b.onclick = () => mlApi("POST", `/${b.dataset.mflag}/flag`, { on: b.dataset.on==="1" }).then(Email).catch(e=>oops(e.message)));
+  document.querySelectorAll("[data-mdel]").forEach(b => b.onclick = async () => {
+    if(!confirm("Disconnect this mailbox? Its emails are removed from this list.")) return;
+    const r = await fetch("/api/admin/mail/accounts/"+b.dataset.mdel, { method:"DELETE", headers:{"x-ch":"1"}, credentials:"same-origin" });
+    if(!r.ok) return oops("Couldn't disconnect it.");
+    ML = await r.json(); mailBadge(); Email();
+  });
+  const sy = document.getElementById("ml-sync");
+  if(sy) sy.onclick = async () => { sy.disabled = true; sy.textContent = "Checking…";
+    try{ const r = await fetch("/api/admin/mail/sync",{method:"POST",headers:{"x-ch":"1"},credentials:"same-origin"}); const j = await r.json(); if(!r.ok) throw new Error(j.error||"Couldn't check."); ML = j; mailBadge(); Email(); }catch(e){ oops(e.message); sy.disabled = false; sy.textContent = "Check now"; } };
+}
+function mailRow(i){
+  const reasons = (i.reasons||[]).filter(r=>!/^Due /.test(r));
+  const dueSoon = i.due && i.due <= addDays(TODAY, 7);
+  return `<div class="ml-row${i.urgent?" urgent":""}">
+    <div class="ml-top"><b class="ml-from">${esc(i.senderName||i.sender)}</b><span class="tiny muted">${ago(i.received)}</span></div>
+    <a class="ml-subj" href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.subject)}${i.attach?' <span class="tiny muted">📎</span>':""}</a>
+    <div class="small muted ml-prev">${esc(i.preview)}</div>
+    <div class="ml-tags">${i.urgent?`<span class="badge crit">${ICON.crit}Urgent</span>`:""}${i.due?`<span class="badge ${dueSoon?"warn":"neutral"}">${dueSoon?ICON.warn:""}Due ${nice(i.due)}</span>`:""}<span class="badge neutral">${esc(i.kind)}</span>${reasons.map(r=>`<span class="tiny muted">${esc(r)}</span>`).join(" · ")}</div>
+    <div class="row wrap ml-acts"><a class="btn small" href="${esc(i.link)}" target="_blank" rel="noopener">Open in Outlook</a>
+      ${i.status==="new" ? `<button class="btn small primary" data-mdone="${i.id}" type="button">Done</button><button class="btn small" data-mflag="${i.id}" data-on="0" type="button">Not important</button>`
+      : i.status==="done" ? `<span class="tiny muted">Done${i.doneBy?" by "+esc(i.doneBy):""}</span><button class="btn small" data-mundo="${i.id}" type="button">Not done</button>`
+      : `<button class="btn small" data-mflag="${i.id}" data-on="1" type="button">Needs attention</button>`}
+      ${ML.accounts.length>1?`<span class="tiny muted">${esc(i.mailbox)}</span>`:""}</div></div>`;
+}
+function connectCard(){
+  if(CREW) return `<div class="card"><h2>Not connected yet</h2><p class="small muted">The boss connects Outlook from the dashboard's Compliance page. Then water system email shows up here.</p></div>`;
+  if(!ML.enabled) return `<div class="card"><h2>Connect Outlook</h2><p class="small">This needs a one-time setup in Microsoft's Azure portal and two settings in Render. The steps are in the guide Claude gave you. After that, a <b>Connect Outlook</b> button appears here.</p></div>`;
+  return `<div class="card"><h2>Connect Outlook</h2><p class="small">Sign in with the mailbox that gets the water system email (TDEC, the lab, invoices). Crew Hours only <b>reads</b> mail: it can't send, move or delete anything. You can connect more than one mailbox.</p><a class="btn primary" href="/api/admin/mail/connect">Connect Outlook</a></div>`;
+}
 
 /* ================= DAILY LOG ================= */
 function Log(editDate){

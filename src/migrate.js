@@ -696,6 +696,43 @@ CREATE TABLE IF NOT EXISTS cw_results (
 );
 CREATE INDEX IF NOT EXISTS cw_results_test ON cw_results (company_id, test, day);
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS cw_limits JSONB;
+CREATE TABLE IF NOT EXISTS mail_accounts (
+  id         SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  refresh    TEXT NOT NULL,
+  access     TEXT,
+  access_exp TIMESTAMPTZ,
+  synced_at  TIMESTAMPTZ,
+  error      TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, email)
+);
+CREATE TABLE IF NOT EXISTS mail_items (
+  id          SERIAL PRIMARY KEY,
+  company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  account_id  INTEGER NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE,
+  msg_id      TEXT NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL,
+  sender      TEXT NOT NULL DEFAULT '',
+  sender_name TEXT NOT NULL DEFAULT '',
+  subject     TEXT NOT NULL DEFAULT '',
+  preview     TEXT NOT NULL DEFAULT '',
+  web_link    TEXT NOT NULL DEFAULT '',
+  has_attach  BOOLEAN NOT NULL DEFAULT FALSE,
+  kind        TEXT NOT NULL DEFAULT '',
+  reasons     JSONB NOT NULL DEFAULT '[]',
+  due         DATE,
+  attention   BOOLEAN NOT NULL DEFAULT FALSE,
+  urgent      BOOLEAN NOT NULL DEFAULT FALSE,
+  status      TEXT NOT NULL DEFAULT 'fyi',
+  done_by     TEXT,
+  done_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (account_id, msg_id)
+);
+CREATE INDEX IF NOT EXISTS mail_items_company ON mail_items (company_id, received_at DESC);
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

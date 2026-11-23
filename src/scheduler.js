@@ -20,6 +20,7 @@ async function sendOrRelease(companyId, kind, period, fn) {
   catch (e) { await db.q('DELETE FROM email_log WHERE company_id=$1 AND kind=$2 AND period=$3', [companyId, kind, period]); throw e; }
 }
 
+const mailBusy = new Set();
 async function tick(now = new Date()) {
   const companies = await db.q('SELECT * FROM companies');
   for (const c of companies) {
@@ -36,6 +37,11 @@ async function tick(now = new Date()) {
           const kind = 'crew-week:' + p.id;
           if (await claim(c.id, kind, last)) await sendOrRelease(c.id, kind, last, () => R.sendPersonal(c, p, last)).catch(e => console.error(`[scheduler] crew ${p.id}:`, e.message));
         }
+      }
+      // Water system email (Compliance › Email): new mail every 15 minutes from connected Outlook mailboxes.
+      if (!paused && !mailBusy.has(c.id)) {
+        const due = await db.one("SELECT 1 FROM mail_accounts WHERE company_id=$1 AND (synced_at IS NULL OR synced_at < now() - interval '14 minutes') LIMIT 1", [c.id]).catch(() => null);
+        if (due) { mailBusy.add(c.id); require('./mail').sync(c.id).catch(e => console.error(`[mail] company ${c.id}:`, e.message)).finally(() => mailBusy.delete(c.id)); }
       }
       // Weekly property-transfer check (WLAF's Campbell County lists), the same morning as the weekly summary.
       if (!paused && date === ws && hour >= c.summary_hour) {

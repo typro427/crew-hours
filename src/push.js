@@ -67,9 +67,9 @@ async function notify(company, who, payload) {
     if (!subs.length) return 0;
     if (subs.some(s => s.kind !== 'apns')) await vapid();
     const body = JSON.stringify({ title: String(payload.title || '').slice(0, 120), body: String(payload.body || '').slice(0, 300),
-      url: `/c/${company.slug}/${payload.tab ? '#' + payload.tab : ''}`, tag: payload.tag || undefined });
+      url: `/c/${company.slug}/${payload.path || (payload.tab ? '#' + payload.tab : '')}`, tag: payload.tag || undefined });
     let sent = 0;
-    const msg = { title: String(payload.title || '').slice(0, 120), body: String(payload.body || '').slice(0, 300), url: `${config.appUrl}/c/${company.slug}/${payload.tab ? '#' + payload.tab : ''}`, tag: payload.tag };
+    const msg = { title: String(payload.title || '').slice(0, 120), body: String(payload.body || '').slice(0, 300), url: `${config.appUrl}/c/${company.slug}/${payload.path || (payload.tab ? '#' + payload.tab : '')}`, tag: payload.tag };
     await Promise.all(subs.map(async s => {
       if (s.kind === 'apns') {   // the iPhone app
         try {

@@ -308,6 +308,23 @@ r.post('/weather/run', async (req, res) => {   // check now and act (same as the
 });
 
 /* ------------------------------- QuickBooks Online ------------------------------- */
+const ML = require('../mail');
+r.get('/mail/connect', async (req, res) => {
+  if (!ML.enabled()) return res.redirect('/compliance#email');
+  res.redirect(ML.authUrl(req.company.id));
+});
+r.get('/mail/callback', async (req, res) => {
+  if (req.query.error) return res.redirect('/compliance#email-error=' + encodeURIComponent(req.query.error === 'access_denied' ? 'You cancelled the Outlook sign-in.' : String(req.query.error_description || req.query.error).split('\n')[0].slice(0, 200)));
+  try {
+    const a = await ML.finishConnect(req.company.id, String(req.query.code || ''), String(req.query.state || ''));
+    await ML.sync(req.company.id, { notify: false }).catch(e => console.error('[mail] first sync', e.message));
+    res.redirect('/compliance#email-ok=' + encodeURIComponent(a.email));
+  } catch (e) { res.redirect('/compliance#email-error=' + encodeURIComponent(e.message)); }
+});
+r.post('/mail/sync', async (req, res) => { const s = await ML.sync(req.company.id); res.json({ ...(await ML.list(req.company.id)), added: s.added, errors: s.errors }); });
+r.delete('/mail/accounts/:id', async (req, res) => res.json(await ML.disconnect(req.company.id, req.params.id)));
+r.get('/mail/setup', async (req, res) => res.json({ enabled: ML.enabled(), redirectUri: ML.redirectUri() }));
+
 const QB = require('../qbo');
 r.get('/quickbooks', async (req, res) => res.json(await QB.status(req.company.id)));
 r.get('/quickbooks/connect', async (req, res) => {
