@@ -112,24 +112,27 @@ function convert(v, from, to) {
 const HEADER_WORD = /^(analyte|parameter|test|result|units?|method|mcl|limit|rl|mdl|qualifier|date|analy[sz]ed|prepared|dilution|cas|sample|page|report|client|project)\b/i;
 const DATE_RE = /\b(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})\b/i;
 const COLLECTED = /(collect(?:ed|ion)?|sampl(?:ed|e)\s*date|date\s*(?:sampled|collected)|date\s*\/\s*time\s*collected)\s*(?:date)?\s*[:#-]?\s*/i;
-const POINT = /(sample\s*(?:point|location|site|description)|location|site\s*name|collection\s*point|sampling\s*point)\s*[:#-]\s*(.+)/i;
+const POINT = /(sample\s*(?:point|location|site|description)|location|site\s*(?:name|id)|collection\s*point|sampling\s*point)\s*[:#-]\s*(.+)/i;
 const SAMPLE_ID = /\b(?:lab\s*)?sample\s*(?:id|#|number|no\.?)\s*[:#-]/i;
 
 /** Rows from the text of a lab report, one line per result. */
 function fromText(text) {
   const lines = String(text).split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
   const rows = [];
-  let day = null, point = '', lab = '';
+  let day = null, point = '', lab = '', used = false;
   for (const raw of lines) {
     const line = raw.replace(/\t/g, '   ');
     if (!lab) { const l = /([A-Z][\w&.,' -]{2,60}(?:laborator(?:y|ies)|labs?\b|analytical|environmental)[\w&.,' -]{0,30})/i.exec(line); if (l && !/report|page/i.test(l[1])) lab = l[1].trim().slice(0, 80); }
-    if (SAMPLE_ID.test(line) && !POINT.test(line)) point = '';     // a new sample: its location comes next
+    if (SAMPLE_ID.test(line) && !POINT.test(line) && used) { point = ''; used = false; }     // a new sample: its location comes next
     const c = COLLECTED.exec(line);
     if (c) { const d = DATE_RE.exec(line.slice(c.index + c[0].length - 1)) || DATE_RE.exec(line); if (d) day = CI.dateOf(d[1].replace(/\./g, '/')) || day; }
     const p = POINT.exec(line);
     if (p && !RESULT.test(p[2].trim().split(/\s{2,}/)[0])) {
-      const v = p[2].split(/\s{3,}|\s+(?:collect|date|matrix|sampled)/i)[0].trim();
-      if (v && v.length < 80 && !DATE_RE.test(v.slice(0, 10))) point = v;
+      // "DS01 #1   1049 Deerfield Way": the street address is the location (the site code alone if there's none)
+      const parts = p[2].split(/\s{3,}|\s+(?=(?:collect|date|matrix|sampled)\b)/i).map(x => x.trim()).filter(Boolean)
+        .filter(x => !/^(collect|date|matrix|sampled)/i.test(x));
+      const v = parts.find(x => /^\d{1,6}[a-z]?\s+[a-z]/i.test(x)) || parts[0] || '';
+      if (v && v.length < 80 && !DATE_RE.test(v.slice(0, 10))) { point = v; used = false; }
     }
     // a result line: a test name, then a result, then (usually) units
     const toks = line.trim().split(/\s{2,}|\s+(?=[<>]?\s*\d*\.?\d+\s+(?:mg|ug|µg|μg|ng|pci|ntu|ppm|ppb|cfu|mpn|p\/a|su\b))/i);
@@ -154,6 +157,7 @@ function fromText(text) {
     if (!known(name) && !units) continue;            // an unknown name with no units is usually not a result
     const d = DATE_RE.exec(line);
     // the date collected (a date on the line itself is usually when it was analyzed)
+    used = true;
     rows.push({ day: day || (d && CI.dateOf(d[1].replace(/\./g, '/'))) || null, point, test: testName(name), raw: name.slice(0, 80),
       result: r.text, value: r.value, qual: r.qual, units: unitTidy(units) || (r.qual === 'absent' || r.qual === 'present' ? 'P/A' : ''), lab });
   }

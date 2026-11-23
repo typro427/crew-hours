@@ -49,6 +49,18 @@ test('results, units and names', () => {
   assert.equal(R.convert(24.1, 'µg/L', 'mg/L').toFixed(4), '0.0241');
 });
 
+test('a report with the address on the Site ID line, one sample per page', () => {
+  const page = (n, addr, cu, pb) => ['MINERAL LABS INC.', 'Certificate of Analysis', 'Date/Time Collected:   9/23/2025   7:50:00',
+    'Water System   Date/Time Received:   9/26/2025   8:10:00', 'Test Type:   DW Lead & Copper', `Site ID:   DS01 #${n}   ${addr}`,
+    'Parameter   EXC   Result   Units   MDL   MRL   Method', 'Lab Sample ID: 0250199   001   Description:   Lead & Copper',
+    `Total Recoverable Copper   ${cu}   ug/L   0.3   5   EPA 200.8`, `Total Recoverable Lead   ${pb}   ug/L   0.1   2.0   EPA 200.8`,
+    'Sample Received at   3.0   Degrees C'].join('\n');
+  const rows = R.fromText([page(1, '1049 Main Way', '21.8', '0.3'), page(2, '138 Hill Knoll', '52.9', '0.5')].join('\n'));
+  assert.deepEqual(rows.map(r => [r.point, r.test, r.result, r.units, r.day]), [
+    ['1049 Main Way', 'Copper', '21.8', 'µg/L', '2025-09-23'], ['1049 Main Way', 'Lead', '0.3', 'µg/L', '2025-09-23'],
+    ['138 Hill Knoll', 'Copper', '52.9', 'µg/L', '2025-09-23'], ['138 Hill Knoll', 'Lead', '0.5', 'µg/L', '2025-09-23']]);
+});
+
 test('a lab PDF: read, check, save, and mark the schedule', async () => {
   // a sample type on the schedule
   await O('POST', '/api/admin/cw/items', { list: 'samples', name: 'Nitrate', months: 12 });
