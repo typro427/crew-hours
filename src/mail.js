@@ -110,22 +110,52 @@ function dueDate(text, received) {
  * Sort one message. Returns null when it isn't water system mail; otherwise { attention, urgent, kind, reasons, due }.
  * own: the mailbox's own address (its own sent mail is skipped).
  */
-function classify(m, own) {
+/* ------------------------------ your rules: stop these / always let these through ------------------------------ */
+// rules: { block: [{ type: 'sender'|'domain'|'subject'|'word', value }], allow: [{ type: 'sender'|'word', value }] }
+const subjKey = s => String(s || '').toLowerCase().replace(/^\s*((re|fw|fwd)\s*:\s*)+/i, '').replace(/[0-9]+/g, '#').replace(/[^a-z#&]+/g, ' ').replace(/\s+/g, ' ').trim();
+const domainOf = e => String(e || '').toLowerCase().split('@')[1] || '';
+function ruleHit(r, m) {
+  const from = String(m.from || '').toLowerCase(), v = String(r.value || '').toLowerCase().trim();
+  if (!v) return false;
+  if (r.type === 'sender') return from === v;
+  if (r.type === 'domain') { const d = domainOf(from); return d === v || d.endsWith('.' + v); }
+  if (r.type === 'subject') return subjKey(m.subject).includes(v);
+  if (r.type === 'word') return (String(m.subject || '') + ' ' + String(m.preview || '') + ' ' + (m.fromName || '')).toLowerCase().includes(v);
+  return false;
+}
+const blockedBy = (m, rules) => ((rules && rules.block) || []).find(r => ruleHit(r, m)) || null;
+const allowedBy = (m, rules) => ((rules && rules.allow) || []).find(r => ruleHit(r, m)) || null;
+
+// your own billing: QuickBooks copies of invoices you sent, deposit notices, customers replying to a bill
+const OWN_BILLING = /invoice\s*[#\w-]*\s+from\s+deer|payment\s+request\s+from\s+deer|statement\s+from\s+deer|reminder:?\s+invoice|billing\s+for\s+water\s+services|deerfield\s+water\s+system\s+llc\s*-\s*invoice/i;
+const BILLING_SYSTEM = /(^|\.)intuit\.com$/i;   // QuickBooks and Intuit payments
+
+function classify(m, own, rules) {
   const from = String(m.from || '').toLowerCase(), subj = String(m.subject || ''), text = subj + '\n' + String(m.preview || '');
   if (!from || from === String(own || '').toLowerCase()) return null;
   if (/@mycrewhours|mycrewhours@/.test(from)) return null;                     // the app's own alerts are already in the app
+  if (blockedBy(m, rules)) return { blocked: true, attention: false, urgent: false, kind: 'Stopped', reasons: [], due: null };
+  const allow = allowedBy(m, rules);
+  if ((BILLING_SYSTEM.test(domainOf(from)) || /quickbooks/i.test(from)) && !allow) return null;                        // QuickBooks copies of your own invoices, deposits
   const tdec = /@tn\.gov$/.test(from), lab = /@minerallabs\.com$/.test(from) || (LAB.test(m.fromName || '') && /analysis|results|invoice/i.test(text));
   const exam = /psiexams\.com$|operator\s*cert/i.test(from + ' ' + text);
-  if (!tdec && !lab && !exam && !WATER.test(text)) return null;
-  if (NEWSLETTER.test(from + ' ' + (m.fromName || '')) && !WATER.test(subj) && !exam) return null;
+  if (!allow && !tdec && !lab && !exam && !WATER.test(text)) return null;
+  if (!allow && NEWSLETTER.test(from + ' ' + (m.fromName || '')) && !WATER.test(subj) && !exam) return null;
   const reasons = [];
   let kind = tdec ? 'TDEC' : lab ? 'Lab' : exam ? 'Operator' : 'Water system';
+  if (allow) reasons.push(allow.type === 'sender' ? 'From a sender you added' : `Has "${allow.value}"`);
+  const ownBilling = OWN_BILLING.test(text) && !lab && !tdec;
+  if (ownBilling) {
+    kind = 'Customer billing';
+    if (/^\s*(re|fw|fwd)\s*:/i.test(subj)) reasons.push('A customer replied about their bill');
+    return { attention: reasons.length > 0, urgent: false, kind, reasons, due: null };
+  }
   const urgent = URGENT.test(text);
   if (urgent) reasons.push('Possible violation or positive result');
   if (tdec && ASK.test(text)) reasons.push('TDEC is asking for something');
   if (!tdec && ASK.test(text) && WATER.test(text)) reasons.push('Asks for something');
   if (lab && /certificate\s*of\s*analysis|results|data|report/i.test(text) && !/invoice/i.test(subj)) { reasons.push('Lab results: import them on the Results tab'); kind = 'Lab results'; }
-  if (/invoice|amount\s*due|balance\s*due|payment\s*due|past\s*due/i.test(text) && (lab || WATER.test(text) || tdec)) { reasons.push('Invoice to pay'); kind = 'Invoice'; }
+  if (/invoice|amount\s*due|balance\s*due|payment\s*due|past\s*due/i.test(text) && (lab || tdec || (WATER.test(text) && !/^\s*(re|fw|fwd)\s*:/i.test(subj)))) { reasons.push('Invoice to pay'); kind = 'Invoice'; }
   const due = dueDate(text, m.received);
   if (due) reasons.push('Due ' + due);
   return { attention: reasons.length > 0, urgent, kind, reasons, due };
@@ -133,13 +163,16 @@ function classify(m, own) {
 
 /* ------------------------------ sync ------------------------------ */
 /** Read new mail from every connected mailbox; returns { added, attention: [new items needing attention] }. */
-async function sync(companyId, { notify = true } = {}) {
+const SORT_VERSION = 2;    // raise when the sorting changes: saved emails are sorted again
+async function sync(companyId, { notify = true, rescan = false } = {}) {
   const accts = await db.q('SELECT * FROM mail_accounts WHERE company_id=$1 ORDER BY id', [companyId]);
+  const rules = await getRules(companyId);
   const out = { added: 0, attention: [], errors: [] };
+  if (accts.some(a => (a.sort_v || 0) < SORT_VERSION)) { await resort(companyId, rules); await db.q('UPDATE mail_accounts SET sort_v=$1 WHERE company_id=$2', [SORT_VERSION, companyId]); }
   for (const a of accts) {
     try {
       const token = await accessToken(a);
-      const first = !a.synced_at;
+      const first = !a.synced_at || rescan;
       const since = new Date(first ? Date.now() - BACKFILL_DAYS * 864e5 : new Date(a.synced_at).getTime() - 30 * 60e3).toISOString();
       const started = new Date();
       let path = `/me/messages?$select=id,subject,from,receivedDateTime,bodyPreview,webLink,hasAttachments,importance&$filter=receivedDateTime ge ${since}&$orderby=receivedDateTime desc&$top=50`;
@@ -148,13 +181,13 @@ async function sync(companyId, { notify = true } = {}) {
         for (const g of j.value || []) {
           const m = { id: g.id, subject: String(g.subject || '(no subject)').slice(0, 300), from: ((g.from || {}).emailAddress || {}).address || '', fromName: ((g.from || {}).emailAddress || {}).name || '',
             preview: String(g.bodyPreview || '').replace(/\s+/g, ' ').slice(0, 600), received: g.receivedDateTime, link: g.webLink || '', attach: !!g.hasAttachments };
-          const c = classify(m, a.email);
+          const c = classify(m, a.email, rules);
           if (!c) continue;
           const r = await db.q(`INSERT INTO mail_items (company_id, account_id, msg_id, received_at, sender, sender_name, subject, preview, web_link, has_attach, kind, reasons, due, attention, urgent, status)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (account_id, msg_id) DO NOTHING RETURNING id`,
             [companyId, a.id, String(m.id).slice(0, 300), m.received, m.from.slice(0, 200), m.fromName.slice(0, 120), m.subject, m.preview, m.link.slice(0, 1000), m.attach, c.kind,
-              JSON.stringify(c.reasons), c.due, c.attention, c.urgent, c.attention ? 'new' : 'fyi']);
-          if (r.length) { out.added++; if (c.attention && !first) out.attention.push({ id: r[0].id, subject: m.subject, from: m.fromName || m.from, urgent: c.urgent }); }
+              JSON.stringify(c.reasons), c.due, c.attention, c.urgent, c.blocked ? 'blocked' : c.attention ? 'new' : 'fyi']);
+          if (r.length) { out.added++; if (c.attention && !c.blocked && !first) out.attention.push({ id: r[0].id, subject: m.subject, from: m.fromName || m.from, urgent: c.urgent }); }
         }
         path = j['@odata.nextLink'] ? j['@odata.nextLink'].replace(M().graph, '') : null;
       }
@@ -174,15 +207,62 @@ async function sync(companyId, { notify = true } = {}) {
   return out;
 }
 
+/** Sort the saved emails again (after your rules change). Emails marked Done stay done. */
+async function resort(companyId, rules) {
+  const items = await db.q(`SELECT i.id, i.sender, i.sender_name, i.subject, i.preview, i.received_at, i.status, a.email AS own
+    FROM mail_items i JOIN mail_accounts a ON a.id=i.account_id WHERE i.company_id=$1`, [companyId]);
+  for (const it of items) {
+    const c = classify({ from: it.sender, fromName: it.sender_name, subject: it.subject, preview: it.preview, received: it.received_at }, it.own, rules);
+    if (!c) { await db.q('DELETE FROM mail_items WHERE id=$1', [it.id]); continue; }
+    const status = c.blocked ? 'blocked' : it.status === 'done' ? 'done' : c.attention ? 'new' : 'fyi';
+    await db.q('UPDATE mail_items SET kind=$1, reasons=$2, due=$3, attention=$4, urgent=$5, status=$6 WHERE id=$7',
+      [c.kind, JSON.stringify(c.reasons), c.due, c.attention, c.urgent, status, it.id]);
+  }
+}
+
+async function getRules(companyId) {
+  const c = await db.one('SELECT mail_rules FROM companies WHERE id=$1', [companyId]);
+  const r = (c && c.mail_rules) || {};
+  return { block: Array.isArray(r.block) ? r.block : [], allow: Array.isArray(r.allow) ? r.allow : [] };
+}
+/** Add a rule: list 'block' (stop these) or 'allow' (always let these through). */
+async function addRule(companyId, b) {
+  const list = b.list === 'allow' ? 'allow' : b.list === 'block' ? 'block' : V.bad('Stop or let through?');
+  const types = list === 'allow' ? ['sender', 'word'] : ['sender', 'domain', 'subject', 'word'];
+  const type = types.includes(b.type) ? b.type : V.bad('Pick what to match.');
+  let value = String(b.value || '').trim().toLowerCase();
+  if (type === 'sender') { if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(value)) V.bad('Type a whole email address, like name@tn.gov.'); }
+  else if (type === 'domain') { value = value.replace(/^.*@/, ''); if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(value)) V.bad('Type a domain, like intuit.com.'); }
+  else if (type === 'subject') { value = subjKey(value); if (value.length < 4) V.bad('That subject is too short to match on.'); }
+  else { if (value.length < 3) V.bad('Type a word or phrase of at least 3 letters.'); }
+  if (value.length > 200) V.bad('That is too long.');
+  const rules = await getRules(companyId);
+  if (rules[list].length >= 100) V.bad('That list is full (100).');
+  if (!rules[list].some(r => r.type === type && r.value === value)) rules[list].push({ id: crypto.randomBytes(5).toString('hex'), type, value, at: new Date().toISOString() });
+  await db.q('UPDATE companies SET mail_rules=$1 WHERE id=$2', [JSON.stringify(rules), companyId]);
+  await resort(companyId, rules);
+  // a new address or word to let through: look back through the last 30 days for it (no notifications for those)
+  if (list === 'allow') await sync(companyId, { notify: false, rescan: true }).catch(e => console.error('[mail] rescan', e.message));
+  return list_(companyId);
+}
+async function removeRule(companyId, id) {
+  const rules = await getRules(companyId);
+  rules.block = rules.block.filter(r => r.id !== id); rules.allow = rules.allow.filter(r => r.id !== id);
+  await db.q('UPDATE companies SET mail_rules=$1 WHERE id=$2', [JSON.stringify(rules), companyId]);
+  await resort(companyId, rules);
+  return list_(companyId);
+}
+
 /* ------------------------------ the tab ------------------------------ */
+const list_ = companyId => list(companyId);
 async function list(companyId) {
   const items = await db.q(`SELECT i.id, i.received_at AS received, i.sender, i.sender_name AS "senderName", i.subject, i.preview, i.web_link AS link, i.has_attach AS attach,
       i.kind, i.reasons, to_char(i.due,'YYYY-MM-DD') AS due, i.attention, i.urgent, i.status, i.done_by AS "doneBy", i.done_at AS "doneAt", a.email AS mailbox
     FROM mail_items i JOIN mail_accounts a ON a.id=i.account_id
-    WHERE i.company_id=$1 AND (i.status='new' OR i.received_at > now() - interval '45 days')
+    WHERE i.company_id=$1 AND i.status<>'blocked' AND (i.status='new' OR i.received_at > now() - interval '45 days')
     ORDER BY i.urgent DESC, i.received_at DESC LIMIT 300`, [companyId]);
   const accounts = await db.q('SELECT id, email, name, synced_at AS "syncedAt", error FROM mail_accounts WHERE company_id=$1 ORDER BY id', [companyId]);
-  return { enabled: enabled(), accounts, items };
+  return { enabled: enabled(), accounts, items, rules: await getRules(companyId) };
 }
 async function setStatus(companyId, id, done, who) {
   const it = await db.one('SELECT id, attention FROM mail_items WHERE id=$1 AND company_id=$2', [Number(id) || 0, companyId]);
@@ -210,7 +290,9 @@ function mount(r, prefix, guard, who) {
   r.get(prefix + '/mail', ...g, async (req, res) => res.json(await list(req.company.id)));
   r.post(prefix + '/mail/:id/done', ...g, async (req, res) => res.json(await setStatus(req.company.id, req.params.id, true, who(req))));
   r.post(prefix + '/mail/:id/undone', ...g, async (req, res) => res.json(await setStatus(req.company.id, req.params.id, false)));
+  r.post(prefix + '/mail/rules', ...g, async (req, res) => res.json(await addRule(req.company.id, req.body || {})));
+  r.delete(prefix + '/mail/rules/:id', ...g, async (req, res) => res.json(await removeRule(req.company.id, String(req.params.id))));
   r.post(prefix + '/mail/:id/flag', ...g, async (req, res) => res.json(await flag(req.company.id, req.params.id, (req.body || {}).on !== false)));
 }
 
-module.exports = { enabled, authUrl, finishConnect, sync, list, setStatus, flag, disconnect, classify, dueDate, attentionCount, mount, redirectUri };
+module.exports = { enabled, authUrl, finishConnect, sync, list, addRule, removeRule, getRules, subjKey, setStatus, flag, disconnect, classify, dueDate, attentionCount, mount, redirectUri };

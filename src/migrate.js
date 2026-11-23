@@ -733,6 +733,8 @@ CREATE TABLE IF NOT EXISTS mail_items (
   UNIQUE (account_id, msg_id)
 );
 CREATE INDEX IF NOT EXISTS mail_items_company ON mail_items (company_id, received_at DESC);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS mail_rules JSONB;
+ALTER TABLE mail_accounts ADD COLUMN IF NOT EXISTS sort_v INTEGER NOT NULL DEFAULT 0;
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

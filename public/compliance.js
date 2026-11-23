@@ -581,6 +581,7 @@ function Email(){
     <div class="card" style="padding:6px 16px">
       ${show.length ? show.map(mailRow).join("") : `<p class="small muted" style="margin:12px 0">${MLFILTER==="attn" ? "Nothing needs your attention right now. ✓" : MLFILTER==="fyi" ? "No other water system email in the last 45 days." : "Nothing marked done yet."}</p>`}
     </div>
+    ${rulesCard()}
     <details class="card"><summary><b>Mailboxes</b> <span class="tiny muted">(${accts.length})</span></summary>
       ${accts.map(a=>`<div class="item"><div><div class="t">${esc(a.email)}</div><div class="s">${a.syncedAt?"Checked "+ago(a.syncedAt):"Not checked yet"}</div></div>${!CREW?`<button class="btn small danger" data-mdel="${a.id}" type="button">Disconnect</button>`:""}</div>`).join("")}
       ${!CREW ? `<p class="small" style="margin:10px 0 0"><a class="btn small" href="/api/admin/mail/connect">Connect another mailbox</a></p><p class="tiny muted">To add a second mailbox (like scott@deerfieldwater.com), sign out of Outlook in this browser first, or use a private window, so Microsoft asks which account.</p>` : ""}
@@ -594,6 +595,15 @@ function Email(){
     const r = await fetch("/api/admin/mail/accounts/"+b.dataset.mdel, { method:"DELETE", headers:{"x-ch":"1"}, credentials:"same-origin" });
     if(!r.ok) return oops("Couldn't disconnect it.");
     ML = await r.json(); mailBadge(); Email();
+  });
+  document.querySelectorAll("[data-mstop]").forEach(b => b.onclick = () => stopMenu(ML.items.find(x => String(x.id)===b.dataset.mstop)));
+  document.querySelectorAll("[data-ruledel]").forEach(b => b.onclick = () => mlApi("DELETE", "/rules/"+b.dataset.ruledel).then(Email).catch(e=>oops(e.message)));
+  document.querySelectorAll("[data-radd]").forEach(f => f.onsubmit = e => {
+    e.preventDefault();
+    const list = f.dataset.radd, type = f.querySelector("select").value, value = f.querySelector("input").value.trim(), btn = f.querySelector("button");
+    if(!value) return;
+    btn.disabled = true; btn.textContent = list==="allow" ? "Adding… (looking back 30 days)" : "Adding…";
+    mlApi("POST", "/rules", { list, type, value }).then(Email).catch(err => { btn.disabled = false; btn.textContent = "Add"; oops(err.message); });
   });
   const sy = document.getElementById("ml-sync");
   if(sy) sy.onclick = async () => { sy.disabled = true; sy.textContent = "Checking…";
@@ -611,7 +621,39 @@ function mailRow(i){
       ${i.status==="new" ? `<button class="btn small primary" data-mdone="${i.id}" type="button">Done</button><button class="btn small" data-mflag="${i.id}" data-on="0" type="button">Not important</button>`
       : i.status==="done" ? `<span class="tiny muted">Done${i.doneBy?" by "+esc(i.doneBy):""}</span><button class="btn small" data-mundo="${i.id}" type="button">Not done</button>`
       : `<button class="btn small" data-mflag="${i.id}" data-on="1" type="button">Needs attention</button>`}
-      ${ML.accounts.length>1?`<span class="tiny muted">${esc(i.mailbox)}</span>`:""}</div></div>`;
+      <button class="btn small ghostish" data-mstop="${i.id}" type="button">Stop these…</button>
+      ${ML.accounts.length>1?`<span class="tiny muted">${esc(i.mailbox)}</span>`:""}</div><div class="ml-stop" id="ml-stop-${i.id}"></div></div>`;
+}
+const domainOf = e => String(e||"").toLowerCase().split("@")[1] || "";
+const FREE_MAIL = /^(gmail|yahoo|hotmail|outlook|aol|icloud|live|msn|comcast|att|sbcglobal|bellsouth|charter|me)\./;
+const subjKey = s => String(s||"").toLowerCase().replace(/^\s*((re|fw|fwd)\s*:\s*)+/i,"").replace(/[0-9]+/g,"#").replace(/[^a-z#&]+/g," ").replace(/\s+/g," ").trim();
+/** "Stop these…" under an email: this sender, the whole domain, or emails with this kind of subject. */
+function stopMenu(i){
+  const box = document.getElementById("ml-stop-"+i.id);
+  if(box.innerHTML){ box.innerHTML = ""; return; }
+  const d = domainOf(i.sender), sk = subjKey(i.subject);
+  const opts = [["sender", i.sender, `Everything from ${esc(i.sender)}`]];
+  if(d && !FREE_MAIL.test(d)) opts.push(["domain", d, `Everything from anyone @${esc(d)}`]);
+  if(sk.length >= 4) opts.push(["subject", sk, `Emails with subjects like “${esc(sk.replace(/#/g,"…"))}”`]);
+  box.innerHTML = `<div class="stopbox"><div class="small"><b>Stop which emails?</b> They won't show here or notify anyone. You can undo it under Your email rules.</div>
+    ${opts.map((o,n)=>`<button class="btn small" data-so="${n}" type="button">${o[2]}</button>`).join("")}</div>`;
+  box.querySelectorAll("[data-so]").forEach(b => b.onclick = () => { const o = opts[+b.dataset.so]; b.disabled = true; b.textContent = "Stopping…";
+    mlApi("POST", "/rules", { list:"block", type:o[0], value:o[1] }).then(Email).catch(e=>oops(e.message)); });
+}
+function rulesCard(){
+  const R = ML.rules || { block:[], allow:[] };
+  const T = { sender:"From", domain:"From anyone @", subject:"Subject like", word:"Has the words" };
+  const row = r => `<div class="rule"><span class="tiny muted">${T[r.type]}</span> <b>${esc(r.type==="subject"?r.value.replace(/#/g,"…"):r.value)}</b><button class="linkbtn" data-ruledel="${r.id}" type="button">Remove</button></div>`;
+  return `<details class="card" ${R.allow.length||R.block.length?"":""}><summary><b>Your email rules</b> <span class="tiny muted">(${R.allow.length} let through · ${R.block.length} stopped)</span></summary>
+    <h3 style="margin:12px 0 4px">Always let these through</h3>
+    <p class="tiny muted" style="margin:0 0 6px">Email from these addresses, or with these words, always shows here as needing attention, and you get a notification.</p>
+    ${R.allow.map(row).join("") || '<p class="small muted" style="margin:4px 0">None yet.</p>'}
+    <form class="rule-add" data-radd="allow"><select aria-label="Match"><option value="sender">Email address</option><option value="word">Word or phrase</option></select><input placeholder="name@example.com or a word like hydrant" aria-label="Address or word" autocapitalize="off"><button class="btn small primary" type="submit">Add</button></form>
+    <h3 style="margin:16px 0 4px">Stopped</h3>
+    <p class="tiny muted" style="margin:0 0 6px">These never show here and never notify. QuickBooks copies of your own invoices and Intuit deposit notices are left out already.</p>
+    ${R.block.map(row).join("") || '<p class="small muted" style="margin:4px 0">None yet. Use “Stop these…” on an email, or add one here.</p>'}
+    <form class="rule-add" data-radd="block"><select aria-label="Match"><option value="sender">Email address</option><option value="domain">Whole domain</option><option value="subject">Subject like</option><option value="word">Word or phrase</option></select><input placeholder="name@example.com, example.com or words" aria-label="What to stop" autocapitalize="off"><button class="btn small primary" type="submit">Add</button></form>
+  </details>`;
 }
 function connectCard(){
   if(CREW) return `<div class="card"><h2>Not connected yet</h2><p class="small muted">The boss connects Outlook from the dashboard's Compliance page. Then water system email shows up here.</p></div>`;

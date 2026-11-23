@@ -132,3 +132,44 @@ test('done, not done, flag; disconnect', async () => {
   L = (await O('DELETE', '/api/admin/mail/accounts/' + acct.id)).body;
   assert.equal(L.accounts.length, 0); assert.equal(L.items.length, 0);
 });
+
+test('your own billing is sorted right; stop these; always let these through', async () => {
+  // a fresh mailbox with billing mail
+  inbox = [
+    { id: 'b1', subject: 'Invoice 100188 from Deerfield Water System', from: { emailAddress: { address: 'quickbooks@notification.intuit.com', name: 'Deerfield Water System' } }, receivedDateTime: ago(3), bodyPreview: 'Your invoice is ready', webLink: 'q' },
+    { id: 'b2', subject: 'Money on the way!', from: { emailAddress: { address: 'BusinessServices@intuit.com', name: 'Intuit' } }, receivedDateTime: ago(3), bodyPreview: 'water system deposit', webLink: 'q' },
+    { id: 'b3', subject: 'Re: New payment request from Deerfield Water System LLC - invoice 1012', from: { emailAddress: { address: 'owner@example.com', name: 'A Customer' } }, receivedDateTime: ago(4), bodyPreview: 'I paid this already', webLink: 'q' },
+    { id: 'b4', subject: 'Weekly bulletin', from: { emailAddress: { address: 'news@county.example', name: 'County' } }, receivedDateTime: ago(4), bodyPreview: 'Water main flushing schedule', webLink: 'q' },
+    { id: 'b5', subject: 'Hydrant on Deer Run', from: { emailAddress: { address: 'neighbor@example.com', name: 'Neighbor' } }, receivedDateTime: ago(5), bodyPreview: 'It was hit by a truck', webLink: 'q' }
+  ];
+  const go = await O('GET', '/api/admin/mail/connect');
+  await O('GET', `/api/admin/mail/callback?code=good&state=${encodeURIComponent(new URL(go.location).searchParams.get('state'))}`);
+  let L = (await O('GET', '/api/admin/cw/mail')).body;
+  const subj = L.items.map(i => i.subject);
+  assert.ok(!subj.some(x => /Invoice 100188|Money on the way/.test(x)), 'QuickBooks copies and deposits are left out');
+  const cust = L.items.find(i => /payment request/.test(i.subject));
+  assert.equal(cust.kind, 'Customer billing'); assert.equal(cust.status, 'new'); assert.deepEqual(cust.reasons, ['A customer replied about their bill']);
+  assert.ok(!subj.includes('Hydrant on Deer Run'), 'not water words, not allowed yet');
+
+  // stop the county bulletin by subject
+  const bul = L.items.find(i => i.subject === 'Weekly bulletin');
+  L = (await O('POST', '/api/admin/cw/mail/rules', { list: 'block', type: 'subject', value: bul.subject })).body;
+  assert.ok(!L.items.some(i => i.subject === 'Weekly bulletin'));
+  assert.equal(L.rules.block[0].value, 'weekly bulletin');
+  // always let through: a word (looks back 30 days)
+  L = (await O('POST', '/api/admin/cw/mail/rules', { list: 'allow', type: 'word', value: 'Hydrant' })).body;
+  const h = L.items.find(i => i.subject === 'Hydrant on Deer Run');
+  assert.ok(h, 'found in the look-back'); assert.equal(h.status, 'new'); assert.deepEqual(h.reasons, ['Has "hydrant"']);
+  // a domain stop; checks
+  assert.equal((await O('POST', '/api/admin/cw/mail/rules', { list: 'block', type: 'domain', value: 'not a domain' })).status, 400);
+  assert.equal((await O('POST', '/api/admin/cw/mail/rules', { list: 'allow', type: 'sender', value: 'nope' })).status, 400);
+  L = (await O('POST', '/api/admin/cw/mail/rules', { list: 'block', type: 'domain', value: 'example.com' })).body;
+  assert.ok(!L.items.some(i => /example\.com$/.test(i.sender)), 'blocking wins over letting through');
+  // undo
+  L = (await O('DELETE', '/api/admin/cw/mail/rules/' + L.rules.block.find(r => r.type === 'domain').id)).body;
+  assert.ok(L.items.some(i => i.subject === 'Hydrant on Deer Run'));
+  pushed.length = 0;
+  inbox = [{ id: 'b6', subject: 'Weekly bulletin', from: { emailAddress: { address: 'news@county.example', name: 'County' } }, receivedDateTime: new Date().toISOString(), bodyPreview: 'Water main flushing', webLink: 'q' }, ...inbox];
+  await O('POST', '/api/admin/mail/sync');
+  assert.equal(pushed.length, 0, 'a stopped email never notifies');
+});
