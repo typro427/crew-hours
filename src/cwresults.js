@@ -389,6 +389,7 @@ async function csv(company) {
 
 function mount(r, prefix, guard, who) {
   const g = guard ? [].concat(guard) : [];
+  require('./lcnotice').mount(r, prefix, guard);   // lead and copper consumer notices
   r.post(prefix + '/results/read', ...g, async (req, res) => res.json(await read(req.company, req.body)));
   r.get(prefix + '/results', ...g, async (req, res) => res.json(await list(req.company)));
   r.post(prefix + '/results', ...g, async (req, res) => res.json(await save(req.company, who(req), req.body || {})));

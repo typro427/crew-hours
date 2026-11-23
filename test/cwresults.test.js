@@ -31,7 +31,7 @@ before(async () => {
     const r = await fetch(base + url, { method, headers: { 'x-ch': '1', 'Content-Type': raw ? 'application/octet-stream' : 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: raw || (body ? JSON.stringify(body) : undefined) });
     const sc = r.headers.get('set-cookie'); if (sc) cookie = sc.split(';')[0];
     const ct = r.headers.get('content-type') || '';
-    return { status: r.status, body: ct.includes('json') ? await r.json() : await r.text() };
+    return { status: r.status, headers: r.headers, body: ct.includes('json') ? await r.json() : ct.includes('wordprocessing') ? Buffer.from(await r.arrayBuffer()) : await r.text() };
   };
   await O('POST', '/api/signup', { company: 'Water Co', name: 'Op', email: 'op@example.com', password: 'LongPass1!' });
   await db.q("UPDATE companies SET features = COALESCE(features,'{}'::jsonb) || '{\"compliance\":true}'::jsonb").catch(() => {});
@@ -130,4 +130,32 @@ test('a scanned report is read with text recognition', async () => {
   const cu = r.body.rows.find(x => x.test === 'Copper');
   assert.ok(cu, JSON.stringify(r.body.rows));
   assert.equal(cu.result, '0.42'); assert.equal(cu.day, '2026-09-02');
+});
+
+test('lead and copper notices: the template filled in for each home', async () => {
+  const JSZip = require('jszip');
+  await O('PUT', '/api/admin/cw/system', { name: 'Water Co', pwsid: 'TN0000912', operator: 'Pat Operator', phone: '(423) 555-0100', email: 'water@example.com' });
+  const rows = [['141 Deer Run Pt', 'Lead', '0.0042', 'mg/L'], ['141 Deer Run Pt', 'Copper', '310', 'µg/L'], ['22 Whitetail Ct', 'Lead', 'ND', 'mg/L']]
+    .map(([point, test, result, units]) => ({ day: '2026-07-08', point, test, result, units }));
+  await O('POST', '/api/admin/cw/results', { rows, source: 'lcr' });
+  const rounds = (await O('GET', '/api/admin/cw/results/lcr-rounds')).body.rounds;
+  assert.deepEqual(rounds.find(r => r.day === '2026-07-08'), { day: '2026-07-08', taps: 2 });
+  const r = await fetch(base + '/api/admin/cw/results/lcr-notices.docx?day=2026-07-08&date=2026-11-23', { headers: { 'x-ch': '1', Cookie: '' } });
+  assert.notEqual(r.status, 200, 'needs the login');
+  const res = await O('GET', '/api/admin/cw/results/lcr-notices.docx?day=2026-07-08&date=2026-11-23');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-notices'), '2'); assert.equal(res.headers.get('x-missing'), '');
+  const zip = await JSZip.loadAsync(res.body);
+  const doc = await zip.file('word/document.xml').async('string');
+  const text = doc.replace(/<[^>]+>/g, '');
+  assert.equal((text.match(/Notification of Results/g) || []).length, 2, 'one notice per home');
+  assert.match(text, /Lead\s+0\.0042\s+mg\/L/); assert.match(text, /Copper\s+0\.31\s+mg\/L/, 'µg/L shown in mg/L');
+  assert.match(text, /Lead\s+ND\s+mg\/L\s*Copper\s+Not tested/);
+  assert.match(text, /Pat Operator/); assert.match(text, /\(423\) 555-0100/); assert.match(text, /water@example\.com/);
+  assert.match(text, /There is no safe level of lead in drinking water/, 'the template wording stays');
+  const h1 = await zip.file('word/headerNotice1.xml').async('string'), h2 = await zip.file('word/headerNotice2.xml').async('string');
+  assert.match(h1.replace(/<[^>]+>/g, ''), /Location: 141 Deer Run Pt.*Date: 11\/23\/2026/);
+  assert.match(h2.replace(/<[^>]+>/g, ''), /22 Whitetail Ct/);
+  assert.match((await zip.file('word/footer1.xml').async('string')).replace(/<[^>]+>/g, ''), /TN0000912/);
+  assert.equal((await O('GET', '/api/admin/cw/results/lcr-notices.docx?day=2001-01-01')).status, 400);
 });

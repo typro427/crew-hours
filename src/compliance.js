@@ -54,7 +54,7 @@ async function all(company) {
 
 async function saveSystem(company, b) {
   const s = { name: txt(b.name, 120) || company.name, pwsid: txt(b.pwsid, 40), type: txt(b.type, 80), pop: txt(b.pop, 20), conn: txt(b.conn, 20),
-    operator: txt(b.operator, 80), cert: txt(b.cert, 80), minCl: reading(b.minCl, 'The minimum chlorine', 10) ?? 0.2 };
+    operator: txt(b.operator, 80), cert: txt(b.cert, 80), phone: txt(b.phone, 40), email: txt(b.email, 120), minCl: reading(b.minCl, 'The minimum chlorine', 10) ?? 0.2 };
   await db.q('UPDATE companies SET cw_system=$1 WHERE id=$2', [JSON.stringify(s), company.id]);
   return all(company);
 }

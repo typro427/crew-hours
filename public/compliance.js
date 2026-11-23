@@ -252,11 +252,13 @@ function detail(name, rs){
       ${pts.length>1?`<span class="tiny muted">${pts.length} sample points</span>`:""}</div>
     ${KINDNOTE[l.kind] ? `<p class="tiny muted" style="margin:6px 0 0">${KINDNOTE[l.kind]}</p>` : ""}
     <div id="rs-limform"></div>
+    ${name==="Lead"||name==="Copper" ? `<div class="lcr no-print"><div class="row between wrap"><div><b>Lead and copper notices</b><div class="tiny muted">TDEC's Notification of Results, filled in for every home in a round, one per page.</div></div><button class="btn small" id="lcr-open" type="button">Make notices</button></div><div id="lcr-form"></div></div>` : ""}
     ${l.kind==="presence" ? presenceStrip(rs) : `<div class="chartwrap" id="rs-chart" style="margin-top:8px"></div>`}
     <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>Date</th><th>Sample point</th><th class="r">Result</th><th>Units</th><th></th></tr></thead><tbody>
     ${rs.slice().reverse().map(r=>`<tr><td>${nice(r.day)}</td><td>${esc(r.point)}</td><td class="r num ${isOver(r,l)?"flag":""}">${esc(r.result)}${isOver(r,l)?" ⚠":""}</td><td>${esc(r.units)}</td><td class="r"><button class="btn small danger" data-rdel="${r.id}" type="button" aria-label="Delete this result">Delete</button></td></tr>`).join("")}
     </tbody></table></div></div>`;
   if(l.kind!=="presence") resultChart(document.getElementById("rs-chart"), rs, l, unit);
+  const lo = document.getElementById("lcr-open"); if(lo) lo.onclick = () => lcrForm(document.getElementById("lcr-form"));
   box.querySelectorAll("[data-rdel]").forEach(b => b.onclick = () => { if(confirm("Delete this result?")) rsApi("DELETE","/"+b.dataset.rdel).then(Results).catch(e=>oops(e.message)); });
   document.getElementById("rs-lim").onclick = () => {
     const f = document.getElementById("rs-limform");
@@ -267,6 +269,32 @@ function detail(name, rs){
       <button class="btn primary small" id="lim-s" type="button">Save</button>${l.own?'<button class="btn small" id="lim-r" type="button">Back to EPA limit</button>':""}</div>`;
     document.getElementById("lim-s").onclick = () => rsApi("PUT","/limit",{ test:name, limit:document.getElementById("lim-v").value.trim(), units:document.getElementById("lim-u").value }).then(Results).catch(e=>oops(e.message));
     const rr = document.getElementById("lim-r"); if(rr) rr.onclick = () => rsApi("PUT","/limit",{ test:name, reset:true }).then(Results).catch(e=>oops(e.message));
+  };
+}
+/** Lead and copper consumer notices: pick the round and the notice date, get one Word file. */
+async function lcrForm(box){
+  if(box.innerHTML){ box.innerHTML = ""; return; }
+  box.innerHTML = '<p class="small muted">Loading rounds…</p>';
+  let rounds = [];
+  try{ rounds = (await api("GET","/results/lcr-rounds")).rounds; }catch(e){ box.innerHTML = `<p class="flag small">${esc(e.message)}</p>`; return; }
+  const S = DB.system, miss = [["operator","operator name"],["phone","phone"],["email","email"],["pwsid","PWSID"]].filter(([k])=>!S[k]).map(x=>x[1]);
+  box.innerHTML = `<div class="row wrap" style="align-items:flex-end;margin-top:10px">
+      <div class="field" style="margin:0;min-width:200px;flex:1"><label for="lcr-day">Sampling round</label><select id="lcr-day">${rounds.map(r=>`<option value="${r.day}">${nice(r.day)}: ${r.taps} home${r.taps===1?"":"s"}</option>`).join("")}</select></div>
+      <div class="field" style="margin:0;width:180px"><label for="lcr-date">Date on the notice</label><input type="date" id="lcr-date" value="${TODAY}"></div>
+      <button class="btn primary" id="lcr-go" type="button">Download (Word)</button></div>
+    ${miss.length ? `<p class="small flag" style="margin:8px 0 0">Add your ${miss.join(", ")} in <a href="#settings">System settings</a> first, or those blanks stay empty.</p>` : ""}
+    <p class="tiny muted" style="margin:8px 0 0">Each home's sample point is used as the Location, so name sample points by address when you import. Check each notice, then print and deliver them by TDEC's deadline.</p>
+    <span class="small" id="lcr-msg"></span>`;
+  document.getElementById("lcr-go").onclick = async () => {
+    const msg = document.getElementById("lcr-msg"), day = document.getElementById("lcr-day").value;
+    msg.className = "small muted"; msg.textContent = "Making the notices…";
+    try{
+      const h = { "x-ch":"1" }; if(CREW && TOKEN) h.Authorization = "Bearer " + TOKEN;
+      const r = await fetch(API + `/results/lcr-notices.docx?day=${encodeURIComponent(day)}&date=${encodeURIComponent(document.getElementById("lcr-date").value)}`, { headers:h, credentials:"same-origin" });
+      if(!r.ok){ const j = await r.json().catch(()=>({})); throw new Error(j.error || "Couldn't make the notices."); }
+      const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = `lead-copper-notices-${day}.docx`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+      msg.className = "small"; msg.textContent = `Downloaded ${r.headers.get("X-Notices")||""} notices ✓`;
+    }catch(e){ msg.className = "small flag"; msg.textContent = e.message; }
   };
 }
 function presenceStrip(rs){
@@ -778,7 +806,7 @@ function Settings(){
     <form class="card" id="sf">
       ${F("name","System name",S.name)}
       <div class="grid2">${F("pwsid","PWSID",S.pwsid)}${F("type","System type",S.type)}${F("pop","Population served",S.pop)}${F("conn","Service connections",S.conn)}</div>
-      <div class="grid2">${F("operator","Operator name",S.operator)}${F("cert","Certification",S.cert)}</div>
+      <div class="grid2">${F("operator","Operator name",S.operator)}${F("cert","Certification",S.cert)}${F("phone","Operator phone",S.phone||"","On lead and copper notices.")}${F("email","Operator email",S.email||"","On lead and copper notices.")}</div>
       ${F("minCl","Minimum distribution chlorine (mg/L)",S.minCl,"Tennessee requires at least 0.2 mg/L free chlorine.")}
       <div class="row"><button class="btn primary">Save</button><span class="small muted" id="ok"></span></div>
     </form>
@@ -788,7 +816,7 @@ function Settings(){
       <p class="tiny muted" style="margin:12px 0 0">Sampling frequencies and limits here are examples, so always follow the monitoring schedule TDEC issues for your system. Not affiliated with TDEC.</p>
     </div>`;
   document.getElementById("sf").onsubmit = e => { e.preventDefault();
-    const b = {}; ["name","pwsid","type","pop","conn","operator","cert","minCl"].forEach(k => b[k] = document.getElementById("s-"+k).value.trim());
+    const b = {}; ["name","pwsid","type","pop","conn","operator","cert","phone","email","minCl"].forEach(k => b[k] = document.getElementById("s-"+k).value.trim());
     change("PUT", "/system", b, () => { Settings(); document.getElementById("sysname").textContent = DB.system.name; document.getElementById("ok").textContent = "Saved ✓"; }).catch(()=>{}); };
   document.getElementById("exp").onclick = () => {
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(DB, null, 2)], {type:"application/json"}));
