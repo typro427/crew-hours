@@ -160,3 +160,27 @@ test('guard shack: arriving clocks in, leaving clocks out, coming back is a brea
   await P.notify(c, null, { feature: null, title: 'anything else' });
   delete APNS.send.sender;
 });
+
+test('drive-by: driving past the shack clocks in (with a phone notification), never out', async () => {
+  const c = await db.one('SELECT * FROM companies');
+  await O('PUT', '/api/admin/crew/' + guardId, { features: { hours: true, autoclock: true, drivein: true, tasks: false, roads: false, w_sites: false, w_repairs: false, w_meters: false } });
+  const f = (await guard('GET', '/fence')).body;
+  assert.equal(f.mode, 'drive', 'drive-by wins over in-and-out');
+  assert.equal(f.shack.radius, 200, 'a wider circle for driving past');
+  await db.q('DELETE FROM entries WHERE crew_id=$1', [guardId]); await db.q('DELETE FROM fence_events WHERE crew_id=$1', [guardId]);
+  const APNS = require('../src/apns'); const sent = [];
+  APNS.send.sender = async (tok, msg) => { sent.push(msg); return { ok: true }; };
+  const T = require('../src/time'), today = T.localNow(c.timezone).date;
+  const a = (await guard('POST', '/fence', { event: 'enter' })).body;
+  assert.equal(a.did, 'in');
+  const b = (await guard('POST', '/fence', { event: 'exit' })).body;
+  assert.equal(b.did, 'none', 'driving away does not clock out');
+  const d = await db.one('SELECT start_t, end_t FROM entries WHERE crew_id=$1 AND day=$2', [guardId, today]);
+  assert.ok(d.start_t); assert.ok(!d.end_t);
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(sent.length, 1); assert.match(sent[0].title, /^Clocked in at/);
+  // driving past again later: nothing changes
+  await db.q("UPDATE fence_events SET at = at - interval '1 hour' WHERE crew_id=$1", [guardId]);
+  assert.equal((await guard('POST', '/fence', { event: 'enter' })).body.note, 'Already clocked in.');
+  delete APNS.send.sender;
+});

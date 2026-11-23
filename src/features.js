@@ -13,9 +13,10 @@ const FEATURES = {
   drives:     'Roads driven checklist (managers always have it)',
   compliance: 'Compliance: daily log, samples, testing, monthly report (managers always have it)',
   gate:       'Gate log (guards: check cars in with address, type, tag photo)',
-  autoclock:  'Clock in and out automatically at the guard shack (location)'
+  autoclock:  'Clock in and out automatically at the guard shack (location)',
+  drivein:    'Clock in when driving past the guard shack (clock out by hand)'
 };
-const OFF_BY_DEFAULT = new Set(['members', 'orders', 'jobs', 'drives', 'compliance', 'gate', 'autoclock']);
+const OFF_BY_DEFAULT = new Set(['members', 'orders', 'jobs', 'drives', 'compliance', 'gate', 'autoclock', 'drivein']);
 const can = (crew, key) => OFF_BY_DEFAULT.has(key) ? !!(crew.features && crew.features[key] === true)
   : !crew.features || crew.features[key] !== false;
 const forCrew = crew => Object.fromEntries(Object.keys(FEATURES).map(k => [k, can(crew, k)]));

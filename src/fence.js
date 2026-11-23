@@ -8,6 +8,10 @@ const H = require('./hours');
 const F = require('./features');
 
 const DEFAULT_RADIUS = 100;     // metres around the shack
+const DRIVE_RADIUS = 200;       // driving past: a wider circle, so a phone going 30 mph still notices
+const P = require('./push');
+/** 'drive' = clocks in when driving past, never out; 'guard' = in when arriving, out when leaving; null = off. */
+const modeOf = crew => F.can(crew, 'drivein') ? 'drive' : F.can(crew, 'autoclock') ? 'guard' : null;
 const SUMMARY = 'Guard shift (clocked by the guard shack)';
 
 /** The shack: { lat, lon, radius } or null. */
@@ -41,7 +45,8 @@ const otherOf = r => ({ job: r.o_job, start: r.o_start, end: r.o_end, out: r.o_o
  * did: 'in' | 'out' | 'back' | 'away' | 'none'.
  */
 async function event(company, crew, b) {
-  if (!F.can(crew, 'autoclock')) V.bad('Clocking in and out at the guard shack is not switched on for you.');
+  const mode = modeOf(crew);
+  if (!mode) V.bad('Clocking in and out at the guard shack is not switched on for you.');
   const kind = b.event === 'enter' ? 'enter' : b.event === 'exit' ? 'exit' : null;
   if (!kind) V.bad('Unknown event.');
   const now = new Date();
@@ -68,6 +73,15 @@ async function event(company, crew, b) {
     }
   };
 
+  if (mode === 'drive') {
+    if (kind === 'exit') return log('none', 'Drove past. Clock out by hand at the end of the day.');
+    const r = await row(crew.id, date);
+    if (r && r.start_t) return log('none', r.end_t ? 'Already clocked out today.' : 'Already clocked in.');
+    const done = await save(date, r, { start: time, summary: (r && r.summary) || 'Workday (clocked in at the guard shack)' }, 'in', `Clocked in at ${T.clock(time)}.`);
+    if (done.did === 'in') P.notify(company, [crew.id], { feature: null, tab: 'log', tag: 'fence-' + date,
+      title: `Clocked in at ${T.clock(time)}`, body: 'You drove past the guard shack. Remember to clock out at the end of the day.' }).catch(() => {});
+    return done;
+  }
   if (kind === 'enter') {
     const r = await row(crew.id, date);
     if (!r || !r.start_t) return save(date, r, { start: time }, 'in', `Clocked in at ${T.clock(time)}.`);
@@ -89,13 +103,15 @@ async function event(company, crew, b) {
 
 /** What the guard's phone needs: is it on for them, and where's the shack. */
 async function forCrew(company, crew) {
-  if (!F.can(crew, 'autoclock')) return { on: false };
-  const s = await shack(company.id);
+  const mode = modeOf(crew);
+  if (!mode) return { on: false };
+  let s = await shack(company.id);
+  if (s && mode === 'drive') s = { ...s, radius: Math.max(s.radius, DRIVE_RADIUS) };
   const last = await db.one('SELECT kind, at, did, note FROM fence_events WHERE crew_id=$1 ORDER BY at DESC, id DESC LIMIT 1', [crew.id]);
-  return { on: !!s, shack: s, last };
+  return { on: !!s, shack: s, last, mode };
 }
 
 const recent = companyId => db.q(`SELECT e.id, e.kind, e.at, e.did, e.note, c.name FROM fence_events e JOIN crew c ON c.id=e.crew_id
   WHERE e.company_id=$1 ORDER BY e.at DESC, e.id DESC LIMIT 30`, [companyId]);
 
-module.exports = { shack, setShack, event, forCrew, recent, DEFAULT_RADIUS };
+module.exports = { shack, setShack, event, forCrew, recent, modeOf, DEFAULT_RADIUS, DRIVE_RADIUS };

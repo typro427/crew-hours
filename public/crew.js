@@ -1679,6 +1679,8 @@
     function refreshHours(){ if(week && !$("log-screen").hidden) loadWeek(week, sel); }
     function describe(){
       if(!me.cfg || !me.cfg.on){ line(""); return; }
+      if(me.cfg.mode==="drive"){ line(NATIVE ? "📍 Clocks you in when you drive past the guard shack, even with the app closed. Clock out by hand."+lastText(me.cfg.last)
+        : "📍 Clocks you in when you drive past the guard shack while this app is open on your screen. Clock out by hand."+lastText(me.cfg.last)); return; }
       line(NATIVE ? "📍 Auto clock in/out at the guard shack is on. Your phone does it, even with the app closed."+lastText(me.cfg.last)
         : "📍 Auto clock in/out at the guard shack is on while this app is open on your screen."+lastText(me.cfg.last));
     }
@@ -1693,7 +1695,7 @@
       else if(!me.state) me.state = d<=c.shack.radius ? "enter" : (was||null);
     }
     me.start=function(){
-      if(!token || !features.autoclock) return me.stop();
+      if(!token || !(features.autoclock || features.drivein)) return me.stop();
       call("getFence",[token], function(c){
         me.cfg=c; describe();
         if(!c.on) return me.stop();
