@@ -544,7 +544,7 @@ function wireSwitch(){ document.querySelectorAll("[data-rep]").forEach(b => b.on
 
 /* ================= EMAIL ================= */
 // Water system email from Outlook: what needs attention first, then everything else. Read-only.
-let ML = null, MLFILTER = "attn";
+let ML = null, MLFILTER = "attn", MLFLASH = null;
 function mlApi(method, path, body){ return api(method, "/mail" + path, body).then(d => { ML = d; mailBadge(); return d; }); }
 function mailBadge(){
   const n = ML ? ML.items.filter(i=>i.status==="new").length : 0;
@@ -557,8 +557,11 @@ function ago(iso){
   return d.toLocaleDateString("en-US",{month:"short",day:"numeric"}) + (d.getFullYear()!==new Date().getFullYear() ? ", "+d.getFullYear() : "");
 }
 function Email(){
-  const h = location.hash.slice(1), flash = /^email-(ok|error)=/.test(h) ? decodeURIComponent(h.split("=").slice(1).join("=")) : "", bad = h.startsWith("email-error");
-  if(flash) history.replaceState(null, "", "#email");
+  // the message from connecting (kept until the list has loaded, then shown once)
+  const h = location.hash.slice(1);
+  if(/^email-(ok|error)=/.test(h)){ MLFLASH = { text: decodeURIComponent(h.split("=").slice(1).join("=")), bad: h.startsWith("email-error") }; ML = null; history.replaceState(null, "", "#email"); }
+  const flash = ML && MLFLASH ? MLFLASH.text : "", bad = !!(MLFLASH && MLFLASH.bad);
+  if(ML && MLFLASH) MLFLASH = null;
   if(!ML){ $view.innerHTML = '<p class="muted">Loading email…</p>'; mlApi("GET","").then(()=>{ if(route()==="email") Email(); }).catch(e=>oops(e.message)); return; }
   const attn = ML.items.filter(i=>i.status==="new"), done = ML.items.filter(i=>i.status==="done"), fyi = ML.items.filter(i=>i.status==="fyi");
   const show = MLFILTER==="attn" ? attn : MLFILTER==="fyi" ? fyi : done;
