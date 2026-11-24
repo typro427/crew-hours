@@ -761,6 +761,10 @@ CREATE TABLE IF NOT EXISTS cw_pending (
   status     TEXT NOT NULL DEFAULT 'ready',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Bank statements on the contract tab: each transaction saved carries a fingerprint, so a statement uploaded twice
+-- isn't counted twice. line_key 'received' = money in (payments received), not spending.
+ALTER TABLE contract_actuals ADD COLUMN IF NOT EXISTS ref TEXT;
+CREATE INDEX IF NOT EXISTS contract_actuals_ref ON contract_actuals (company_id, ref) WHERE ref IS NOT NULL;
 `;
 
 async function migrate() { await pool.query(SCHEMA); await pool.query(UPGRADES); }

@@ -417,4 +417,4 @@ function mount(r, prefix, guard, who) {
   });
 }
 
-module.exports = { TESTS, testName, resultOf, unitTidy, convert, fromText, fromTable, read, save, list, setLimit, remove, removeBatch, over, csv, mount };
+module.exports = { TESTS, testName, resultOf, unitTidy, convert, fromText, fromTable, csvish, read, save, list, setLimit, remove, removeBatch, over, csv, mount };

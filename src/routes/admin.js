@@ -575,6 +575,8 @@ r.post('/contract/pricing', async (req, res) => res.json(await CT.importPricing(
 r.post('/contract/payroll', async (req, res) => res.json(await CT.importPayroll(req.company, req.body)));
 r.put('/contract/settings', async (req, res) => res.json(await CT.settings(req.company, req.body || {})));
 r.post('/contract/expenses', async (req, res) => res.json(await CT.addExpense(req.company, req.body || {})));
+r.post('/contract/bank', async (req, res) => res.json(await CT.readBank(req.company, req.body)));
+r.post('/contract/bank/save', async (req, res) => res.json(await CT.saveBank(req.company, req.body || {})));
 r.delete('/contract/expenses/:id', async (req, res) => res.json(await CT.removeExpense(req.company, Number(req.params.id))));
 
 /* -------------------------------- payroll ---------------------------------- */

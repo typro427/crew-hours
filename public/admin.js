@@ -128,6 +128,7 @@
     tile(d.year + ' contract value', d.value ? $m(d.value) : '–', d.contractYear ? 'Year ' + d.contractYear + ' of the pricing' : 'no budget this year');
     tile('Spent so far', $m(d.spent), 'with benefits, overhead and profit');
     tile('Budget to date', $m(d.budgetToDate), d.elapsed < 12 ? Math.round(d.elapsed / 12 * 100) + '% of the year has passed' : 'the whole year');
+    if (d.received) tile('Received', $m(d.received), 'deposits from bank statements');
     tile(d.elapsed < 12 ? 'On pace for' : 'Year total', $m(d.projected), d.value ? (diff > 0 ? $m(diff) + ' over the contract' : $m(-diff) + ' under the contract') : '', d.value ? (diff > 0 ? 'over' : 'under') : '');
     // pace bar: share of the contract spent, with a tick for the share of the year passed
     var pc = $('ct-pace'); pc.innerHTML = '';
@@ -208,7 +209,8 @@
     var eb = $('ct-exp'); eb.innerHTML = '';
     d.expenses.forEach(function (x) {
       var tr = el('tr'); tr.appendChild(el('td', '', x.day)); var ln = d.lines.filter(function (l) { return l.key === x.line; })[0];
-      tr.appendChild(el('td', '', ln ? ln.name : x.line)); tr.appendChild(el('td', 'num', $m(x.amount))); tr.appendChild(el('td', 'who', x.note || ''));
+      var lt = el('td', '', x.line === 'received' ? 'Payment received (money in)' : ln ? ln.name : x.line); if (x.bank) lt.appendChild(el('span', 'ct-tag', 'Bank')); tr.appendChild(lt);
+      tr.appendChild(el('td', 'num', (x.line === 'received' ? '+' : '') + $m(x.amount))); tr.appendChild(el('td', 'who', x.note || ''));
       var td = el('td'), b = el('button', 'linkish', 'Remove'); b.type = 'button'; b.onclick = function () { api('DELETE', '/api/admin/contract/expenses/' + x.id).then(function (r) { ctSet(r, 'Removed.'); }); };
       td.appendChild(b); tr.appendChild(td); eb.appendChild(tr);
     });
@@ -259,6 +261,77 @@
         .catch(function (e) { status('ct-status', e.message, 'err'); input.value = ''; });
     };
   }
+  /* bank statements: read it, look it over, save */
+  var bank = null;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function $c(v) { var n = Number(v) || 0; return (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function bankOptions(sel, t, lines) {
+    function op(v, label) { var o = el('option', '', label); o.value = v; sel.appendChild(o); }
+    op('', t.amount > 0 ? 'Pick…' : 'Pick a budget line…'); op('skip', 'Leave out');
+    if (t.amount > 0) op('received', 'Payment received (money in)');
+    var cats = { mgmt: 'Management', staff: 'Staffing', sub: 'Sub-contractors', equip: 'Equipment & supplies' };
+    Object.keys(cats).forEach(function (c) {
+      var ls = lines.filter(function (l) { return l.cat === c; }); if (!ls.length) return;
+      var g = document.createElement('optgroup'); g.label = cats[c];
+      ls.forEach(function (l) { var o = el('option', '', l.name + (l.who ? ' · ' + l.who : '')); o.value = l.key; g.appendChild(o); }); sel.appendChild(g);
+    });
+    sel.value = t.line || '';
+  }
+  function drawBank() {
+    var box = $('ct-bank-review'); box.innerHTML = '';
+    if (!bank) return;
+    var d = bank, lines = (ct.data && ct.data.lines) || [];
+    var fresh = d.txns.filter(function (t) { return !t.dup; });
+    var sum = el('div', 'ct-bank-sum');
+    sum.innerHTML = '<span>' + esc(d.name) + '</span><span>' + d.period.from + ' to ' + d.period.to + '</span><span>' + d.txns.length + ' transactions</span><span>In <b>' + $c(d.moneyIn) + '</b></span><span>Out <b>' + $c(d.moneyOut) + '</b></span>';
+    box.appendChild(sum);
+    if (d.addsUp === true) box.appendChild(el('p', 'status ok', '✓ Adds up: starting balance ' + $c(d.opening) + ' + money in − money out = ending balance ' + $c(d.closing) + '. Nothing was missed.'));
+    else if (d.addsUp === false) box.appendChild(el('p', 'status err', 'Check this one: starting balance ' + $c(d.opening) + ' + in − out comes to ' + $c(d.opening + d.moneyIn - d.moneyOut) + ', but the statement ends at ' + $c(d.closing) + '. A transaction may have been missed or misread' + (d.how === 'scan' ? ' (it was read from a scan)' : '') + '. The bank’s CSV download reads exactly.'));
+    else if (d.how === 'scan') box.appendChild(el('p', 'hint', 'Read from a scan: check the amounts against the statement.'));
+    if (d.txns.length - fresh.length) box.appendChild(el('p', 'hint', (d.txns.length - fresh.length) + ' of these were saved before (greyed out) and won’t be counted again.'));
+    var tb = el('div', 'tablebox'), table = el('table', 'roads ct-bank-tbl');
+    table.innerHTML = '<thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Goes against</th></tr></thead>';
+    var body = el('tbody');
+    d.txns.forEach(function (t) {
+      var tr = el('tr', (t.amount > 0 ? 'in ' : '') + (t.dup ? 'dup ' : '') + (!t.dup && !t.line ? 'need' : ''));
+      tr.appendChild(el('td', '', t.day.slice(5).replace('-', '/')));
+      var dt = el('td', '', t.desc); if (t.dup) dt.appendChild(el('span', 'ct-tag', 'Saved before')); else if (t.why) dt.appendChild(el('span', 'why', t.why === 'remembered' ? 'Same as last time' : 'Left out: ' + t.why)); tr.appendChild(dt);
+      tr.appendChild(el('td', 'num', (t.amount > 0 ? '+' : '') + $c(t.amount)));
+      var td = el('td');
+      if (!t.dup) { var sel = el('select'); sel.setAttribute('aria-label', 'Budget line for ' + t.desc); bankOptions(sel, t, lines);
+        sel.onchange = function () { t.line = sel.value; t.why = ''; tr.className = (t.amount > 0 ? 'in ' : '') + (t.line ? '' : 'need'); count(); }; td.appendChild(sel); }
+      tr.appendChild(td); body.appendChild(tr);
+    });
+    table.appendChild(body); tb.appendChild(table); box.appendChild(tb);
+    var act = el('div', 'ct-bank-actions');
+    var save = el('button', 'btn small primary', 'Save'); save.type = 'button';
+    var all = el('select'); all.setAttribute('aria-label', 'Put every one not picked yet on');
+    bankOptions(all, { amount: -1, line: '' }, lines); all.options[0].textContent = 'Put every one not picked on…';
+    all.onchange = function () { if (!all.value) return; d.txns.forEach(function (t) { if (!t.dup && !t.line && t.amount < 0) t.line = all.value; }); drawBank(); };
+    var cancel = el('button', 'btn small', 'Cancel'); cancel.type = 'button'; cancel.onclick = function () { bank = null; drawBank(); };
+    var note = el('span', 'hint');
+    function count() {
+      var go = fresh.filter(function (t) { return t.line && t.line !== 'skip'; }).length, need = fresh.filter(function (t) { return !t.line; }).length;
+      save.textContent = 'Save ' + go + ' transaction' + (go === 1 ? '' : 's'); save.disabled = !go;
+      note.textContent = need ? need + ' not picked yet; they won’t be saved (you can upload the statement again later).' : '';
+    }
+    count();
+    save.onclick = function () {
+      save.disabled = true; status('ct-status', 'Saving…');
+      api('POST', '/api/admin/contract/bank/save', { txns: fresh.map(function (t) { return { day: t.day, desc: t.desc, amount: t.amount, check: t.check, ref: t.ref, line: t.line }; }) })
+        .then(function (r) { bank = null; drawBank(); ct.year = null; ctSet(r, 'Saved ' + r.saved + ' transaction' + (r.saved === 1 ? '' : 's') + ' from the bank statement' + (r.dups ? ' (' + r.dups + ' were already saved)' : '') + '. Your picks are remembered for next month.'); })
+        .catch(function (e) { save.disabled = false; status('ct-status', e.message, 'err'); });
+    };
+    act.appendChild(save); act.appendChild(all); act.appendChild(cancel); act.appendChild(note); box.appendChild(act);
+  }
+  $('ct-bank').onchange = function () {
+    var input = $('ct-bank'), f = input.files[0]; if (!f) return;
+    status('ct-status', 'Reading the bank statement…' + (/pdf|image/.test(f.type) ? ' A scanned page can take a minute.' : ''));
+    f.arrayBuffer().then(function (buf) { return fetch('/api/admin/contract/bank', { method: 'POST', headers: { 'x-ch': '1', 'Content-Type': 'application/octet-stream' }, body: buf, credentials: 'same-origin' }); })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'That statement could not be read.'); return j; }); })
+      .then(function (d) { d.name = f.name; bank = d; input.value = ''; drawBank(); status('ct-status', 'Read ' + d.txns.length + ' transactions. Check where each one goes, then Save.', 'ok'); $('ct-bank-card').scrollIntoView({ behavior: 'smooth' }); })
+      .catch(function (e) { status('ct-status', e.message, 'err'); input.value = ''; });
+  };
   ctUpload($('ct-pricing'), '/api/admin/contract/pricing', 'pricing workbook');
   ctUpload($('ct-payroll'), '/api/admin/contract/payroll', 'payroll history');
   $('ct-start').onchange = function () { api('PUT', '/api/admin/contract/settings', { startYear: $('ct-start').value }).then(function (r) { ctSet(r, 'Saved.'); }).catch(function (e) { status('ct-status', e.message, 'err'); }); };

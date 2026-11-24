@@ -124,3 +124,89 @@ test('match a person by hand, leave one out, expenses, other years', async () =>
   assert.strictEqual(again.rows.length >= 1, true);
   assert.strictEqual((await db.one("SELECT count(*)::int AS n FROM contract_actuals WHERE source='history'")).n, 7);
 });
+
+/* ------------------------------ bank statements ------------------------------ */
+const BK = require('../src/bank');
+const STATEMENT = `First Fake Bank                                   Page 1 of 2
+Account 000123  Statement Period 10/01/2026 through 10/31/2026
+Beginning Balance                                            $12,000.00
+Deposits and Additions
+10/03   HOA ASSESSMENT DEPOSIT                    5,000.00     17,000.00
+10/20   INTEREST PAYMENT                              1.25     17,001.25
+Electronic Withdrawals
+10/05   POS DEBIT LOWES #1234 KNOXVILLE TN          245.17     16,754.83
+        BUILDING SUPPLIES
+10/09   INTUIT PAYROLL 1234567                    3,100.00     13,654.83
+10/12   ONLINE TRANSFER TO SAV 9988                 500.00     13,154.83
+10/15   CHECKCARD 1014 PILOT 00412 JELLICO TN       88.40     13,066.43
+Checks Paid
+1201   10/07   150.00    1202*  10/18   1,200.00
+Daily Ending Balance
+10/03  17,000.00   10/05  16,754.83
+Ending Balance                                               $11,717.68`;
+
+test('bank statement text: deposits, withdrawals, checks, the year, and it adds up', () => {
+  const r = BK.fromText(STATEMENT, '2026-11-24');
+  assert.deepStrictEqual(r.period, { from: '2026-10-01', to: '2026-10-31' });
+  assert.strictEqual(r.opening, 12000); assert.strictEqual(r.closing, 11717.68);
+  const by = d => r.txns.find(t => t.desc.includes(d));
+  assert.strictEqual(r.txns.length, 8, JSON.stringify(r.txns));
+  assert.strictEqual(by('HOA').amount, 5000);
+  assert.strictEqual(by('LOWES').amount, -245.17); assert.match(by('LOWES').desc, /BUILDING SUPPLIES/, 'the payee line underneath joins on');
+  assert.strictEqual(by('#1202').amount, -1200); assert.strictEqual(by('#1202').day, '2026-10-18'); assert.strictEqual(by('#1201').check, '1201');
+  const inn = r.txns.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0), out = r.txns.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0);
+  assert.strictEqual(Math.round((12000 + inn + out) * 100) / 100, 11717.68);
+  // a January statement's December dates belong to last year
+  const jan = BK.fromText('Statement Period 12/15/2026 - 01/14/2027\nWithdrawals\n12/20 PILOT TRAVEL 40.00\n01/02 LOWES 10.00', '2027-01-20');
+  assert.deepStrictEqual(jan.txns.map(t => t.day), ['2026-12-20', '2027-01-02']);
+  // where things go by default
+  assert.strictEqual(BK.guessLine(by('PAYROLL'), {}).line, 'skip');
+  assert.strictEqual(BK.guessLine(by('TRANSFER'), {}).line, 'skip');
+  assert.strictEqual(BK.guessLine(by('INTEREST'), {}).line, 'skip');
+  assert.strictEqual(BK.guessLine(by('HOA'), {}).line, 'received');
+  assert.strictEqual(BK.vendorKey('POS DEBIT LOWES #1234 KNOXVILLE TN'), 'lowes', 'the town and state are left off');
+  assert.strictEqual(BK.vendorKey('CHECKCARD 1014 PILOT 00412 JELLICO TN'), 'pilot');
+});
+
+test('bank CSV and QFX downloads', () => {
+  const csv = BK.fromTable([['Date', 'Description', 'Debit', 'Credit', 'Balance'], ['10/05/2026', 'LOWES #1234', '245.17', '', '100'], ['10/06/2026', 'DEPOSIT', '', '50.00', '150']], '2026-11-01');
+  assert.deepStrictEqual(csv.txns.map(t => [t.day, t.amount]), [['2026-10-05', -245.17], ['2026-10-06', 50]]);
+  const one = BK.fromTable([['Posting Date', 'Amount', 'Payee', 'Check Number'], ['2026-10-05', '-75.5', 'AT&T', ''], ['2026-10-07', '-150', '', '1201']], '2026-11-01');
+  assert.deepStrictEqual(one.txns.map(t => [t.desc, t.amount, t.check]), [['AT&T', -75.5, ''], ['Check #1201', -150, '1201']]);
+  const q = BK.fromOfx('OFXHEADER:100\n<OFX><BANKTRANLIST><DTSTART>20261001<DTEND>20261031<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261005120000<TRNAMT>-245.17<NAME>LOWES #1234<MEMO>KNOXVILLE</STMTTRN><STMTTRN><TRNTYPE>CHECK<DTPOSTED>20261007<TRNAMT>-150.00<CHECKNUM>1201</STMTTRN></BANKTRANLIST><LEDGERBAL><BALAMT>99.00</LEDGERBAL></OFX>');
+  assert.deepStrictEqual(q.txns.map(t => [t.day, t.desc, t.amount]), [['2026-10-05', 'LOWES #1234 KNOXVILLE', -245.17], ['2026-10-07', 'Check #1201', -150]]);
+  assert.deepStrictEqual(q.period, { from: '2026-10-01', to: '2026-10-31' });
+});
+
+test('upload a statement, sort it, save; it is remembered and never counted twice', async () => {
+  await O('PUT', '/api/admin/contract/settings', { startYear: year });
+  const csv = Buffer.from(`Date,Description,Amount\n${'03/05/' + year},POS DEBIT LOWES #1234 KNOXVILLE TN,-245.17\n${'03/06/' + year},INTUIT PAYROLL 99,-3100.00\n${'03/08/' + year},HOA ASSESSMENT DEPOSIT,5000.00\n${'03/09/' + year},PILOT 00412 JELLICO TN,-88.40\n`);
+  let r = await O('POST', '/api/admin/contract/bank', csv, true);
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  let d = r.body;
+  assert.strictEqual(d.txns.length, 4); assert.strictEqual(d.moneyIn, 5000); assert.strictEqual(d.moneyOut, 3433.57);
+  const t = x => d.txns.find(y => y.desc.includes(x));
+  assert.strictEqual(t('PAYROLL').line, 'skip'); assert.strictEqual(t('HOA').line, 'received'); assert.strictEqual(t('LOWES').line, '');
+  t('LOWES').line = 'equip:1';   // supplies
+  r = await O('POST', '/api/admin/contract/bank/save', { txns: d.txns });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.saved, 2, 'Lowes and the deposit; payroll left out, Pilot not picked');
+  assert.strictEqual(r.body.rows.find(x => x.key === 'equip:1').actual, 245.17);
+  assert.strictEqual(r.body.received, 5000);
+  assert.ok(r.body.expenses.some(x => x.bank && x.line === 'received'));
+  // the same statement again: already saved, and Lowes is remembered
+  d = (await O('POST', '/api/admin/contract/bank', csv, true)).body;
+  assert.ok(t('LOWES').dup && t('HOA').dup); assert.ok(!t('PILOT').dup);
+  const next = Buffer.from(`Date,Description,Amount\n${'04/02/' + year},POS DEBIT LOWES #5678 LAFOLLETTE TN,-19.99\n`);
+  d = (await O('POST', '/api/admin/contract/bank', next, true)).body;
+  assert.strictEqual(d.txns[0].line, 'equip:1'); assert.strictEqual(d.txns[0].why, 'remembered');
+  r = await O('POST', '/api/admin/contract/bank/save', { txns: (await O('POST', '/api/admin/contract/bank', csv, true)).body.txns.map(x => ({ ...x, line: x.line || 'equip:1' })) });
+  assert.strictEqual(r.body.saved, 1, 'only Pilot is new'); assert.strictEqual(r.body.dups, 2);
+  assert.strictEqual(r.body.rows.find(x => x.key === 'equip:1').actual, 333.57);
+  // removing a bank line
+  const lowes = r.body.expenses.find(x => /LOWES/.test(x.note));
+  r = await O('DELETE', '/api/admin/contract/expenses/' + lowes.id);
+  assert.strictEqual(r.body.rows.find(x => x.key === 'equip:1').actual, 88.4);
+  // nothing readable
+  assert.strictEqual((await O('POST', '/api/admin/contract/bank', Buffer.from('hello'), true)).status, 400);
+});

@@ -42,7 +42,8 @@ app.use(/^\/api\/p\/[^/]+\/report$/, express.json({ limit: '25mb' }));   // phot
 app.use(/^\/api\/c\/[^/]+\/(tasks|tasks\/\d+\/(done|progress)|jobs|jobs\/\d+|day\/[\d-]+\/photos|roads\/\d+\/mows|gate|gate\/\d+)$/, express.json({ limit: '25mb' }));
 app.use(/^\/api\/admin\/(tasks|jobs)(\/\d+(\/progress)?)?$/, express.json({ limit: '25mb' }));   // photos
 app.use(/^\/api\/c\/[^/]+\/drives\/trip$/, express.json({ limit: '2mb' }));   // GPS points from a drive
-app.use(/^\/api\/admin\/contract\/(pricing|payroll)$/, express.raw({ type: () => true, limit: '25mb' }));   // contract workbooks
+app.use(/^\/api\/admin\/contract\/(pricing|payroll|bank)$/, express.raw({ type: () => true, limit: '25mb' }));   // contract workbooks
+app.use('/api/admin/contract/bank/save', express.json({ limit: '3mb' }));   // a statement's transactions, sorted
 app.use(/^\/api\/(c\/[^/]+|admin)\/cw\/import\/read$/, express.raw({ type: () => true, limit: '5mb' }));   // a sampling schedule file
 app.use(/^\/api\/(c\/[^/]+|admin)\/cw\/results\/read$/, express.raw({ type: () => true, limit: '25mb' }));   // a lab report
 app.use(/^\/api\/(c\/[^/]+|admin)\/cw\/results$/, express.json({ limit: '2mb' }));   // checked results to save

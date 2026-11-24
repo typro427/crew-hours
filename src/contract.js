@@ -230,8 +230,24 @@ async function addExpense(company, b) {
   return view(company, Number(day.slice(0, 4)));
 }
 async function removeExpense(company, id) {
-  await db.q("DELETE FROM contract_actuals WHERE id=$1 AND company_id=$2 AND source='manual'", [id, company.id]);
+  await db.q("DELETE FROM contract_actuals WHERE id=$1 AND company_id=$2 AND source IN ('manual', 'bank')", [id, company.id]);
   return view(company);
+}
+
+/* ------------------------------ bank statements ------------------------------ */
+const BK = require('./bank');
+/** Read a statement: its transactions with a guessed line each, for a look before saving. */
+async function readBank(company, buf) {
+  const c = await get(company);
+  if (!(c.lines || []).length) V.bad('Upload the pricing workbook first, so there are budget lines to put the bank transactions against.');
+  return BK.read(company, buf, c.bankRules || {});
+}
+async function saveBank(company, b) {
+  const c = await get(company);
+  const r = await BK.save(company, c, b || {});
+  await put(company, { ...(await get(company)), bankRules: r.rules });
+  const days = (b.txns || []).map(t => t.day).filter(T.isDate).sort();
+  return { saved: r.saved, skipped: r.skipped, dups: r.dups, ...(await view(company, days.length ? Number(days[days.length - 1].slice(0, 4)) : undefined)) };
 }
 
 /* ------------------------------ the numbers ------------------------------ */
@@ -280,7 +296,8 @@ async function view(company, yearIn) {
     return guess(lines, a.person, firsts) || 'staff:unassigned';
   };
   const inYear = all.filter(a => a.day.slice(0, 4) === String(year));
-  const deer = inYear.filter(a => a.job === 'Deerfield' && lineOf(a) !== 'skip');
+  const deer = inYear.filter(a => a.job === 'Deerfield' && lineOf(a) !== 'skip' && lineOf(a) !== 'received');
+  const received = r2(inYear.filter(a => a.line_key === 'received').reduce((s, a) => s + a.amount, 0));
   // months of the year that have passed (this month counts by how far into it we are)
   const curY = Number(today.slice(0, 4)), curM = Number(today.slice(5, 7)) - 1;
   const dim = new Date(Date.UTC(curY, curM + 1, 0)).getUTCDate();
@@ -331,15 +348,16 @@ async function view(company, yearIn) {
   Object.values(ppl).forEach(p => { const k = norm(p.person); p.line = people[k] !== undefined ? people[k] : guess(lines, p.person, firsts); p.guessed = people[k] === undefined; });
   return {
     year, years, startYear: start, contractYear: yi >= 0 && yi <= 2 ? yi + 1 : null, today, elapsed: r2(elapsed), factors: f,
-    value, spent, projected, budgetToDate: tot('loadedBudgetToDate'), cats, rows: all2,
+    value, spent, projected, received, budgetToDate: tot('loadedBudgetToDate'), cats, rows: all2,
     months: MONTHS, goals, outside: Object.values(outside).sort((a, b) => b.amount - a.amount),
     people: Object.values(ppl).sort((a, b) => b.deerfield - a.deerfield),
     lines: lines.map(l => ({ key: l.key, cat: l.cat, name: l.name, who: l.who })),
-    expenses: hist.filter(h => h.source === 'manual' && h.day.slice(0, 4) === String(year)).map(h => ({ id: h.id, day: h.day, amount: h.amount, note: h.note, line: h.line_key })),
+    expenses: hist.filter(h => (h.source === 'manual' || h.source === 'bank') && h.day.slice(0, 4) === String(year)).map(h => ({ id: h.id, day: h.day, amount: h.amount, note: h.note, line: h.line_key, bank: h.source === 'bank' })),
+    bankRules: Object.keys(c.bankRules || {}).length,
     estimated: inYear.filter(a => a.est).length,
     sources: { pricingAt: c.pricingAt || null, payrollAt: c.payrollAt || null, historyTo: lastHist || null, liveWeeks: new Set(live.map(l => l.day)).size },
     hasBudget: !!lines.length
   };
 }
 
-module.exports = { readPricing, readPayroll, importPricing, importPayroll, settings, addExpense, removeExpense, view, jobOf, hoursOf, CATS };
+module.exports = { readPricing, readPayroll, importPricing, importPayroll, settings, addExpense, removeExpense, readBank, saveBank, view, jobOf, hoursOf, CATS };
